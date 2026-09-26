@@ -149,7 +149,7 @@ function summarize(s: PhaseSamples): PhaseResult {
     frames: s.frameMs.length,
     fpsAvg: round(totalMs > 0 ? (1000 * s.frameMs.length) / totalMs : 0),
     fpsP5: round(percentile(fps, 5)),
-    fpsMin: round(fps.length ? Math.min(...fps) : 0),
+    fpsMin: round(fps.length ? fps.reduce((a, b) => Math.min(a, b), Infinity) : 0),
     frameMsP95: round(percentile(s.frameMs, 95)),
     cpuMsAvg: round(mean(s.cpuMs)),
     cpuMsP95: round(percentile(s.cpuMs, 95)),
