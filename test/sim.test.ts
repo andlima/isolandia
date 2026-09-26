@@ -215,6 +215,26 @@ test('player click-to-move walks to the target', () => {
   assert.equal(sim.movePlayerTo(b % world.width, (b / world.width) | 0), false);
 });
 
+test('movement advances exactly 1/stepTicks of a tile per tick', () => {
+  for (const stepTicks of [1, 2, 3]) {
+    const grid = gridFromAscii(['................']);
+    const sim = new Sim(grid, { entityCount: 0, seed: 7, playerStepTicks: stepTicks });
+    const startX = sim.toX[0]!;
+    const targetX = startX < 8 ? 15 : 0;
+    const tiles = Math.abs(targetX - startX);
+    assert.ok(sim.movePlayerTo(targetX, 0));
+    let ticks = 0;
+    while (sim.posX[0] !== targetX + 0.5) {
+      const before = sim.posX[0]!;
+      sim.step();
+      ticks++;
+      assert.ok(Math.abs(Math.abs(sim.posX[0]! - before) - 1 / stepTicks) < 1e-5, `uneven step at tick ${ticks}`);
+      assert.ok(ticks <= tiles * stepTicks, 'moving slower than stepTicks');
+    }
+    assert.equal(ticks, tiles * stepTicks);
+  }
+});
+
 test('sim sources do not import pixi.js or touch DOM globals', () => {
   const dir = join(import.meta.dirname, '../spike/sim');
   for (const f of readdirSync(dir)) {

@@ -150,8 +150,14 @@ export class Sim {
       this.fromX[e] = this.toX[e]!;
       this.fromY[e] = this.toY[e]!;
       this.stepProgress[e] = 0;
+      // This tick lands on the tile centre; the next step starts next tick.
+      const p = this.paths[e];
+      if (p && this.pathIndex[e]! < p.length) {
+        this.lerpPos(e);
+        return;
+      }
     }
-    // Standing on a tile: start the next step of the path right away.
+    // Standing on a tile: start the next step of the path.
     const path = this.paths[e];
     if (path && this.pathIndex[e]! < path.length) {
       const next = path[this.pathIndex[e]!++]!;
