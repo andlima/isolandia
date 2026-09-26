@@ -1,0 +1,22 @@
+maps:
+  - id: mansion
+    legend:
+      "#": { tile: wall }
+      "+": { tile: door }
+      ".": { tile: floor }
+      "c": { tile: carpet }
+      "=": { tile: coffin }
+      "\"": { tile: window }
+      "V": { tile: carpet, player: true }
+      "h": { tile: floor, spawn: humanoid }
+      "b": { tile: carpet, spawn: bat }
+    rows:
+      - "###\"####\"####\"####\"###"
+      - "#......#ccccccc#.....#"
+      - "#..h...#ccc=ccc#..h..#"
+      - "#......#ccccccc#.....#"
+      - "###+####cccVccc####+##"
+      - "#......+ccccccc+.....#"
+      - "#..b...#ccccccc#.....#"
+      - "#......#cc=b=cc#.....\""
+      - "###\"#######+#######\"##"

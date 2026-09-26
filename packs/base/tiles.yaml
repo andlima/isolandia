@@ -1,0 +1,16 @@
+tiles:
+  - id: floor
+    label: Floor
+    glyph: "."
+    color: "#8a8a8a"
+    walkable: true
+  - id: wall
+    label: Wall
+    glyph: "#"
+    color: "#d0d0d0"
+    walkable: false
+  - id: door
+    label: Door
+    glyph: "+"
+    color: "#b5813d"
+    walkable: true

@@ -1,0 +1,23 @@
+archetypes:
+  - id: survivor
+    label: Survivor
+    glyph: "@"
+    color: bright_yellow
+    tags: [humanoid, living]
+    measurements: [hp, hunger, thirst]
+    initial: { hunger: 20 }
+  - id: shambler
+    label: Shambler
+    glyph: Z
+    color: "#5fae3e"
+    tags: [undead]
+    measurements: [base:hp]
+    initial: { hp: 40 }
+  - id: crawler
+    label: Crawler
+    glyph: z
+    color: "#3e7a2a"
+    tags: [undead]
+    measurements: [hp]
+    initial: { hp: 20 }
+    ticks_per_step: 6

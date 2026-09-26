@@ -147,8 +147,14 @@ Cada marco termina **jogável** e passa pela regra dos dois gêneros.
 
 ## 7. Perguntas em aberto
 
-- Formato dos packs: YAML puro, ou YAML + JSON gerado? Um arquivo por
-  domínio (`items.yaml`, `systems.yaml`…) ou livre?
+- ~~Formato dos packs: YAML puro, ou YAML + JSON gerado? Um arquivo por
+  domínio (`items.yaml`, `systems.yaml`…) ou livre?~~ **Decidido no M0:**
+  **YAML puro** (sem JSON gerado). Um pack é um diretório com `pack.yaml`
+  (`namespace`, `name`, `version`, `depends`) e **layout livre** de
+  arquivos `*.yaml` em qualquer profundidade; cada arquivo traz uma ou
+  mais **chaves de domínio** (`measurements`, `tiles`, `archetypes`,
+  `maps`, `start`…) e o conteúdo é **mesclado por domínio** dentro do
+  pack. Chaves desconhecidas são erro de load. Ver `docs/packs.md`.
 - Máquina de estados vs utility AI para `behaviors` — ou ambos?
 - Semântica de override entre packs: substituição total por ID, merge
   profundo, ou operações de patch explícitas?

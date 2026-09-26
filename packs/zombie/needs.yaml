@@ -1,0 +1,12 @@
+measurements:
+  - id: hunger
+    label: Hunger
+    max: 100
+    initial: 10
+    rate: 0.5            # +0.5 per second
+  - id: thirst
+    label: Thirst
+    max: 100
+    initial: 10
+    # Thirst builds faster once you are hungry.
+    rate: "0.6 + 0.4 * (self.hunger >= 50)"

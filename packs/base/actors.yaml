@@ -1,0 +1,14 @@
+measurements:
+  - id: hp
+    label: Health
+    min: 0
+    max: 100
+    initial: 100
+
+archetypes:
+  - id: humanoid
+    label: Person
+    glyph: "@"
+    color: white
+    tags: [humanoid]
+    measurements: [hp]

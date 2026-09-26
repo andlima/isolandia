@@ -1,0 +1,45 @@
+measurements:
+  - id: blood
+    label: Blood
+    min: 0
+    # Blood capacity is tied to health: half of current hp, at least 10.
+    max: "max(10, self.base:hp / 2)"
+    initial: 50
+    rate: -0.8           # drains 0.8 per second
+
+tiles:
+  - id: carpet
+    label: Carpet
+    glyph: "."
+    color: "#8b1e2d"
+    walkable: true
+  - id: coffin
+    label: Coffin
+    glyph: "="
+    color: "#4a3426"
+    walkable: false
+  - id: window
+    label: Window
+    glyph: "\""
+    color: "#6fa8dc"
+    walkable: false
+
+archetypes:
+  - id: vampire
+    label: Vampire
+    glyph: V
+    color: "#e0e0ff"
+    tags: [humanoid, undead]
+    measurements: [hp, blood]
+    ticks_per_step: 1
+  - id: bat
+    label: Bat
+    glyph: b
+    color: "#7a5c8a"
+    tags: [beast]
+    measurements: [hp]
+    initial: { hp: 5 }
+
+start:
+  map: mansion
+  player: vampire
