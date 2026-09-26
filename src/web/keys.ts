@@ -1,11 +1,14 @@
 /**
- * Keyboard bindings for the browser, matching the terminal: arrows, WASD and
- * the numpad move in 8 directions. Keyed by `KeyboardEvent.code`, so they are
- * layout-independent and the numpad works with NumLock on or off.
+ * Keyboard bindings for the browser: arrows, WASD and the numpad move in 8
+ * directions, **screen-relative** (`W` = straight up on screen, `D` = right).
+ * These differ from the terminal, which stays grid-aligned. Keyed by
+ * `KeyboardEvent.code`, so they are layout-independent and the numpad works
+ * with NumLock on or off.
  */
 
 type D = -1 | 0 | 1;
 
+/** Screen direction per key: [sx, sy], x rightwards, y downwards. */
 export const MOVE_KEYS: Readonly<Record<string, readonly [D, D]>> = {
   ArrowUp: [0, -1],
   ArrowDown: [0, 1],
@@ -25,7 +28,11 @@ export const MOVE_KEYS: Readonly<Record<string, readonly [D, D]>> = {
   Numpad3: [1, 1],
 };
 
-/** Combined direction of all held movement keys (e.g. W + D = north-east), or null. */
+/**
+ * Grid step for all held movement keys, or null. Keys are summed in screen
+ * space, then mapped to the grid by inverting the 2:1 iso projection
+ * (`worldToIso`): up = (-1,-1), up-right (W + D) = (0,-1) map-north, etc.
+ */
 export function heldDirection(held: Iterable<string>): { dx: D; dy: D } | null {
   let x = 0;
   let y = 0;
@@ -36,7 +43,9 @@ export function heldDirection(held: Iterable<string>): { dx: D; dy: D } | null {
       y += d[1];
     }
   }
-  const dx = Math.sign(x) as D;
-  const dy = Math.sign(y) as D;
+  const sx = Math.sign(x);
+  const sy = Math.sign(y);
+  const dx = Math.sign(sx + sy) as D;
+  const dy = Math.sign(sy - sx) as D;
   return dx === 0 && dy === 0 ? null : { dx, dy };
 }
