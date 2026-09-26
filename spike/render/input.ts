@@ -27,7 +27,11 @@ export class CameraController {
     this.cam = cam;
     el.style.touchAction = 'none';
 
+    el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
     el.addEventListener('pointerdown', (ev) => {
+      // Only the primary mouse button pans/clicks; touch and pen always count.
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       el.setPointerCapture(ev.pointerId);
       this.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       if (this.pointers.size === 1) {
