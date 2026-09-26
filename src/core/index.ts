@@ -13,5 +13,6 @@ export {
 export { Pathfinder, octile } from './sim/astar.ts';
 export { renderPosition } from './sim/motion.ts';
 export { hudModel, formatClock, type HudModel, type HudMeasurement } from './hud.ts';
+export { nearMiss } from './expr/index.ts';
 export { Grid } from './sim/grid.ts';
 export { Rng } from './sim/rng.ts';
