@@ -74,6 +74,11 @@ export class CameraController {
         this.press = null;
       }
       if (this.pointers.size < 2) this.pinchDist = 0;
+      // After a pinch, hand the press to the remaining finger so it keeps panning.
+      if (this.pointers.size === 1 && !this.press) {
+        const [[id, pos]] = [...this.pointers];
+        this.press = { id, x: pos.x, y: pos.y, dragged: true };
+      }
     };
     el.addEventListener('pointerup', (ev) => release(ev, true));
     el.addEventListener('pointercancel', (ev) => release(ev, false));
