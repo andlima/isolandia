@@ -1,0 +1,5 @@
+# Hand-written placeholder art on the 64×32 grid (see docs/packs.md).
+assets:
+  - { id: carpet_img, file: assets/carpet.svg }
+  - { id: coffin_img, file: assets/coffin.svg }
+  - { id: vampire_img, file: assets/vampire.svg, anchor: [0.5, 0.92] }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `npm run bench`: build, serve the build, run ?bench=<s> in Playwright
+// `npm run bench`: build, serve the build, run spike.html?bench=<s> in Playwright
 // Chromium for n=500 and n=2000, and write docs/spikes/s0-bench.json.
 //
 // Env: BENCH_SECONDS (default 20), BENCH_HEADED=1 (headed browser, uses the
@@ -38,7 +38,7 @@ try {
     page.on('pageerror', (err) => console.error(`[n=${n}] page error:`, err));
     const qs = new URLSearchParams({ bench: String(seconds), n: String(n) });
     if (seed) qs.set('seed', seed);
-    const url = `${baseUrl}?${qs}`;
+    const url = `${new URL('spike.html', baseUrl)}?${qs}`;
     console.log(`bench: ${url}`);
     await page.goto(url);
     await page.waitForFunction(() => window.__benchResult !== undefined, null, {

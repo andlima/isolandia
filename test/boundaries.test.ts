@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { builtinModules } from 'node:module';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
     const p = join(dir, n);
-    return statSync(p).isDirectory() ? files(p) : /\.ts$/.test(n) ? [p] : [];
+    return statSync(p).isDirectory() ? files(p) : /\.(ts|mjs)$/.test(n) ? [p] : [];
   });
 }
 
@@ -61,6 +61,38 @@ test('no genre words in src/ (the engine is genre-agnostic)', () => {
       .forEach((line, i) => {
         if (genre.test(line)) bad.push(`${f}:${i + 1}: ${line.trim()}`);
       });
+  }
+  assert.deepEqual(bad, []);
+});
+
+const isPixi = (spec: string) => spec === 'pixi.js' || spec.startsWith('pixi.js/') || spec.startsWith('@pixi/');
+
+test('only src/iso, src/web and spike import pixi.js', () => {
+  const bad: string[] = [];
+  for (const f of [...files('src'), ...files('test'), ...files('scripts')]) {
+    if (/^src[\\/](iso|web)[\\/]/.test(f)) continue;
+    for (const spec of imports(readFileSync(f, 'utf8'))) if (isPixi(spec)) bad.push(`${f}: ${spec}`);
+  }
+  assert.deepEqual(bad, []);
+  // The renderer really does use Pixi (the check above is not vacuous).
+  assert.ok(files('src/iso').some((f) => imports(readFileSync(f, 'utf8')).some(isPixi)));
+});
+
+test('src/iso and src/web import no spike code and no Node built-ins; src/iso imports no shell code', () => {
+  const bad: string[] = [];
+  for (const dir of ['src/iso', 'src/web']) {
+    for (const f of files(dir)) {
+      for (const spec of imports(readFileSync(f, 'utf8'))) {
+        const root = spec.startsWith('node:') ? spec : spec.split('/')[0]!;
+        if (spec.includes('spike')) bad.push(`${f}: imports spike code ${spec}`);
+        if (NODE.has(root)) bad.push(`${f}: imports Node built-in ${spec}`);
+        if (!spec.startsWith('.')) continue;
+        // Relative imports: src/iso may use core and itself; src/web may also use iso.
+        const target = relative('src', resolve(dirname(f), spec)).split(/[\\/]/)[0]!;
+        const allowed = dir === 'src/iso' ? ['core', 'iso'] : ['core', 'iso', 'web'];
+        if (!allowed.includes(target)) bad.push(`${f}: imports ${spec} (src/${target})`);
+      }
+    }
   }
   assert.deepEqual(bad, []);
 });

@@ -11,7 +11,12 @@ npm run play  -- packs/base packs/vampire --seed 7
 ```
 
 Packs are loaded in the order given. Keys: arrows / WASD / numpad /
-`hjklyubn` move (8 directions), `q` quits.
+`hjklyubn` move (8 directions), `q` quits. The same packs run in the
+browser in isometric view: see [iso.md](iso.md).
+
+Diagonal moves never cut corners: a diagonal step needs the target and
+both orthogonal neighbours to be walkable (keyboard and click-to-move
+alike).
 
 ## Layout
 
@@ -20,6 +25,8 @@ packs/zombie/
   pack.yaml            # manifest (required)
   needs.yaml           # any other *.yaml / *.yml file, at any depth
   archetypes.yaml
+  assets.yaml
+  assets/car.svg       # images referenced by the `assets` domain
   maps/town.yaml
   start.yaml
 ```
@@ -31,6 +38,7 @@ domain. Any other top-level key is a load error.
 | Domain key     | Shape           |
 |----------------|-----------------|
 | `measurements` | list of entries |
+| `assets`       | list of entries |
 | `tiles`        | list of entries |
 | `archetypes`   | list of entries |
 | `maps`         | list of entries |
@@ -75,15 +83,54 @@ measurements:
     rate: -0.8
 ```
 
+### `assets`
+
+Single images used by the isometric renderer (no spritesheets or
+animation yet). Asset ids are namespaced and referenced like any other id.
+
+| Field    | Type                 | Default    | Notes |
+|----------|----------------------|------------|-------|
+| `id`     | id                   | required   | |
+| `file`   | path                 | required   | Relative to the pack root; must exist in the pack and end in `.svg` or `.png` |
+| `anchor` | `[ax, ay]`           | `[0.5, 1]` | Normalized image point (each in `[0, 1]`) placed on the entry's anchor spot |
+
+**Anchor conventions** (on the 64×32 tile diamond, see [iso.md](iso.md)):
+
+- a **tile** sprite's anchor goes on the **bottom vertex** of the tile's
+  diamond — with the default `[0.5, 1]`, a 64×32 image covers a flat tile
+  exactly and a 64×64 image is a block rising 32 px above it;
+- an **archetype** sprite's anchor goes on the tile's **ground centre** —
+  with `[0.5, 1]` a character stands on the bottom edge of its image; use
+  e.g. `[0.5, 0.92]` to put the feet a little higher (on a drop shadow).
+
+```yaml
+# packs/zombie/assets.yaml
+assets:
+  - id: car_img
+    file: assets/car.svg       # 64×64 block
+  - id: shambler_img
+    file: assets/shambler.svg  # 32×48 character
+    anchor: [0.5, 0.92]
+
+# packs/zombie/tiles.yaml
+tiles:
+  - { id: car, label: Wrecked car, glyph: "&", color: "#a33a2a", walkable: false, sprite: car_img }
+```
+
+Entries without a `sprite` get a placeholder generated from their `color`.
+The ASCII renderer ignores sprites.
+
 ### `tiles`
 
-| Field      | Type             | Notes |
-|------------|------------------|-------|
-| `id`       | id               | |
-| `label`    | string           | |
-| `glyph`    | single character | ASCII renderer |
-| `color`    | `#rrggbb` or name| e.g. `"#8a8a8a"`, `white`, `bright_yellow` |
-| `walkable` | boolean          | |
+| Field      | Type             | Default      | Notes |
+|------------|------------------|--------------|-------|
+| `id`       | id               |              | |
+| `label`    | string           |              | |
+| `glyph`    | single character |              | ASCII renderer |
+| `color`    | `#rrggbb` or name|              | e.g. `"#8a8a8a"`, `white`, `bright_yellow`; also the placeholder color |
+| `walkable` | boolean          |              | |
+| `raised`   | boolean          | `!walkable`  | Iso rendering only: a raised block, depth-sorted with entities, instead of flat ground. Walkability is unchanged |
+| `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex |
 
 ### `archetypes`
 
@@ -98,6 +145,7 @@ Templates for entities (the player and everything else).
 | `measurements`   | list of measurement ids | `[]`  | Which measurements the entity has |
 | `initial`        | map id → number       |         | Overrides a measurement's `initial` |
 | `ticks_per_step` | positive integer      | `2`     | Movement speed (ticks per tile) |
+| `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
 
 ```yaml
 archetypes:
@@ -175,8 +223,10 @@ zmb archetypes.yaml:6 archetypes[0].measurements[1]: unknown measurement 'hungr'
 It checks YAML syntax, unknown top-level keys and fields, required fields
 and types, id syntax, duplicate ids, unknown/ambiguous references (with
 Levenshtein ≤ 2 suggestions), expression syntax and names, ragged map
-rows, characters missing from the legend, unmet `depends`, and a missing
-or duplicate `start`. A successful load returns an immutable, fully
+rows, characters missing from the legend, unmet `depends`, a missing
+or duplicate `start`, and assets: missing files (with suggestions),
+unsupported extensions, malformed or out-of-range anchors, and unknown
+`sprite` references. A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
 
 ## Engine layout
@@ -185,6 +235,11 @@ resolved definition (ids → indices, expressions → closures).
   compiler), `load/` (pack parsing, namespaces, validation), `sim/`
   (world, grid, RNG). No Node built-ins, DOM or Pixi.
 - `src/node/read-pack.ts` — reads a pack directory into
-  `{ relativePath: text }` for the loader.
+  `{ relativePath: text }` (plus the names of its other files) for the
+  loader.
+- `src/iso/` — Pixi isometric renderer: projection, depth buckets,
+  camera, textures and placeholders.
+- `src/web/` — browser shell: pack loading via Vite, input, HUD, error
+  screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
 - `src/cli/` — `play` and `check`.

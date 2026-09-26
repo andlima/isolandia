@@ -5,6 +5,8 @@ export class Grid {
   readonly width: number;
   readonly height: number;
   readonly cells: Uint16Array;
+  /** 1 where the cell is walkable, row-major (for pathfinding). */
+  readonly walk: Uint8Array;
 
   constructor(
     map: MapDef,
@@ -13,6 +15,7 @@ export class Grid {
     this.width = map.width;
     this.height = map.height;
     this.cells = Uint16Array.from(map.cells);
+    this.walk = Uint8Array.from(this.cells, (t) => (tiles[t]!.walkable ? 1 : 0));
   }
 
   inBounds(x: number, y: number): boolean {
@@ -25,6 +28,17 @@ export class Grid {
   }
 
   walkable(x: number, y: number): boolean {
-    return this.tileAt(x, y)?.walkable ?? false;
+    return this.inBounds(x, y) && this.walk[y * this.width + x] === 1;
+  }
+
+  /**
+   * Whether a one-tile step from (x, y) by (dx, dy) is allowed. A diagonal
+   * step needs the target and both orthogonal neighbours to be walkable (no
+   * corner cutting).
+   */
+  canStep(x: number, y: number, dx: number, dy: number): boolean {
+    if (!this.walkable(x + dx, y + dy)) return false;
+    if (dx !== 0 && dy !== 0) return this.walkable(x + dx, y) && this.walkable(x, y + dy);
+    return true;
   }
 }

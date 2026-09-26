@@ -161,7 +161,12 @@ Cada marco termina **jogável** e passa pela regra dos dois gêneros.
 - Linguagem dos hooks de script: JS sandboxed (Worker/`ShadowRealm`) ou
   Lua (wasmoon/fengari)?
 - Combate: tempo real sobre ticks, ou algo mais tático?
-- Projeção: 2:1 dimétrica clássica? Tamanho de tile? Paredes com cutaway?
+- ~~Projeção: 2:1 dimétrica clássica? Tamanho de tile?~~ **Decidido no
+  M1:** **2:1 dimétrica clássica** com losango de tile de **64×32 px**
+  (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); blocos elevados de 32 px;
+  sprites de tile ancorados no vértice inferior do losango, de arquétipo no
+  centro do chão do tile. Ver `docs/iso.md`. Paredes com cutaway continuam
+  em aberto (M6).
 - Quanto do renderer ASCII sobrevive como ferramenta de debug permanente?
 
 ## 8. Próximo passo

@@ -9,6 +9,7 @@
 import {
   TICKS_PER_SECOND,
   type ArchetypeDef,
+  type AssetDef,
   type Definition,
   type MapDef,
   type MeasurementDef,
@@ -16,7 +17,7 @@ import {
   type SpawnDef,
   type TileDef,
 } from '../definition.ts';
-import { compileSource, type Compiled } from '../expr/index.ts';
+import { compileSource, nearMiss, type Compiled } from '../expr/index.ts';
 import { at, ErrorSink, PackLoadError, type LoadError, type Src } from './errors.ts';
 import { ID_RE, isObject, parsePack, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
 import { SymbolTable, type Kind, type Scope } from './resolve.ts';
@@ -33,12 +34,15 @@ interface Defined {
 
 const KIND_OF: Record<ListDomain, Kind> = {
   measurements: 'measurement',
+  assets: 'asset',
   tiles: 'tile',
   archetypes: 'archetype',
   maps: 'map',
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
+const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
+const ASSET_EXT_RE = /\.(svg|png)$/;
 
 function deepFreeze<T>(o: T): T {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -51,13 +55,14 @@ function deepFreeze<T>(o: T): T {
 class Loader {
   readonly sink = new ErrorSink();
   readonly symbols = new SymbolTable();
-  readonly defined: Record<ListDomain, Defined[]> = { measurements: [], tiles: [], archetypes: [], maps: [] };
+  readonly defined: Record<ListDomain, Defined[]> = { measurements: [], assets: [], tiles: [], archetypes: [], maps: [] };
   packs: { raw: RawPack; scope: Scope }[] = [];
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
     this.defineIds();
     const measurements = this.defined.measurements.map((d) => this.measurement(d));
+    const assets = this.defined.assets.map((d) => this.asset(d));
     const tiles = this.defined.tiles.map((d) => this.tile(d));
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements));
     const maps = this.defined.maps.map((d) => this.map(d));
@@ -76,11 +81,12 @@ class Loader {
         }),
       ),
       measurements,
+      assets,
       tiles,
       archetypes,
       maps,
       start,
-      ids: { measurements: ids(measurements), tiles: ids(tiles), archetypes: ids(archetypes), maps: ids(maps) },
+      ids: { measurements: ids(measurements), assets: ids(assets), tiles: ids(tiles), archetypes: ids(archetypes), maps: ids(maps) },
     };
     return { ok: true, definition: deepFreeze(definition) };
   }
@@ -188,15 +194,50 @@ class Loader {
     return { id: d.id, index: d.index, label, min, maxConst, maxFn, initial, rateConst, rateFn };
   }
 
+  private asset(d: Defined): AssetDef {
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'file', 'anchor'], 'asset');
+    const pack = this.packs.find((p) => p.scope.namespace === d.scope.namespace)!.raw;
+    let file = f.string('file') ?? '';
+    if (file) {
+      file = file.replace(/^\.\//, '');
+      if (!ASSET_EXT_RE.test(file)) {
+        this.sink.add(f.at('file'), `unsupported asset file '${file}': must end in .svg or .png`);
+      } else if (!pack.otherFiles.has(file)) {
+        const base = file.slice(file.lastIndexOf('/') + 1);
+        const s = nearMiss(file, pack.otherFiles) ?? [...pack.otherFiles].find((p) => p.endsWith(`/${base}`) || p === base) ?? null;
+        this.sink.add(f.at('file'), `asset file '${file}' not found in pack '${pack.namespace}'${s ? ` (did you mean '${s}'?)` : ''}`);
+      }
+    }
+    let anchor = DEFAULT_ANCHOR;
+    const a = f.raw('anchor');
+    if (a !== undefined && a !== null) {
+      if (!Array.isArray(a) || a.length !== 2 || !a.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+        this.sink.add(f.at('anchor'), `field 'anchor' must be a pair of numbers [ax, ay], got ${JSON.stringify(a)}`);
+      } else if (!a.every((v) => (v as number) >= 0 && (v as number) <= 1)) {
+        this.sink.add(f.at('anchor'), `anchor ${JSON.stringify(a)} is out of range: both values must be in [0, 1]`);
+      } else anchor = [a[0] as number, a[1] as number];
+    }
+    return { id: d.id, index: d.index, pack: pack.namespace, file, anchor };
+  }
+
+  /** Optional `sprite` asset reference → asset index or null. */
+  private sprite(f: Fields, d: Defined): number | null {
+    if (!f.has('sprite')) return null;
+    return this.symbols.ref('asset', f.raw('sprite'), d.scope, f.at('sprite'), this.sink)?.index ?? null;
+  }
+
   private tile(d: Defined): TileDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable'], 'tile');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'sprite'], 'tile');
+    const walkable = f.boolean('walkable') ?? false;
     return {
       id: d.id,
       index: d.index,
       label: f.string('label') ?? d.id,
       glyph: f.glyph() ?? '?',
       color: f.color() ?? 'white',
-      walkable: f.boolean('walkable') ?? false,
+      walkable,
+      raised: f.boolean('raised', false) ?? !walkable,
+      sprite: this.sprite(f, d),
     };
   }
 
@@ -205,7 +246,7 @@ class Loader {
       this.sink,
       d.entry.src,
       d.entry.value,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'sprite'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -242,7 +283,8 @@ class Loader {
       this.sink.add(f.at('ticks_per_step'), `field 'ticks_per_step' must be a positive integer`);
       ticksPerStep = DEFAULT_TICKS_PER_STEP;
     }
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep };
+    const sprite = this.sprite(f, d);
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, sprite };
   }
 
   private map(d: Defined): MapDef {

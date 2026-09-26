@@ -6,7 +6,7 @@ import { nearMiss } from '../expr/index.ts';
 import { at, formatPath, lineOf, type ErrorSink, type Src } from './errors.ts';
 import { ID_RE } from './pack.ts';
 
-export type Kind = 'measurement' | 'tile' | 'archetype' | 'map';
+export type Kind = 'measurement' | 'asset' | 'tile' | 'archetype' | 'map';
 
 /** The namespaces a pack can see: its own first, then its direct depends. */
 export interface Scope {
@@ -34,6 +34,7 @@ function describeSrc(src: Src): string {
 export class SymbolTable {
   private readonly tables: Record<Kind, Map<string, Symbol>> = {
     measurement: new Map(),
+    asset: new Map(),
     tile: new Map(),
     archetype: new Map(),
     map: new Map(),
