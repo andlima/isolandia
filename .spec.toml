@@ -1,0 +1,32 @@
+base_ref = "main"
+
+[paths]
+specs_dir = "specs"
+task_specs_dir = "specs/tasks"
+state_dir = ".spec-state"
+worktrees_dir = ".worktrees"
+
+[retry]
+cap = 20
+no_progress_retry_threshold = 2
+
+[agents]
+default = "claude"
+review_default = "claude"
+allowed = ["claude"]
+
+[bootstrap]
+# install_command = "pip install -e ."
+
+[implement]
+# setup_command = "scripts/implement-setup.sh"
+# teardown_command = "scripts/implement-teardown.sh"
+
+[verify]
+
+# No verify gates were auto-detected.
+# Add your test/lint commands here:
+# [[verify.gates]]
+# name = "test"
+# command = "pytest"
+# parallel = true
