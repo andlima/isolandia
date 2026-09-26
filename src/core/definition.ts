@@ -4,6 +4,7 @@
  * compiled closure, every id is qualified (`ns:id`).
  */
 
+import type { ClockDef } from './clock.ts';
 import type { Compiled } from './expr/index.ts';
 
 export const TICKS_PER_SECOND = 10;
@@ -31,6 +32,18 @@ export interface MeasurementDef {
   readonly rateFn: Compiled | null;
 }
 
+/** A single image in a pack (`assets` domain). */
+export interface AssetDef {
+  readonly id: string;
+  readonly index: number;
+  /** Namespace of the pack that ships the file. */
+  readonly pack: string;
+  /** Path relative to the pack root (`.svg` or `.png`). */
+  readonly file: string;
+  /** Normalized image point placed on the entry's anchor spot; default [0.5, 1]. */
+  readonly anchor: readonly [number, number];
+}
+
 export interface TileDef {
   readonly id: string;
   readonly index: number;
@@ -38,6 +51,10 @@ export interface TileDef {
   readonly glyph: string;
   readonly color: string;
   readonly walkable: boolean;
+  /** Rendered as a raised block (depth-sorted with entities) instead of flat ground. */
+  readonly raised: boolean;
+  /** Asset index, or null for a generated placeholder. */
+  readonly sprite: number | null;
 }
 
 export interface ArchetypeDef {
@@ -52,6 +69,8 @@ export interface ArchetypeDef {
   /** Initial value per entry of `measurements` (same order). */
   readonly initial: readonly number[];
   readonly ticksPerStep: number;
+  /** Asset index, or null for a generated placeholder. */
+  readonly sprite: number | null;
 }
 
 export interface SpawnDef {
@@ -75,13 +94,17 @@ export interface Definition {
   readonly ticksPerSecond: number;
   readonly packs: readonly PackInfo[];
   readonly measurements: readonly MeasurementDef[];
+  readonly assets: readonly AssetDef[];
   readonly tiles: readonly TileDef[];
   readonly archetypes: readonly ArchetypeDef[];
   readonly maps: readonly MapDef[];
   readonly start: { readonly map: number; readonly player: number };
+  /** In-game calendar; engine defaults when no pack defines `clock`. */
+  readonly clock: ClockDef;
   /** Qualified id → index lookups. */
   readonly ids: {
     readonly measurements: Readonly<Record<string, number>>;
+    readonly assets: Readonly<Record<string, number>>;
     readonly tiles: Readonly<Record<string, number>>;
     readonly archetypes: Readonly<Record<string, number>>;
     readonly maps: Readonly<Record<string, number>>;

@@ -3,7 +3,7 @@
  * codes — per-cell colors are returned separately for the terminal shell.
  */
 
-import type { World } from '../core/index.ts';
+import { hudModel, type World } from '../core/index.ts';
 
 export interface Viewport {
   /** Map area size in cells. */
@@ -18,19 +18,6 @@ export interface AsciiFrame {
   readonly colors: readonly (readonly (string | null)[])[];
   /** HUD: clock line followed by one line per player measurement. */
   readonly hud: readonly string[];
-}
-
-function fmt(n: number): string {
-  return n.toFixed(1);
-}
-
-function clock(seconds: number): string {
-  const s = Math.floor(seconds);
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const pad = (v: number) => String(v).padStart(2, '0');
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
 }
 
 export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
@@ -64,13 +51,8 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
   for (const e of world.entities) if (e !== player) draw(e);
   draw(player);
 
-  const hud = [`Time: ${clock(world.seconds)} (tick ${world.tick})`];
-  for (const idx of player.archetype.measurements) {
-    const md = world.def.measurements[idx]!;
-    const max = player.max[idx]!;
-    const v = player.m[idx]!;
-    hud.push(Number.isFinite(max) ? `${md.label}: ${fmt(v)}/${fmt(max)}` : `${md.label}: ${fmt(v)}`);
-  }
+  const model = hudModel(world);
+  const hud = [model.time, ...model.measurements.map((m) => m.text)];
 
   return { lines: glyphs.map((r) => r.join('')), colors, hud };
 }

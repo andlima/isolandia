@@ -9,8 +9,10 @@ tiles:
     glyph: ","
     color: "#2f7d32"
     walkable: true
+    sprite: grass_img
   - id: car
     label: Wrecked car
     glyph: "&"
     color: "#a33a2a"
     walkable: false
+    sprite: car_img

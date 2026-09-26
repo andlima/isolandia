@@ -10,6 +10,7 @@ archetypes:
     label: Shambler
     glyph: Z
     color: "#5fae3e"
+    sprite: shambler_img
     tags: [undead]
     measurements: [base:hp]
     initial: { hp: 40 }

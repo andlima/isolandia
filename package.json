@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "bench": "node scripts/bench.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "bench:sim": "node --import tsx scripts/sim-bench.ts",
     "play": "node --import tsx src/cli/play.ts",
     "check": "node --import tsx src/cli/check.ts"

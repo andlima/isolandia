@@ -18,7 +18,7 @@ test('renderAscii: snapshot of a small fixture map', () => {
       ' #...# ',
       ' ##### ',
       '',
-      'Time: 00:00:02 (tick 25)',
+      'Time: Day 1 08:02 (tick 25)',
       'HP: 10.0/10.0',
       'Food: 47.5/100.0',
     ].join('\n'),
@@ -30,7 +30,7 @@ test('renderAscii: snapshot of a small fixture map', () => {
 
 test('renderAscii: centers on the player and clips to the viewport', () => {
   const w = World.create(loadFixture(), 1);
-  w.queueIntent({ dx: -1, dy: 1 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 1 });
   w.step();
   const frame = renderAscii(w, { width: 3, height: 3 });
   assert.deepEqual(frame.lines, ['#..', '#@.', '###']);

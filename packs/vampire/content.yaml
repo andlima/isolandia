@@ -5,7 +5,8 @@ measurements:
     # Blood capacity is tied to health: half of current hp, at least 10.
     max: "max(10, self.base:hp / 2)"
     initial: 50
-    rate: -0.8           # drains 0.8 per second
+    # Drains 0.8 per second at night, 2.0 in daylight.
+    rate: "-0.8 - 1.2 * world.is_day"
 
 tiles:
   - id: carpet
@@ -13,11 +14,13 @@ tiles:
     glyph: "."
     color: "#8b1e2d"
     walkable: true
+    sprite: carpet_img
   - id: coffin
     label: Coffin
     glyph: "="
     color: "#4a3426"
     walkable: false
+    sprite: coffin_img
   - id: window
     label: Window
     glyph: "\""
@@ -29,6 +32,7 @@ archetypes:
     label: Vampire
     glyph: V
     color: "#e0e0ff"
+    sprite: vampire_img
     tags: [humanoid, undead]
     measurements: [hp, blood]
     ticks_per_step: 1
@@ -39,6 +43,10 @@ archetypes:
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }
+
+# The night begins as the game does: it starts at dusk.
+clock:
+  start: "20:00"
 
 start:
   map: mansion

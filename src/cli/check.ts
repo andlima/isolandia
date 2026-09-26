@@ -4,6 +4,6 @@ const { dirs } = parseArgs(process.argv.slice(2), 'usage: npm run check -- <pack
 const def = loadOrExit(dirs);
 console.log(
   `OK: ${def.packs.map((p) => `${p.namespace}@${p.version}`).join(', ')} — ` +
-    `${def.measurements.length} measurements, ${def.tiles.length} tiles, ` +
+    `${def.measurements.length} measurements, ${def.assets.length} assets, ${def.tiles.length} tiles, ` +
     `${def.archetypes.length} archetypes, ${def.maps.length} maps`,
 );

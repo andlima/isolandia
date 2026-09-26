@@ -63,7 +63,7 @@ test('loads base + vampire, with an expression max tied to base:hp', () => {
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const blood = r.definition.measurements[r.definition.ids.measurements['vamp:blood']!]!;
   assert.equal(typeof blood.maxFn, 'function');
-  assert.equal(blood.rateConst, -0.8);
+  assert.equal(typeof blood.rateFn, 'function'); // reads world.is_day
   // A humanoid from base spawned via the vampire map legend.
   const humanoid = r.definition.ids.archetypes['base:humanoid'];
   assert.ok(r.definition.maps[0]!.spawns.some((s) => s.archetype === humanoid));
@@ -83,9 +83,10 @@ test('the loaded definition is deeply frozen', () => {
 });
 
 test('zombie and vampire cannot load together without an explicit start choice', () => {
-  // Both define `start`: exactly one is allowed.
+  // Both define `start` and `clock`: at most one of each is allowed.
   const errors = errorsOf([BASE, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 44, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 49, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 52, message: /duplicate 'start': already defined in pack 'zmb'/ });
 });
 
 // ── One failing fixture per validation rule ────────────────────────────────
@@ -352,6 +353,56 @@ test('error: duplicate start', () => {
   expectError(errors, { pack: 't', file: 'start2.yaml', path: 'start', line: 2, message: /duplicate 'start': already defined in pack 't' \(map\.yaml\)/ });
 });
 
+// ── clock ─────────────────────────────────────────────────────────────────
+
+test('clock: engine defaults when no pack defines it', () => {
+  const r = loadPacks([fixture()]);
+  assert.ok(r.ok);
+  assert.deepEqual(r.definition.clock, { dayLength: 1440, start: 480, dawn: 360, dusk: 1200 });
+});
+
+test('clock: fields parse to seconds and minutes since midnight', () => {
+  const r = loadPacks([fixture({ 'clock.yaml': 'clock:\n  day_length: 600\n  start: "21:30"\n  dawn: "05:15"\n  dusk: "19:00"\n' })]);
+  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+  assert.deepEqual(r.definition.clock, { dayLength: 600, start: 21 * 60 + 30, dawn: 5 * 60 + 15, dusk: 19 * 60 });
+});
+
+test('clock: the genre packs define different calendars; base does not', () => {
+  const zombie = loadPacks([BASE, ZOMBIE]);
+  const vampire = loadPacks([BASE, VAMPIRE]);
+  assert.ok(zombie.ok && vampire.ok);
+  assert.equal(zombie.definition.clock.start, 8 * 60);
+  assert.equal(vampire.definition.clock.start, 20 * 60);
+  assert.ok(!Object.values(BASE.files).some((text) => /^clock:/m.test(text)));
+});
+
+test('error: duplicate clock names the other pack', () => {
+  const other = pack('other', { 'pack.yaml': 'namespace: o\nname: Other\nversion: 1.0.0\n', 'c.yaml': 'clock:\n  start: "09:00"\n' });
+  const errors = errorsOf([fixture({ 'clock.yaml': 'clock:\n  start: "07:00"\n' }), other]);
+  expectError(errors, { pack: 'o', file: 'c.yaml', path: 'clock', line: 2, message: /duplicate 'clock': already defined in pack 't' \(clock\.yaml\)/ });
+});
+
+test('error: clock fields', () => {
+  const load = (body: string) => errorsOf([fixture({ 'clock.yaml': `clock:\n${body}` })]);
+  expectError(load('  day_lenght: 600\n'), {
+    pack: 't',
+    file: 'clock.yaml',
+    path: 'clock.day_lenght',
+    line: 2,
+    message: /unknown clock field 'day_lenght' \(did you mean 'day_length'\?\)/,
+  });
+  expectError(load('  day_length: 0\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /day_length' must be a number of seconds > 0/ });
+  expectError(load('  day_length: -5\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /> 0/ });
+  expectError(load('  day_length: .inf\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /must be a number/ });
+  expectError(load('  day_length: "24m"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /must be a number/ });
+  expectError(load('  start: "24:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.start', line: 2, message: /'start' must be a time "HH:MM"/ });
+  expectError(load('  dawn: "6:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /'dawn' must be a time "HH:MM"/ });
+  expectError(load('  dusk: "19:60"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dusk', line: 2, message: /'dusk' must be a time/ });
+  expectError(load('  dawn: "20:00"\n  dusk: "06:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /dawn must be before dusk/ });
+  expectError(load('  dawn: "20:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /dawn must be before dusk/ });
+  expectError(errorsOf([fixture({ 'clock.yaml': 'clock: [1]\n' })]), { pack: 't', file: 'clock.yaml', path: 'clock', line: 1, message: /'clock' must be a mapping/ });
+});
+
 test('error: missing manifest', () => {
   const errors = errorsOf([pack('packs/nowhere', { 'x.yaml': 'tiles: []\n' })]);
   expectError(errors, { pack: 'packs/nowhere', file: 'pack.yaml', path: '', message: /missing pack manifest/ });
@@ -378,4 +429,127 @@ test('collects all errors before failing, across files and packs', () => {
 test('formatError includes pack, file:line and key path', () => {
   const errors = errorsOf([fixture({ 'more.yaml': 'tiles:\n  - { id: pit, label: Pit, glyph: "~~", color: blue, walkable: false }\n' })]);
   assert.ok(errors.map(formatError).includes('t more.yaml:2 tiles[0].glyph: field \'glyph\' must be a single character, got "~~"'));
+});
+
+// ── Assets, sprites, raised ────────────────────────────────────────────────
+
+const ASSETS_T = `assets:
+  - { id: floor_img, file: art/floor.svg }
+  - { id: hero_img, file: art/hero.png, anchor: [0.5, 0.9] }
+`;
+
+function withArt(files: Record<string, string>, otherFiles = ['art/floor.svg', 'art/hero.png', 'README.md']): PackSource {
+  return { ...fixture(files), otherFiles };
+}
+
+test('assets: happy path with sprites, anchors, namespaces and raised defaults', () => {
+  const r = loadPacks([
+    withArt({
+      'assets.yaml': ASSETS_T,
+      'tiles.yaml': `tiles:
+  - { id: floor, label: Floor, glyph: ".", color: white, walkable: true, sprite: floor_img }
+  - { id: wall, label: Wall, glyph: "#", color: gray, walkable: false }
+  - { id: rug, label: Rug, glyph: "~", color: red, walkable: false, raised: false }
+`,
+      'archetypes.yaml': `archetypes:
+  - { id: hero, label: Hero, glyph: "@", color: yellow, sprite: "t:hero_img" }
+  - { id: rock, label: Rock, glyph: o, color: gray }
+`,
+    }),
+  ]);
+  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+  const def = r.definition;
+  assert.deepEqual(def.assets, [
+    { id: 't:floor_img', index: 0, pack: 't', file: 'art/floor.svg', anchor: [0.5, 1] },
+    { id: 't:hero_img', index: 1, pack: 't', file: 'art/hero.png', anchor: [0.5, 0.9] },
+  ]);
+  assert.deepEqual(def.ids.assets, { 't:floor_img': 0, 't:hero_img': 1 });
+  const tile = (id: string) => def.tiles[def.ids.tiles[id]!]!;
+  assert.equal(tile('t:floor').sprite, 0);
+  assert.equal(tile('t:floor').raised, false);
+  assert.equal(tile('t:wall').sprite, null);
+  assert.equal(tile('t:wall').raised, true);
+  assert.equal(tile('t:rug').raised, false);
+  assert.equal(def.archetypes[def.ids.archetypes['t:hero']!]!.sprite, 1);
+  assert.equal(def.archetypes[def.ids.archetypes['t:rock']!]!.sprite, null);
+});
+
+test('assets: a sprite can reference an asset of a dependency by short id', () => {
+  const lib: PackSource = {
+    label: 'lib',
+    files: { 'pack.yaml': 'namespace: lib\nname: L\nversion: 1\n', 'a.yaml': 'assets:\n  - { id: img, file: img.svg }\n' },
+    otherFiles: ['img.svg'],
+  };
+  const game = fixture({
+    'pack.yaml': MANIFEST_T + 'depends: [lib]\n',
+    'tiles.yaml': TILES_T.replace('walkable: true }', 'walkable: true, sprite: img }'),
+  });
+  const r = loadPacks([lib, game]);
+  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+  assert.equal(r.definition.assets[0]!.pack, 'lib');
+  assert.equal(r.definition.tiles[0]!.sprite, 0);
+});
+
+test('assets: the real genre packs load with their assets', () => {
+  for (const genre of [ZOMBIE, VAMPIRE]) {
+    const r = loadPacks([BASE, genre]);
+    assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+    const def = r.definition;
+    assert.ok(def.assets.length >= 2);
+    assert.ok(def.tiles.some((t) => t.sprite !== null) && def.tiles.some((t) => t.sprite === null));
+    assert.ok(def.archetypes.some((a) => a.sprite !== null) && def.archetypes.some((a) => a.sprite === null));
+  }
+});
+
+test('error: asset file missing (with suggestion)', () => {
+  const errors = errorsOf([withArt({ 'assets.yaml': 'assets:\n  - { id: a, file: art/flor.svg }\n  - { id: b, file: floor.svg }\n' })]);
+  expectError(errors, {
+    pack: 't',
+    file: 'assets.yaml',
+    path: 'assets[0].file',
+    line: 2,
+    message: /^asset file 'art\/flor\.svg' not found in pack 't' \(did you mean 'art\/floor\.svg'\?\)$/,
+  });
+  expectError(errors, { pack: 't', file: 'assets.yaml', path: 'assets[1].file', line: 3, message: /did you mean 'art\/floor\.svg'/ });
+});
+
+test('error: asset with an unsupported extension', () => {
+  const errors = errorsOf([withArt({ 'assets.yaml': 'assets:\n  - { id: a, file: README.md }\n' })]);
+  expectError(errors, { pack: 't', file: 'assets.yaml', path: 'assets[0].file', line: 2, message: /unsupported asset file 'README\.md': must end in \.svg or \.png/ });
+});
+
+test('error: asset anchor out of range', () => {
+  const errors = errorsOf([withArt({ 'assets.yaml': 'assets:\n  - { id: a, file: art/floor.svg, anchor: [0.5, 1.5] }\n' })]);
+  expectError(errors, { pack: 't', file: 'assets.yaml', path: 'assets[0].anchor', line: 2, message: /anchor \[0\.5,1\.5\] is out of range/ });
+});
+
+test('error: asset anchor malformed', () => {
+  const errors = errorsOf([
+    withArt({ 'assets.yaml': 'assets:\n  - { id: a, file: art/floor.svg, anchor: [0.5] }\n  - { id: b, file: art/hero.png, anchor: "top" }\n' }),
+  ]);
+  expectError(errors, { pack: 't', file: 'assets.yaml', path: 'assets[0].anchor', line: 2, message: /must be a pair of numbers \[ax, ay\], got \[0\.5\]/ });
+  expectError(errors, { pack: 't', file: 'assets.yaml', path: 'assets[1].anchor', line: 3, message: /must be a pair of numbers/ });
+});
+
+test('error: unknown sprite reference', () => {
+  const errors = errorsOf([
+    withArt({
+      'assets.yaml': ASSETS_T,
+      'archetypes.yaml': 'archetypes:\n  - { id: hero, label: H, glyph: "@", color: red, sprite: hero_imgg }\n',
+      'tiles.yaml': TILES_T.replace('walkable: false }', 'walkable: false, sprite: wall_img }'),
+    }),
+  ]);
+  expectError(errors, {
+    pack: 't',
+    file: 'archetypes.yaml',
+    path: 'archetypes[0].sprite',
+    line: 2,
+    message: /^unknown asset 'hero_imgg' \(did you mean 'hero_img'\?\)$/,
+  });
+  expectError(errors, { pack: 't', file: 'tiles.yaml', path: 'tiles[1].sprite', line: 3, message: /^unknown asset 'wall_img'/ });
+});
+
+test('readPack lists non-YAML files', () => {
+  assert.ok(ZOMBIE.otherFiles?.some((f) => f.endsWith('.svg')));
+  assert.ok(!ZOMBIE.otherFiles?.some((f) => f.endsWith('.yaml')));
 });

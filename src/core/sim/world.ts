@@ -3,8 +3,10 @@
  * Deterministic: same definition + seed + intents ⇒ same state.
  */
 
+import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, Definition, MeasurementDef } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
+import { Pathfinder } from './astar.ts';
 import { Grid } from './grid.ts';
 import { Rng } from './rng.ts';
 
@@ -19,11 +21,44 @@ export interface Entity extends ExprEntity {
   readonly max: Float64Array;
   /** Ticks until the entity may step again. */
   moveCooldown: number;
+  /** Tile the current (or last) step started from; equals (x, y) before any step. */
+  fromX: number;
+  fromY: number;
+  /**
+   * World tick at which the current step starts showing: the value of
+   * `world.tick` right after the tick that took the step. See `renderPosition`.
+   */
+  stepTick: number;
+  /** Remaining path as cell indices (`y * width + x`), or null. */
+  path: Int32Array | null;
+  /** Index of the next cell of `path` to step onto. */
+  pathPos: number;
 }
 
-export interface Intent {
+/** One-tile move in a direction (keyboard); cancels any active path. */
+export interface StepIntent {
+  readonly kind: 'step';
   readonly dx: -1 | 0 | 1;
   readonly dy: -1 | 0 | 1;
+}
+
+/** Walk to a tile along an A* path computed at the start of the next tick. */
+export interface GotoIntent {
+  readonly kind: 'goto';
+  readonly x: number;
+  readonly y: number;
+}
+
+export type Intent = StepIntent | GotoIntent;
+
+/** Outcome of the latest goto intent, for shell feedback. */
+export interface GotoRecord {
+  readonly x: number;
+  readonly y: number;
+  /** False when the goal was blocked, out of bounds or unreachable. */
+  readonly ok: boolean;
+  /** Tick at which the goto was resolved. */
+  readonly tick: number;
 }
 
 export interface EntitySnapshot {
@@ -31,6 +66,12 @@ export interface EntitySnapshot {
   archetype: string;
   x: number;
   y: number;
+  fromX: number;
+  fromY: number;
+  stepTick: number;
+  moveCooldown: number;
+  /** Remaining path cells as [x, y] pairs. */
+  path: [number, number][] | null;
   measurements: Record<string, number>;
 }
 
@@ -38,6 +79,8 @@ export interface WorldSnapshot {
   tick: number;
   rng: number;
   player: number;
+  intent: Intent | null;
+  lastGoto: GotoRecord | null;
   entities: EntitySnapshot[];
 }
 
@@ -60,7 +103,11 @@ export class World {
   /** Expression warnings (e.g. division by zero) with occurrence counts. */
   readonly warnings = new Map<string, number>();
 
+  /** Result of the most recent goto intent (a new object each time). */
+  lastGoto: GotoRecord | null = null;
+
   private intent: Intent | null = null;
+  private pathfinder: Pathfinder | null = null;
   private readonly ctx: ExprContext;
   private readonly tagSets: ReadonlySet<string>[];
 
@@ -83,6 +130,7 @@ export class World {
       player: this.player,
       tick: 0,
       ticksPerSecond: def.ticksPerSecond,
+      clock: def.clock,
       random: () => world.rng.next(),
       tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
@@ -98,19 +146,45 @@ export class World {
     return this.tick / this.def.ticksPerSecond;
   }
 
+  /** In-game calendar time at the current tick. */
+  get clock(): ClockTime {
+    return clockAt(this.def.clock, this.tick, this.def.ticksPerSecond);
+  }
+
   private spawn(archetype: ArchetypeDef, x: number, y: number): Entity {
     const m = new Float64Array(this.def.measurements.length);
     archetype.measurements.forEach((idx, k) => (m[idx] = archetype.initial[k]!));
     const max = new Float64Array(this.def.measurements.length).fill(Infinity);
-    const e: Entity = { id: this.entities.length, archetype, x, y, m, max, tags: this.tagSets[archetype.index]!, moveCooldown: 0 };
+    const e: Entity = {
+      id: this.entities.length,
+      archetype,
+      x,
+      y,
+      m,
+      max,
+      tags: this.tagSets[archetype.index]!,
+      moveCooldown: 0,
+      fromX: x,
+      fromY: y,
+      stepTick: 0,
+      path: null,
+      pathPos: 0,
+    };
     this.entities.push(e);
     return e;
   }
 
   /** Queue the player's next move; the latest intent wins until it is applied. */
   queueIntent(intent: Intent): void {
-    if (intent.dx === 0 && intent.dy === 0) return;
+    if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     this.intent = intent;
+  }
+
+  /** Goal tile of an entity's active path, or null. */
+  pathGoal(e: Entity): { x: number; y: number } | null {
+    if (!e.path || e.pathPos >= e.path.length) return null;
+    const i = e.path[e.path.length - 1]!;
+    return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
   /** Advance exactly one tick (1 / ticksPerSecond seconds). */
@@ -134,16 +208,42 @@ export class World {
 
   private applyIntent(): void {
     const p = this.player;
+    const intent = this.intent;
+    if (intent?.kind === 'goto') {
+      this.intent = null;
+      this.pathfinder ??= new Pathfinder(this.grid);
+      const path = this.pathfinder.findPath(p.x, p.y, intent.x, intent.y);
+      p.path = path && path.length > 0 ? path : null;
+      p.pathPos = 0;
+      this.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+    } else if (intent?.kind === 'step') {
+      p.path = null;
+    }
+
     if (p.moveCooldown > 0) p.moveCooldown--;
-    if (!this.intent || p.moveCooldown > 0) return;
-    const { dx, dy } = this.intent;
-    this.intent = null;
-    const nx = p.x + dx;
-    const ny = p.y + dy;
-    if (!this.grid.walkable(nx, ny)) return;
-    p.x = nx;
-    p.y = ny;
-    p.moveCooldown = p.archetype.ticksPerStep;
+    if (p.moveCooldown > 0) return;
+    if (this.intent?.kind === 'step') {
+      const { dx, dy } = this.intent;
+      this.intent = null;
+      this.move(p, dx, dy);
+    } else if (p.path) {
+      const next = p.path[p.pathPos++]!;
+      const w = this.grid.width;
+      if (p.pathPos >= p.path.length) p.path = null;
+      if (!this.move(p, (next % w) - p.x, Math.floor(next / w) - p.y)) p.path = null;
+    }
+  }
+
+  /** Take one step if allowed; records the render-facing step state. */
+  private move(e: Entity, dx: number, dy: number): boolean {
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy)) return false;
+    e.fromX = e.x;
+    e.fromY = e.y;
+    e.stepTick = this.tick + 1;
+    e.x += dx;
+    e.y += dy;
+    e.moveCooldown = e.archetype.ticksPerStep;
+    return true;
   }
 
   /** Resolved max of a measurement for an entity (Infinity if unbounded). */
@@ -179,11 +279,20 @@ export class World {
       tick: this.tick,
       rng: this.rng.state,
       player: this.player.id,
+      intent: this.intent,
+      lastGoto: this.lastGoto,
       entities: this.entities.map((e) => ({
         id: e.id,
         archetype: e.archetype.id,
         x: e.x,
         y: e.y,
+        fromX: e.fromX,
+        fromY: e.fromY,
+        stepTick: e.stepTick,
+        moveCooldown: e.moveCooldown,
+        path: e.path
+          ? [...e.path.subarray(e.pathPos)].map((i): [number, number] => [i % this.grid.width, Math.floor(i / this.grid.width)])
+          : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
       })),
     };

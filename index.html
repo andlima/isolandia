@@ -3,18 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <title>isolandia — S0 iso spike</title>
+    <title>isolandia</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; }
       canvas { display: block; }
       #hud {
         position: fixed; top: 8px; left: 8px; margin: 0; padding: 6px 8px;
-        font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
         background: rgba(0, 0, 0, 0.6); border-radius: 4px; pointer-events: none;
+      }
+      #errors {
+        margin: 0; padding: 16px; height: 100%; box-sizing: border-box; overflow: auto;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; white-space: pre-wrap;
       }
     </style>
   </head>
-  <body>
-    <script type="module" src="/spike/main.ts"></script>
+  <!-- Default ?packs= list: the engine source stays genre-agnostic. -->
+  <body data-default-packs="base,zombie">
+    <script type="module" src="/src/web/main.ts"></script>
   </body>
 </html>

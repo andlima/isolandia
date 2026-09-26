@@ -1,0 +1,11 @@
+# Hand-written placeholder art on the 64×32 grid. Tiles anchor at the
+# diamond's bottom vertex, archetypes at the tile's ground centre; the
+# default anchor [0.5, 1] is the image's bottom centre.
+assets:
+  - id: grass_img
+    file: assets/grass.svg
+  - id: car_img
+    file: assets/car.svg
+  - id: shambler_img
+    file: assets/shambler.svg
+    anchor: [0.5, 0.92]   # feet at the shadow's centre

@@ -11,12 +11,15 @@ import { at, type ErrorSink, type SourceFile, type Src } from './errors.ts';
 export interface PackSource {
   /** Human label for errors raised before the namespace is known (e.g. the directory). */
   readonly label: string;
+  /** YAML files: relative path → text. */
   readonly files: Readonly<Record<string, string>>;
+  /** Relative paths of the pack's non-YAML files (names only), for asset checks. */
+  readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'tiles', 'archetypes', 'maps'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
-export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start'];
+export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start', 'clock'];
 
 export const ID_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -39,8 +42,11 @@ export interface RawPack {
   readonly version: string;
   readonly depends: readonly { ns: string; src: Src }[];
   readonly manifest: SourceFile;
+  /** Non-YAML files shipped with the pack. */
+  readonly otherFiles: ReadonlySet<string>;
   readonly entries: Record<ListDomain, RawEntry[]>;
   readonly starts: RawEntry[];
+  readonly clocks: RawEntry[];
 }
 
 export const MANIFEST = 'pack.yaml';
@@ -120,8 +126,10 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     version: String(version ?? ''),
     depends,
     manifest,
-    entries: { measurements: [], tiles: [], archetypes: [], maps: [] },
+    otherFiles: new Set(source.otherFiles ?? []),
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [] },
     starts: [],
+    clocks: [],
   };
 }
 
@@ -149,6 +157,11 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
       if (key === 'start') {
         if (!isObject(value)) sink.add(ksrc, "'start' must be a mapping with 'map' and 'player'");
         else pack.starts.push({ src: ksrc, value });
+        continue;
+      }
+      if (key === 'clock') {
+        if (!isObject(value)) sink.add(ksrc, "'clock' must be a mapping (day_length, start, dawn, dusk)");
+        else pack.clocks.push({ src: ksrc, value });
         continue;
       }
       if (!(LIST_DOMAINS as readonly string[]).includes(key)) {
