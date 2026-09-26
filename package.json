@@ -10,10 +10,13 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "bench": "node scripts/bench.mjs",
-    "bench:sim": "node --import tsx scripts/sim-bench.ts"
+    "bench:sim": "node --import tsx scripts/sim-bench.ts",
+    "play": "node --import tsx src/cli/play.ts",
+    "check": "node --import tsx src/cli/check.ts"
   },
   "dependencies": {
-    "pixi.js": "^8.21.0"
+    "pixi.js": "^8.21.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

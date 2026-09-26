@@ -1,0 +1,16 @@
+tiles:
+  - id: road
+    label: Road
+    glyph: ":"
+    color: "#555555"
+    walkable: true
+  - id: grass
+    label: Grass
+    glyph: ","
+    color: "#2f7d32"
+    walkable: true
+  - id: car
+    label: Wrecked car
+    glyph: "&"
+    color: "#a33a2a"
+    walkable: false
