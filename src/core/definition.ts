@@ -4,6 +4,7 @@
  * compiled closure, every id is qualified (`ns:id`).
  */
 
+import type { ClockDef } from './clock.ts';
 import type { Compiled } from './expr/index.ts';
 
 export const TICKS_PER_SECOND = 10;
@@ -98,6 +99,8 @@ export interface Definition {
   readonly archetypes: readonly ArchetypeDef[];
   readonly maps: readonly MapDef[];
   readonly start: { readonly map: number; readonly player: number };
+  /** In-game calendar; engine defaults when no pack defines `clock`. */
+  readonly clock: ClockDef;
   /** Qualified id → index lookups. */
   readonly ids: {
     readonly measurements: Readonly<Record<string, number>>;

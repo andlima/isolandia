@@ -6,6 +6,7 @@
  * whole set of packs is valid.
  */
 
+import { DEFAULT_CLOCK, parseTimeOfDay, type ClockDef } from '../clock.ts';
 import {
   TICKS_PER_SECOND,
   type ArchetypeDef,
@@ -67,6 +68,7 @@ class Loader {
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements));
     const maps = this.defined.maps.map((d) => this.map(d));
     const start = this.start(maps);
+    const clock = this.clock();
     if (this.sink.count > 0 || !start) return { ok: false, errors: this.sink.errors };
 
     const ids = (list: readonly { id: string; index: number }[]) => Object.fromEntries(list.map((d) => [d.id, d.index]));
@@ -86,6 +88,7 @@ class Loader {
       archetypes,
       maps,
       start,
+      clock,
       ids: { measurements: ids(measurements), assets: ids(assets), tiles: ids(tiles), archetypes: ids(archetypes), maps: ids(maps) },
     };
     return { ok: true, definition: deepFreeze(definition) };
@@ -383,6 +386,39 @@ class Loader {
       return null;
     }
     return { map: map.index, player: player.index };
+  }
+
+  private clock(): ClockDef {
+    const all = this.packs.flatMap(({ raw }) => raw.clocks);
+    const [first, ...rest] = all;
+    if (!first) return DEFAULT_CLOCK;
+    for (const extra of rest) {
+      const s = first.src;
+      this.sink.add(extra.src, `duplicate 'clock': already defined in pack '${s.source.pack}' (${s.source.file})`);
+    }
+    const f = new Fields(this.sink, first.src, first.value, ['day_length', 'start', 'dawn', 'dusk'], 'clock');
+    let dayLength = f.number('day_length', false) ?? DEFAULT_CLOCK.dayLength;
+    if (dayLength <= 0) {
+      this.sink.add(f.at('day_length'), `field 'day_length' must be a number of seconds > 0, got ${dayLength}`);
+      dayLength = DEFAULT_CLOCK.dayLength;
+    }
+    const time = (key: 'start' | 'dawn' | 'dusk'): number => {
+      const v = f.raw(key);
+      if (v === undefined || v === null) return DEFAULT_CLOCK[key];
+      const m = typeof v === 'string' ? parseTimeOfDay(v) : null;
+      if (m === null) {
+        this.sink.add(f.at(key), `field '${key}' must be a time "HH:MM" (00:00–23:59), got ${JSON.stringify(v)}`);
+        return DEFAULT_CLOCK[key];
+      }
+      return m;
+    };
+    const start = time('start');
+    const dawn = time('dawn');
+    const dusk = time('dusk');
+    if (dawn >= dusk) {
+      this.sink.add(f.has('dawn') ? f.at('dawn') : f.at('dusk'), `dawn must be before dusk (daylight cannot wrap past midnight)`);
+    }
+    return { dayLength, start, dawn, dusk };
   }
 }
 

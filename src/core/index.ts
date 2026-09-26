@@ -1,4 +1,5 @@
 export * from './definition.ts';
+export * from './clock.ts';
 export * from './load/index.ts';
 export {
   World,

@@ -18,7 +18,7 @@ test('renderAscii: snapshot of a small fixture map', () => {
       ' #...# ',
       ' ##### ',
       '',
-      'Time: 00:00:02 (tick 25)',
+      'Time: Day 1 08:02 (tick 25)',
       'HP: 10.0/10.0',
       'Food: 47.5/100.0',
     ].join('\n'),

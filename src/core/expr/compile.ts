@@ -4,6 +4,7 @@
  * are resolved here to a measurement index, so evaluation is `ctx.self.m[7]`.
  */
 
+import { dayAt, isDayAt, minuteOfDay, type ClockDef } from '../clock.ts';
 import type { Ast } from './parser.ts';
 
 /** An entity as seen by expressions. */
@@ -33,6 +34,8 @@ export interface ExprContext {
   player: ExprEntity;
   tick: number;
   ticksPerSecond: number;
+  /** Calendar constants; `world.day`, `world.hour`, … are computed from `tick`. */
+  clock: ClockDef;
   /** Seeded RNG returning floats in [0, 1). */
   random(): number;
   tileIdAt(x: number, y: number): string;
@@ -186,7 +189,7 @@ const BUILTINS: Record<string, Builtin> = {
 export const BUILTIN_NAMES: readonly string[] = Object.keys(BUILTINS);
 
 const TILE_FIELDS = ['x', 'y', 'id'];
-const WORLD_FIELDS = ['tick', 'seconds'];
+const WORLD_FIELDS = ['tick', 'seconds', 'day', 'hour', 'minute', 'time_of_day', 'is_day'];
 
 /** Levenshtein edit distance. */
 export function levenshtein(a: string, b: string): number {
@@ -266,6 +269,11 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'world':
         if (prop === 'tick') return { fn: (c) => c.tick, type: 'number' };
         if (prop === 'seconds') return { fn: (c) => c.tick / c.ticksPerSecond, type: 'number' };
+        if (prop === 'day') return { fn: (c) => dayAt(c.clock, c.tick, c.ticksPerSecond), type: 'number' };
+        if (prop === 'hour') return { fn: (c) => Math.floor(minuteOfDay(c.clock, c.tick, c.ticksPerSecond) / 60), type: 'number' };
+        if (prop === 'minute') return { fn: (c) => Math.floor(minuteOfDay(c.clock, c.tick, c.ticksPerSecond) % 60), type: 'number' };
+        if (prop === 'time_of_day') return { fn: (c) => minuteOfDay(c.clock, c.tick, c.ticksPerSecond) / 60, type: 'number' };
+        if (prop === 'is_day') return { fn: (c) => isDayAt(c.clock, c.tick, c.ticksPerSecond), type: 'boolean' };
         return err(`unknown property 'world.${prop}'${hint(`world.${prop}`, WORLD_FIELDS.map((f) => `world.${f}`))}`, node.pos);
       default:
         return ident(obj);
@@ -281,7 +289,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'tile':
         return { fn: (c) => ({ x: c.self.x, y: c.self.y, id: c.tileIdAt(c.self.x, c.self.y) }), type: 'tile' };
       case 'world':
-        return err(`'world' is not a value; use ${WORLD_FIELDS.map((f) => `world.${f}`).join(' or ')}`, node.pos);
+        return err(`'world' is not a value; use one of ${WORLD_FIELDS.map((f) => `world.${f}`).join(', ')}`, node.pos);
       default:
         return err(`unknown identifier '${node.name}'${hint(node.name, SCOPE_NAMES)}`, node.pos);
     }

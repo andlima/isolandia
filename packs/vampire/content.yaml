@@ -5,7 +5,8 @@ measurements:
     # Blood capacity is tied to health: half of current hp, at least 10.
     max: "max(10, self.base:hp / 2)"
     initial: 50
-    rate: -0.8           # drains 0.8 per second
+    # Drains 0.8 per second at night, 2.0 in daylight.
+    rate: "-0.8 - 1.2 * world.is_day"
 
 tiles:
   - id: carpet
@@ -42,6 +43,10 @@ archetypes:
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }
+
+# The night begins as the game does: it starts at dusk.
+clock:
+  start: "20:00"
 
 start:
   map: mansion

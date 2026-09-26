@@ -3,6 +3,7 @@
  * Deterministic: same definition + seed + intents ⇒ same state.
  */
 
+import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, Definition, MeasurementDef } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
@@ -129,6 +130,7 @@ export class World {
       player: this.player,
       tick: 0,
       ticksPerSecond: def.ticksPerSecond,
+      clock: def.clock,
       random: () => world.rng.next(),
       tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
@@ -142,6 +144,11 @@ export class World {
 
   get seconds(): number {
     return this.tick / this.def.ticksPerSecond;
+  }
+
+  /** In-game calendar time at the current tick. */
+  get clock(): ClockTime {
+    return clockAt(this.def.clock, this.tick, this.def.ticksPerSecond);
   }
 
   private spawn(archetype: ArchetypeDef, x: number, y: number): Entity {
