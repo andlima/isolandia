@@ -55,7 +55,7 @@ export function colorize(frame: AsciiFrame): string {
   return [...out, '', ...frame.hud].join('\n');
 }
 
-const d = (dx: -1 | 0 | 1, dy: -1 | 0 | 1): Intent => ({ dx, dy });
+const d = (dx: -1 | 0 | 1, dy: -1 | 0 | 1): Intent => ({ kind: 'step', dx, dy });
 
 /** Key sequence → movement intent (arrows, WASD, numpad, vi keys). */
 export const KEYMAP: Readonly<Record<string, Intent>> = {

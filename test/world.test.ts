@@ -70,24 +70,24 @@ test('movement: 8 directions, blocked by non-walkable tiles, ticks per step', ()
   const w = World.create(loadFixture(), 1);
   const pos = () => [w.player.x, w.player.y];
   // North is a wall.
-  w.queueIntent({ dx: 0, dy: -1 });
+  w.queueIntent({ kind: 'step', dx: 0, dy: -1 });
   w.step();
   assert.deepEqual(pos(), [2, 1]);
   // South-west diagonal is floor.
-  w.queueIntent({ dx: -1, dy: 1 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 1 });
   w.step();
   assert.deepEqual(pos(), [1, 2]);
   // Default ticks_per_step = 2: the next intent waits one tick.
-  w.queueIntent({ dx: 1, dy: 0 });
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0 });
   w.step();
   assert.deepEqual(pos(), [1, 2]);
   w.step();
   assert.deepEqual(pos(), [2, 2]);
   // West twice: second move hits the wall at x = 0.
-  w.queueIntent({ dx: -1, dy: 0 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 0 });
   w.step();
   w.step();
-  w.queueIntent({ dx: -1, dy: 0 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 0 });
   w.step();
   w.step();
   assert.deepEqual(pos(), [1, 2]);
@@ -103,9 +103,9 @@ test('movement: ticks_per_step is configurable per archetype', () => {
 `,
   });
   const w = World.create(def, 1);
-  w.queueIntent({ dx: -1, dy: 1 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 1 });
   w.step();
-  w.queueIntent({ dx: 1, dy: 0 });
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0 });
   w.step();
   assert.deepEqual([w.player.x, w.player.y], [2, 2]);
 });
@@ -114,12 +114,12 @@ function run(defDirs: string[], seed: number, ticks: number): World {
   const def = loadPacksOrThrow(defDirs.map(readPack));
   const w = World.create(def, seed);
   const dirs: Intent[] = [
-    { dx: 1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: -1, dy: -1 },
-    { dx: -1, dy: 0 },
-    { dx: 1, dy: 1 },
-    { dx: 0, dy: -1 },
+    { kind: 'step', dx: 1, dy: 0 },
+    { kind: 'step', dx: 0, dy: 1 },
+    { kind: 'step', dx: -1, dy: -1 },
+    { kind: 'step', dx: -1, dy: 0 },
+    { kind: 'step', dx: 1, dy: 1 },
+    { kind: 'step', dx: 0, dy: -1 },
   ];
   for (let t = 0; t < ticks; t++) {
     if (t % 7 === 0) w.queueIntent(dirs[(t / 7) % dirs.length]!);

@@ -30,7 +30,7 @@ test('renderAscii: snapshot of a small fixture map', () => {
 
 test('renderAscii: centers on the player and clips to the viewport', () => {
   const w = World.create(loadFixture(), 1);
-  w.queueIntent({ dx: -1, dy: 1 });
+  w.queueIntent({ kind: 'step', dx: -1, dy: 1 });
   w.step();
   const frame = renderAscii(w, { width: 3, height: 3 });
   assert.deepEqual(frame.lines, ['#..', '#@.', '###']);
