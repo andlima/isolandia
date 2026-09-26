@@ -1,0 +1,165 @@
+# iso-sandbox — Visão e decisões iniciais
+
+> Documento-memória para apoiar a escrita das primeiras specs.
+> Não é uma spec: registra o *porquê*, as decisões já tomadas e as
+> perguntas em aberto. Atualize-o quando uma decisão mudar.
+
+## 1. Objetivo
+
+Um engine **data-driven** para RPGs open world em **perspectiva isométrica**,
+na linha de *Project Zomboid*: simulação sistêmica (necessidades, tempo,
+loot, IA, crafting) num mundo persistente baseado em grade de tiles.
+
+O diferencial buscado: criar mundos de **gêneros completamente diferentes**
+(zumbi, vampiro, velho oeste, noir…) **do zero**, essencialmente com
+**assets + arquivos declarativos de configuração**, com pouca necessidade
+de scripts. Trocar de gênero deve significar trocar de *pack*, não de código.
+
+Meta realista: **80–90% declarativo**, com uma porta de saída (hooks de
+script sandboxed) para o restante. Não é objetivo igualar o Zomboid em
+escopo.
+
+## 2. Origem: lições do `rogue-engine`
+
+Projeto irmão em `~/code/rogue-engine` — roguelike por turnos, ASCII,
+totalmente definido em YAML. Serve de prova de conceito do modelo
+declarativo.
+
+**Reaproveitar (conceitos, e possivelmente código portado):**
+
+| Conceito | Onde está no rogue-engine | Uso aqui |
+|---|---|---|
+| Measurements genéricas (`hp` é só mais uma) | `docs/schema.md`, `src/runtime/state.js` | Fome, sangue, reputação, suspeita… tudo é measurement |
+| Linguagem de expressões | `src/expressions/`, `docs/expressions.md` | Condições e fórmulas em todo o schema |
+| Pipeline de efeitos | `src/runtime/effects.js` | Base do vocabulário de efeitos (a ser ampliado) |
+| Interaction flows | `src/runtime/flow.js`, `docs/interaction-flows.md` | Menu de contexto (clique direito) e targeting |
+| Tags + validação no load | `src/config/loader.js` | Ainda mais crítico com mods empilhados |
+| Renderer ASCII | `src/renderer/ascii.js` | Debug/testes da simulação antes do isométrico |
+| Fluxo spec-driven com agentes | `AGENTS.md`, `.spec.toml`, `specs/` | Mesmo fluxo neste repo |
+
+**Não reaproveitar:**
+
+- `dispatch(state, action)` **imutável por turno** — não escala para ticks
+  contínuos com centenas/milhares de entidades.
+- **Mapas como strings ASCII** — ok para fixtures de teste, não para o mundo.
+
+**Alerta aprendido:** YAML tende a virar uma linguagem de programação ruim.
+Ex.: o shrine em `games/pirate.yaml` repete `when: 'actor.doubloons >= 5'`
+em cinco efeitos. Defesa: **primitivos ricos** (systems, behaviors, recipes,
+loot tables, dialogues, statuses) em vez de controle de fluxo genérico
+cada vez mais poderoso; e aceitar hooks de script quando o YAML ficar pior
+que código.
+
+## 3. Decisões tomadas
+
+1. **Stack: TypeScript.** Simulação em TS puro; renderer com **PixiJS**
+   (WebGL); jogo servível a partir de um HTML. Desktop depois via
+   **Tauri** (ou Electron) embrulhando o mesmo build, se necessário.
+   - Motivo principal: o fluxo spec-driven com agentes funciona melhor com
+     tudo em texto, testes headless em Node (`node:test`) e verificação
+     visual via Playwright.
+   - Godot foi considerado (também exporta para web, tem ótimo editor e
+     melhor desempenho), mas num engine data-driven o editor seria em
+     grande parte contornado. Se um dia migrar, **specs, schema e packs
+     sobrevivem**; só o código é reescrito.
+2. **Simulação desacoplada:** o core não depende de DOM nem de Pixi.
+   Roda em Node (testes), num Web Worker (browser) ou num shell desktop.
+   Renderer é só um consumidor do estado.
+3. **Tempo em ticks fixos** (ordem de 10 ticks/s) sobre **grade de tiles**;
+   movimento interpolado apenas na renderização. Estado mutável na
+   simulação (sem cópia imutável por tick).
+4. **IDs com namespace desde o primeiro dia** (`base:hunger`,
+   `vamp:blood`), mesmo antes de existir sistema de mods.
+5. **Regra dos dois gêneros:** todo marco é validado com **dois mini-jogos
+   de gêneros diferentes** (ex.: zumbi + vampiro), para impedir que
+   suposições de gênero vazem para o engine.
+6. **Mapas do mundo editados no Tiled** (JSON) quando o mundo crescer;
+   ASCII continua válido para fixtures.
+7. **Dependências mínimas**, no espírito do rogue-engine (parser YAML,
+   PixiJS; o resto justificado caso a caso).
+
+## 4. Primitivos-alvo do schema (esboço, não final)
+
+- **measurements** — valores numéricos com min/max/initial (herdado).
+- **statuses** — estados derivados de limites (`hunger > 70 → Hungry`),
+  com efeitos contínuos (equivalente aos *moodles*).
+- **systems** — regras que rodam sozinhas no tempo:
+  ```yaml
+  systems:
+    - id: vamp:sunburn
+      every: 10s
+      for: "has_tag(self, 'vampire')"
+      when: "world.is_day and tile.exposed_to_sky"
+      effects:
+        - { type: apply, measurement: hp, delta: -2 }
+  ```
+- **actions** — com `requires`, `flow`, **`duration`** e interrupção
+  (quase tudo no Zomboid leva tempo e tem barra de progresso).
+- **behaviors** — IA declarativa: sentidos (visão, audição) + máquina de
+  estados ou utility AI:
+  ```yaml
+  behaviors:
+    base:shambler:
+      senses: { sight: 8, hearing: 15 }
+      states:
+        wander:      { do: random_walk, on: { sees: player -> chase, hears: noise -> investigate } }
+        investigate: { do: goto_last_noise, timeout: 30s -> wander }
+        chase:       { do: pursue, on: { adjacent: target -> attack, lost: target -> investigate } }
+  ```
+- **items / containers** — peso, capacidade, categorias.
+- **loot tables** — distribuição por **tag de sala** (`kitchen`, `saloon`…).
+- **recipes** — crafting declarativo.
+- **factions, dialogues, quest flags, journal** — camada social (noir,
+  velho oeste).
+- **assets manifest** — sprites/spritesheets referenciados por ID.
+- **packs** — base + packs que sobrescrevem/estendem, validados em conjunto.
+
+## 5. Roteiro incremental
+
+Cada marco termina **jogável** e passa pela regra dos dois gêneros.
+
+| # | Marco | Resultado jogável |
+|---|---|---|
+| S0 | **Spike de viabilidade** (antes de tudo): 4×4 chunks de 32×32 tiles isométricos, ~500 entidades vagando com A*, player move por clique; medir fps em notebook médio e celular | Confirma (ou não) TS + Pixi |
+| M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo |
+| M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso |
+| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono |
+| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa |
+| M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |
+| M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |
+| M6 | Mundo em chunks, múltiplos andares, mapas Tiled, save/load | Uma cidadezinha explorável |
+| M7 | Packs/mods: empilhamento, overrides, validação conjunta | Zumbi e vampiro como mods da mesma base |
+| M8 | Camada social: facções, diálogos, quests, journal | Mistério noir curto / duelo no velho oeste |
+| M9 | Hooks de script sandboxed | Um mod "impossível" em YAML puro |
+
+## 6. Riscos
+
+- **Arte isométrica é cara** e é o que faz um gênero *parecer* outro.
+  Começar com placeholders (blocos coloridos, packs Kenney) até ~M4.
+- **Desempenho:** compilar expressões para closures no load; simulação em
+  LOD para chunks distantes; ordenação de profundidade por chunk.
+- **Escopo:** o Zomboid tem mais de uma década de desenvolvimento. O alvo é
+  um núcleo pequeno em que trocar de gênero = trocar de pack.
+- **Creep do YAML** (ver §2): preferir novos primitivos ou hooks de script
+  a condicionais genéricas cada vez mais complexas.
+- **Mods no browser:** instalar mods de terceiros exige upload de zip ou
+  File System Access API; com Tauri vira pasta normal.
+
+## 7. Perguntas em aberto
+
+- Formato dos packs: YAML puro, ou YAML + JSON gerado? Um arquivo por
+  domínio (`items.yaml`, `systems.yaml`…) ou livre?
+- Máquina de estados vs utility AI para `behaviors` — ou ambos?
+- Semântica de override entre packs: substituição total por ID, merge
+  profundo, ou operações de patch explícitas?
+- Linguagem dos hooks de script: JS sandboxed (Worker/`ShadowRealm`) ou
+  Lua (wasmoon/fengari)?
+- Combate: tempo real sobre ticks, ou algo mais tático?
+- Projeção: 2:1 dimétrica clássica? Tamanho de tile? Paredes com cutaway?
+- Quanto do renderer ASCII sobrevive como ferramenta de debug permanente?
+
+## 8. Próximo passo
+
+Autorar via `spec-orchestrator` as primeiras specs, provavelmente nesta
+ordem: **S0 (spike)** → **M0 (núcleo da simulação)** → **schema de packs
+com namespaces** → **renderer isométrico mínimo**.
