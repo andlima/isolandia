@@ -85,7 +85,7 @@ export class CameraController {
 
     window.addEventListener('keydown', (ev) => {
       this.keys.add(ev.key.toLowerCase());
-      this.onKey(ev.key.toLowerCase());
+      if (!ev.repeat) this.onKey(ev.key.toLowerCase());
     });
     window.addEventListener('keyup', (ev) => this.keys.delete(ev.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());

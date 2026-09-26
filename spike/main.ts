@@ -4,8 +4,8 @@ import { Hud } from './render/hud.ts';
 import { CameraController } from './render/input.ts';
 import { screenToTile, worldToIso, type CameraState } from './render/iso.ts';
 import { WorldView } from './render/scene.ts';
-import { makeTextures } from './render/textures.ts';
-import { isWalkable } from './sim/grid.ts';
+import { BLOCK_H, makeTextures } from './render/textures.ts';
+import { inBounds, isWalkable } from './sim/grid.ts';
 import { FixedTickLoop } from './sim/loop.ts';
 import { Sim } from './sim/sim.ts';
 import { RollingStats } from './sim/stats.ts';
@@ -73,7 +73,11 @@ async function main() {
     app.canvas,
     centerOn(sim.posX[0]!, sim.posY[0]!, 1),
     (sx, sy) => {
-      const tile = screenToTile(sx, sy, controller.cam);
+      // Blocks are drawn raised by BLOCK_H, so a click on a block's top face lands
+      // on the floor tile behind it; prefer the raised block when one is under the cursor.
+      const raised = screenToTile(sx, sy + BLOCK_H * controller.cam.zoom, controller.cam);
+      const onBlock = inBounds(world, raised.x, raised.y) && !isWalkable(world, raised.x, raised.y);
+      const tile = onBlock ? raised : screenToTile(sx, sy, controller.cam);
       const ok = isWalkable(world, tile.x, tile.y) && sim.movePlayerTo(tile.x, tile.y);
       view.showTarget(tile.x, tile.y, ok, performance.now());
     },
