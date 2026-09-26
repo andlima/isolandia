@@ -14,5 +14,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["spike", "test", "vite.config.ts"]
+  "include": ["spike", "test", "scripts/*.ts", "vite.config.ts"]
 }

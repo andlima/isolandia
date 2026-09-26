@@ -65,13 +65,16 @@ sorting and draw calls. Results are reported overall and per phase.
 
 ### Headless sim (Node 24, i5-11300H, WSL2)
 
-Measured directly with `Sim.step()` (seed 1337, 600 ticks; the first 100
-ticks include the initial path-request burst):
+Measured directly with `Sim.step()` via `npm run bench:sim`
+(`scripts/sim-bench.ts`; seed 1337, 600 ticks; the first 100 ticks include
+the initial path-request burst):
 
 | n | burst avg | burst p95 | burst max | steady avg | steady p95 | steady max |
 |---|---|---|---|---|---|---|
-| 500 | 0.95 ms | 4.8 ms | 8.4 ms | 0.63 ms | 1.6 ms | 3.9 ms |
-| 2000 | 3.6 ms | 6.5 ms | 7.0 ms | 2.4 ms | 4.1 ms | 5.4 ms |
+| 500 | 0.98 ms | 4.45 ms | 10.25 ms | 0.62 ms | 1.62 ms | 2.57 ms |
+| 2000 | 3.61 ms | 6.32 ms | 6.76 ms | 2.34 ms | 4.01 ms | 6.13 ms |
+
+Max values are single-tick outliers and vary between runs (GC, JIT warm-up).
 
 The tick budget at 10 ticks/s is 100 ms. Even at 2000 entities the sim uses
 under 5 % of it, so the sim is not a bottleneck at this scale.
