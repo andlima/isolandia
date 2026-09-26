@@ -57,9 +57,13 @@ export class Input {
     window.addEventListener('blur', () => this.held.clear());
   }
 
-  /** Call right before each sim tick. */
+  /**
+   * Call right before each sim tick. Re-queues the held direction only on
+   * the tick where the player can step again, so releasing a key between
+   * ticks never leaves a stale step queued.
+   */
   beforeTick(): void {
-    this.queueHeld();
+    if (this.world.player.moveCooldown <= 1) this.queueHeld();
   }
 
   private queueHeld(): void {

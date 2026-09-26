@@ -22,13 +22,16 @@ const HH = TILE_H / 2;
 const BAKE_RESOLUTION = 3;
 
 /**
- * Load every asset (index-aligned with `def.assets`; `urls[i]` null when the
- * shell has no URL for it). Failures log a warning and yield null, so the
- * caller falls back to placeholders.
+ * Load every asset referenced by a tile or archetype (result index-aligned
+ * with `def.assets`; `urls[i]` null when the shell has no URL for it).
+ * Failures log a warning and yield null, so the caller falls back to
+ * placeholders; unreferenced assets are skipped.
  */
-export async function loadAssetTextures(assets: readonly AssetDef[], urls: readonly (string | null)[]): Promise<(Texture | null)[]> {
+export async function loadAssetTextures(def: Definition, urls: readonly (string | null)[]): Promise<(Texture | null)[]> {
+  const used = new Set<number | null>([...def.tiles.map((t) => t.sprite), ...def.archetypes.map((a) => a.sprite)]);
   return Promise.all(
-    assets.map(async (a, i) => {
+    def.assets.map(async (a: AssetDef, i) => {
+      if (!used.has(i)) return null;
       const src = urls[i];
       if (!src) {
         console.warn(`asset ${a.id}: no URL for ${a.pack}/${a.file}; using a placeholder`);

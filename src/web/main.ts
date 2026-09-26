@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     def.packs.map((p) => p.namespace),
     web.urls,
   );
-  const textures = new TextureBank(app.renderer, def, await loadAssetTextures(def.assets, urls));
+  const textures = new TextureBank(app.renderer, def, await loadAssetTextures(def, urls));
   const scene = new IsoScene(world, textures);
   app.stage.addChild(scene.root);
 
