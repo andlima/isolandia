@@ -10,6 +10,7 @@ npm ci
 npm run dev            # open the printed URL
 npm test               # headless unit tests (node:test via tsx)
 npm run bench          # build + serve + Playwright Chromium, n=500 and n=2000
+npm run bench:sim      # headless Sim.step() tick times (no browser)
 ```
 
 Query parameters:
