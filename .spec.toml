@@ -16,7 +16,7 @@ review_default = "claude"
 allowed = ["claude"]
 
 [bootstrap]
-# install_command = "pip install -e ."
+install_command = "npm ci"
 
 [implement]
 # setup_command = "scripts/implement-setup.sh"
@@ -24,9 +24,17 @@ allowed = ["claude"]
 
 [verify]
 
-# No verify gates were auto-detected.
-# Add your test/lint commands here:
-# [[verify.gates]]
-# name = "test"
-# command = "pytest"
-# parallel = true
+[[verify.gates]]
+name = "typecheck"
+command = "npm run typecheck"
+parallel = true
+
+[[verify.gates]]
+name = "test"
+command = "npm test"
+parallel = true
+
+[[verify.gates]]
+name = "build"
+command = "npm run build"
+parallel = true

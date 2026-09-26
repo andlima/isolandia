@@ -3,3 +3,6 @@
 .spec.local.toml
 .claude/settings.local.json
 .codex/
+review.md
+node_modules/
+dist/
