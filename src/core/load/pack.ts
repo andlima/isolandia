@@ -11,10 +11,13 @@ import { at, type ErrorSink, type SourceFile, type Src } from './errors.ts';
 export interface PackSource {
   /** Human label for errors raised before the namespace is known (e.g. the directory). */
   readonly label: string;
+  /** YAML files: relative path → text. */
   readonly files: Readonly<Record<string, string>>;
+  /** Relative paths of the pack's non-YAML files (names only), for asset checks. */
+  readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'tiles', 'archetypes', 'maps'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
 export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start'];
 
@@ -39,6 +42,8 @@ export interface RawPack {
   readonly version: string;
   readonly depends: readonly { ns: string; src: Src }[];
   readonly manifest: SourceFile;
+  /** Non-YAML files shipped with the pack. */
+  readonly otherFiles: ReadonlySet<string>;
   readonly entries: Record<ListDomain, RawEntry[]>;
   readonly starts: RawEntry[];
 }
@@ -120,7 +125,8 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     version: String(version ?? ''),
     depends,
     manifest,
-    entries: { measurements: [], tiles: [], archetypes: [], maps: [] },
+    otherFiles: new Set(source.otherFiles ?? []),
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [] },
     starts: [],
   };
 }

@@ -13,11 +13,13 @@ tiles:
     glyph: "."
     color: "#8b1e2d"
     walkable: true
+    sprite: carpet_img
   - id: coffin
     label: Coffin
     glyph: "="
     color: "#4a3426"
     walkable: false
+    sprite: coffin_img
   - id: window
     label: Window
     glyph: "\""
@@ -29,6 +31,7 @@ archetypes:
     label: Vampire
     glyph: V
     color: "#e0e0ff"
+    sprite: vampire_img
     tags: [humanoid, undead]
     measurements: [hp, blood]
     ticks_per_step: 1
