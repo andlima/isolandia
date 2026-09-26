@@ -3,6 +3,7 @@
  * overlay are built from `hudModel`, so they always show the same values.
  */
 
+import type { ClockTime } from './clock.ts';
 import type { World } from './sim/world.ts';
 
 export interface HudMeasurement {
@@ -15,10 +16,10 @@ export interface HudMeasurement {
 }
 
 export interface HudModel {
-  /** In-game clock, `hh:mm:ss`. */
+  /** In-game date and time, `Day D HH:MM`. */
   readonly clock: string;
   readonly tick: number;
-  /** `Time: hh:mm:ss (tick N)`. */
+  /** `Time: Day D HH:MM (tick N)`. */
   readonly time: string;
   readonly measurements: readonly HudMeasurement[];
 }
@@ -27,18 +28,15 @@ function fmt(n: number): string {
   return n.toFixed(1);
 }
 
-export function formatClock(seconds: number): string {
-  const s = Math.floor(seconds);
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
+/** `Day D HH:MM`. */
+export function formatClock(t: ClockTime): string {
   const pad = (v: number) => String(v).padStart(2, '0');
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  return `Day ${t.day} ${pad(t.hour)}:${pad(t.minute)}`;
 }
 
 export function hudModel(world: World): HudModel {
   const { player } = world;
-  const clock = formatClock(world.seconds);
+  const clock = formatClock(world.clock);
   const measurements = player.archetype.measurements.map((idx): HudMeasurement => {
     const label = world.def.measurements[idx]!.label;
     const max = player.max[idx]!;

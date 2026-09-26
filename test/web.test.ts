@@ -213,8 +213,8 @@ test('hudModel: clock and player measurements, shared with the ASCII HUD', () =>
   const w = World.create(loadFixture(), 1);
   for (let i = 0; i < 25; i++) w.step();
   const m = hudModel(w);
-  assert.equal(m.clock, '00:00:02');
-  assert.equal(m.time, 'Time: 00:00:02 (tick 25)');
+  assert.equal(m.clock, 'Day 1 08:02');
+  assert.equal(m.time, 'Time: Day 1 08:02 (tick 25)');
   assert.deepEqual(
     m.measurements.map((x) => x.text),
     ['HP: 10.0/10.0', 'Food: 47.5/100.0'],

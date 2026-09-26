@@ -42,7 +42,8 @@ unknown pack name — the page shows the complete error list, formatted like
 | `H`                            | Toggle the HUD |
 
 A drag never counts as a click (8 px threshold). The HUD shows the
-in-game clock and the player's measurements, from the same `hudModel` as
+in-game day and time (`Day 1 08:02`, from the pack's `clock`) and the
+player's measurements, from the same `hudModel` as
 the ASCII HUD.
 
 ## Projection

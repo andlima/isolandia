@@ -60,7 +60,20 @@ string in arithmetic is a load error.
 | `self`   | entity | The entity the expression is evaluated for                    |
 | `player` | entity | The player entity                                             |
 | `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`          |
-| `world`  | —      | `world.tick` (ticks since start), `world.seconds` (`tick / 10`) |
+| `world`  | —      | World time; see the fields below                              |
+
+World fields (all derived from the current tick; see the
+[`clock`](packs.md#clock) domain for the calendar):
+
+| Field               | Type    | Meaning |
+|---------------------|---------|---------|
+| `world.tick`        | number  | Ticks since start |
+| `world.seconds`     | number  | **Sim** seconds since start (`tick / 10`); `rate` is per sim second |
+| `world.day`         | number  | In-game day, starting at `1` |
+| `world.hour`        | number  | In-game hour, `0`–`23` |
+| `world.minute`      | number  | In-game minute, `0`–`59` (floored) |
+| `world.time_of_day` | number  | In-game hours since midnight as a float in `[0, 24)`, e.g. `8.5` at 08:30 |
+| `world.is_day`      | boolean | `dawn <= time_of_day < dusk`; `1`/`0` in arithmetic, e.g. `-0.8 - 1.2 * world.is_day` |
 
 Entity members:
 

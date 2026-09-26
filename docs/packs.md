@@ -29,6 +29,7 @@ packs/zombie/
   assets/car.svg       # images referenced by the `assets` domain
   maps/town.yaml
   start.yaml
+  clock.yaml
 ```
 
 File names and layout are free. Each content file holds one or more
@@ -43,6 +44,7 @@ domain. Any other top-level key is a load error.
 | `archetypes`   | list of entries |
 | `maps`         | list of entries |
 | `start`        | one mapping     |
+| `clock`        | one mapping     |
 
 ## Manifest: `pack.yaml`
 
@@ -194,6 +196,34 @@ Exactly one `start` must exist across all loaded packs. Typically the last
 (game) pack defines it; loading two game packs that both define `start`
 is an error.
 
+### `clock`
+
+The in-game calendar. Game time is derived from the tick count, so the
+clock adds no simulation state; expressions read it through `world.day`,
+`world.hour`, `world.is_day` and friends (see
+[expressions](expressions.md#scope)), and the HUD shows `Day D HH:MM`.
+
+| Field        | Type             | Default   | Notes |
+|--------------|------------------|-----------|-------|
+| `day_length` | number (seconds) | `1440`    | Sim seconds per in-game day; must be > 0. `1440` means 1 sim second = 1 game minute (a day lasts 24 real minutes) |
+| `start`      | `"HH:MM"`        | `"08:00"` | Time of day at tick 0, on day 1 |
+| `dawn`       | `"HH:MM"`        | `"06:00"` | Daylight starts (inclusive) |
+| `dusk`       | `"HH:MM"`        | `"20:00"` | Daylight ends (exclusive); must be after `dawn` |
+
+Times are 24-hour `HH:MM` strings (`00:00`–`23:59`); quote them in YAML.
+Daylight does not wrap past midnight.
+
+```yaml
+# packs/vampire/content.yaml
+clock:
+  start: "20:00"      # the game begins at dusk (night)
+```
+
+**At most one** loaded pack may define `clock`; a second definition is an
+error naming the first pack (override semantics come in M7). If no pack
+defines it, the defaults above apply. Like `start`, it belongs in the game
+pack, not in a shared base pack.
+
 ## Namespaces and references
 
 - Namespaces and local ids match `[a-z][a-z0-9_]*`.
@@ -224,7 +254,8 @@ It checks YAML syntax, unknown top-level keys and fields, required fields
 and types, id syntax, duplicate ids, unknown/ambiguous references (with
 Levenshtein ≤ 2 suggestions), expression syntax and names, ragged map
 rows, characters missing from the legend, unmet `depends`, a missing
-or duplicate `start`, and assets: missing files (with suggestions),
+or duplicate `start`, a duplicate or malformed `clock` (non-positive
+`day_length`, times that aren't `HH:MM`, `dawn` not before `dusk`), and assets: missing files (with suggestions),
 unsupported extensions, malformed or out-of-range anchors, and unknown
 `sprite` references. A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
@@ -232,7 +263,8 @@ resolved definition (ids → indices, expressions → closures).
 ## Engine layout
 
 - `src/core/` — platform-free simulation core: `expr/` (lexer, parser,
-  compiler), `load/` (pack parsing, namespaces, validation), `sim/`
+  compiler), `load/` (pack parsing, namespaces, validation), `clock.ts`
+  (in-game calendar derived from the tick), `sim/`
   (world, grid, RNG). No Node built-ins, DOM or Pixi.
 - `src/node/read-pack.ts` — reads a pack directory into
   `{ relativePath: text }` (plus the names of its other files) for the

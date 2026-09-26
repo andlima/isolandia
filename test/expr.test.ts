@@ -9,6 +9,7 @@ import {
   type ExprContext,
   type ExprEntity,
 } from '../src/core/expr/index.ts';
+import { DEFAULT_CLOCK } from '../src/core/clock.ts';
 
 const IDS: Record<string, number> = { 'a:hp': 0, 'a:mp': 1, 'b:blood': 2 };
 
@@ -32,6 +33,7 @@ function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings
     player: entity(4, 6, [7, 8, 9]),
     tick: 25,
     ticksPerSecond: 10,
+    clock: DEFAULT_CLOCK,
     random: () => ((s = (s * 16807) % 2147483647) / 2147483647),
     tileIdAt: (x, y) => (x === 1 && y === 2 ? 't:floor' : 't:wall'),
     warn: (m) => warnings.push(m),
@@ -126,6 +128,27 @@ test('compile: member paths resolve to measurement indices', () => {
   assert.equal(r.expr.fn(ctx), 99);
 });
 
+test('compile: world clock fields at a known tick', () => {
+  // Defaults: 1 sim second = 1 game minute, start 08:00. Tick 25 = 08:02.5.
+  assert.equal(run('world.day'), 1);
+  assert.equal(run('world.hour'), 8);
+  assert.equal(run('world.minute'), 2);
+  assert.ok(Math.abs((run('world.time_of_day') as number) - (8 + 2.5 / 60)) < 1e-12);
+  assert.equal(run('world.is_day'), true);
+  assert.equal(run('1 + world.is_day'), 2);
+  // 16 game hours later (57 600 ticks) it is 00:00:02.5 on day 2: night.
+  const night = context({ tick: 25 + 16 * 60 * 10 });
+  assert.equal(run('world.day', night), 2);
+  assert.equal(run('world.hour', night), 0);
+  assert.equal(run('world.minute', night), 2);
+  assert.equal(run('world.is_day', night), false);
+  assert.equal(run('1 + world.is_day', night), 1);
+  // A custom calendar in the context: 10-minute days starting at dusk.
+  const custom = context({ tick: 0, clock: { dayLength: 600, start: 20 * 60, dawn: 6 * 60, dusk: 20 * 60 } });
+  assert.equal(run('world.is_day', custom), false);
+  assert.equal(run('world.hour', custom), 20);
+});
+
 test('compile: division and modulo by zero return 0 and warn', () => {
   const ctx = context();
   assert.equal(run('self.hp / (self.mp - 20)', ctx), 0);
@@ -181,6 +204,7 @@ test('compile errors: unknown identifiers, functions, members, arity, types', ()
   assert.deepEqual(errorsOf('maxx(1, 2)'), ["unknown function 'maxx' (did you mean 'max'?)"]);
   assert.deepEqual(errorsOf('clamp(1, 2)'), ['clamp() takes 3 arguments, got 2']);
   assert.deepEqual(errorsOf('world.tik'), ["unknown property 'world.tik' (did you mean 'world.tick'?)"]);
+  assert.deepEqual(errorsOf('world.hours'), ["unknown property 'world.hours' (did you mean 'world.hour'?)"]);
   assert.deepEqual(errorsOf('self + 1'), ["operator '+' expects numbers, got entity and number"]);
   // Collects all errors in one expression.
   assert.equal(errorsOf('foo + bar(1)').length, 2);

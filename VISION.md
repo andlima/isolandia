@@ -118,19 +118,25 @@ que código.
 
 Cada marco termina **jogável** e passa pela regra dos dois gêneros.
 
-| # | Marco | Resultado jogável |
-|---|---|---|
-| S0 | **Spike de viabilidade** (antes de tudo): 4×4 chunks de 32×32 tiles isométricos, ~500 entidades vagando com A*, player move por clique; medir fps em notebook médio e celular | Confirma (ou não) TS + Pixi |
-| M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo |
-| M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso |
-| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono |
-| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa |
-| M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |
-| M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |
-| M6 | Mundo em chunks, múltiplos andares, mapas Tiled, save/load | Uma cidadezinha explorável |
-| M7 | Packs/mods: empilhamento, overrides, validação conjunta | Zumbi e vampiro como mods da mesma base |
-| M8 | Camada social: facções, diálogos, quests, journal | Mistério noir curto / duelo no velho oeste |
-| M9 | Hooks de script sandboxed | Um mod "impossível" em YAML puro |
+| # | Marco | Resultado jogável | Status |
+|---|---|---|---|
+| S0 | **Spike de viabilidade** (antes de tudo): 4×4 chunks de 32×32 tiles isométricos, ~500 entidades vagando com A*, player move por clique; medir fps em notebook médio e celular | Confirma (ou não) TS + Pixi | ✅ feito¹ |
+| M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo | ✅ feito |
+| M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso | ✅ feito |
+| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono | 🔜 próximo (relógio já entregue) |
+| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa |  |
+| M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |  |
+| M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |  |
+| M6 | Mundo em chunks, múltiplos andares, mapas Tiled, save/load | Uma cidadezinha explorável |  |
+| M7 | Packs/mods: empilhamento, overrides, validação conjunta | Zumbi e vampiro como mods da mesma base |  |
+| M8 | Camada social: facções, diálogos, quests, journal | Mistério noir curto / duelo no velho oeste |  |
+| M9 | Hooks de script sandboxed | Um mod "impossível" em YAML puro |  |
+
+¹ S0: benchmark headless da simulação medido; os números de **fps no
+browser** (notebook médio e celular) seguem **pendentes** — a tabela manual
+e o `s0-bench.json` ainda precisam ser preenchidos (ver
+`docs/spikes/s0-results.md`, "Browser benchmark"). O veredito do spike só
+fica confirmado depois disso.
 
 ## 6. Riscos
 
@@ -168,9 +174,25 @@ Cada marco termina **jogável** e passa pela regra dos dois gêneros.
   centro do chão do tile. Ver `docs/iso.md`. Paredes com cutaway continuam
   em aberto (M6).
 - Quanto do renderer ASCII sobrevive como ferramenta de debug permanente?
+- ~~Escala de tempo / calendário do jogo?~~ **Decidido (task
+  `world-clock`, base do M2):** a escala vem de um domínio **`clock`**
+  definido pelo pack (`day_length`, `start`, `dawn`, `dusk`); o padrão é
+  **1 dia de jogo = 24 minutos reais** (1 s de simulação = 1 minuto de
+  jogo). O tempo de jogo é **derivado do tick** — não acrescenta estado,
+  então determinismo, snapshots e hashes não mudam. Expressões leem
+  `world.day`, `world.hour`, `world.minute`, `world.time_of_day` e
+  `world.is_day`; `rate` continua por segundo de simulação. **No máximo um
+  pack** define `clock` até existir semântica de override (M7). Ver
+  `docs/packs.md`.
 
 ## 8. Próximo passo
 
-Autorar via `spec-orchestrator` as primeiras specs, provavelmente nesta
-ordem: **S0 (spike)** → **M0 (núcleo da simulação)** → **schema de packs
-com namespaces** → **renderer isométrico mínimo**.
+S0, M0 e M1 estão entregues, e o relógio do mundo (`clock`, com
+`world.*` nas expressões e no HUD) já existe. O próximo passo é autorar via
+`spec-orchestrator` a **spec do M2**: **`systems`**, **`statuses`** e o
+**tint de dia/noite** no renderer iso, tudo em cima do relógio.
+
+Perguntas de design do M2 ainda em aberto (a decidir na spec, não aqui):
+como `systems` agendam trabalho (`every:` em ticks ou em tempo de jogo?),
+como `statuses` entram e saem e interagem com measurements, e como o tint
+de dia/noite é configurado pelo pack.

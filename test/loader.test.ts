@@ -63,7 +63,7 @@ test('loads base + vampire, with an expression max tied to base:hp', () => {
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const blood = r.definition.measurements[r.definition.ids.measurements['vamp:blood']!]!;
   assert.equal(typeof blood.maxFn, 'function');
-  assert.equal(blood.rateConst, -0.8);
+  assert.equal(typeof blood.rateFn, 'function'); // reads world.is_day
   // A humanoid from base spawned via the vampire map legend.
   const humanoid = r.definition.ids.archetypes['base:humanoid'];
   assert.ok(r.definition.maps[0]!.spawns.some((s) => s.archetype === humanoid));
@@ -83,9 +83,10 @@ test('the loaded definition is deeply frozen', () => {
 });
 
 test('zombie and vampire cannot load together without an explicit start choice', () => {
-  // Both define `start`: exactly one is allowed.
+  // Both define `start` and `clock`: at most one of each is allowed.
   const errors = errorsOf([BASE, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 47, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 49, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 52, message: /duplicate 'start': already defined in pack 'zmb'/ });
 });
 
 // ── One failing fixture per validation rule ────────────────────────────────
@@ -350,6 +351,56 @@ test('error: missing start', () => {
 test('error: duplicate start', () => {
   const errors = errorsOf([fixture({ 'start2.yaml': 'start:\n  map: room\n  player: hero\n' })]);
   expectError(errors, { pack: 't', file: 'start2.yaml', path: 'start', line: 2, message: /duplicate 'start': already defined in pack 't' \(map\.yaml\)/ });
+});
+
+// ── clock ─────────────────────────────────────────────────────────────────
+
+test('clock: engine defaults when no pack defines it', () => {
+  const r = loadPacks([fixture()]);
+  assert.ok(r.ok);
+  assert.deepEqual(r.definition.clock, { dayLength: 1440, start: 480, dawn: 360, dusk: 1200 });
+});
+
+test('clock: fields parse to seconds and minutes since midnight', () => {
+  const r = loadPacks([fixture({ 'clock.yaml': 'clock:\n  day_length: 600\n  start: "21:30"\n  dawn: "05:15"\n  dusk: "19:00"\n' })]);
+  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+  assert.deepEqual(r.definition.clock, { dayLength: 600, start: 21 * 60 + 30, dawn: 5 * 60 + 15, dusk: 19 * 60 });
+});
+
+test('clock: the genre packs define different calendars; base does not', () => {
+  const zombie = loadPacks([BASE, ZOMBIE]);
+  const vampire = loadPacks([BASE, VAMPIRE]);
+  assert.ok(zombie.ok && vampire.ok);
+  assert.equal(zombie.definition.clock.start, 8 * 60);
+  assert.equal(vampire.definition.clock.start, 20 * 60);
+  assert.ok(!Object.values(BASE.files).some((text) => /^clock:/m.test(text)));
+});
+
+test('error: duplicate clock names the other pack', () => {
+  const other = pack('other', { 'pack.yaml': 'namespace: o\nname: Other\nversion: 1.0.0\n', 'c.yaml': 'clock:\n  start: "09:00"\n' });
+  const errors = errorsOf([fixture({ 'clock.yaml': 'clock:\n  start: "07:00"\n' }), other]);
+  expectError(errors, { pack: 'o', file: 'c.yaml', path: 'clock', line: 2, message: /duplicate 'clock': already defined in pack 't' \(clock\.yaml\)/ });
+});
+
+test('error: clock fields', () => {
+  const load = (body: string) => errorsOf([fixture({ 'clock.yaml': `clock:\n${body}` })]);
+  expectError(load('  day_lenght: 600\n'), {
+    pack: 't',
+    file: 'clock.yaml',
+    path: 'clock.day_lenght',
+    line: 2,
+    message: /unknown clock field 'day_lenght' \(did you mean 'day_length'\?\)/,
+  });
+  expectError(load('  day_length: 0\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /day_length' must be a number of seconds > 0/ });
+  expectError(load('  day_length: -5\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /> 0/ });
+  expectError(load('  day_length: .inf\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /must be a number/ });
+  expectError(load('  day_length: "24m"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.day_length', line: 2, message: /must be a number/ });
+  expectError(load('  start: "24:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.start', line: 2, message: /'start' must be a time "HH:MM"/ });
+  expectError(load('  dawn: "6:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /'dawn' must be a time "HH:MM"/ });
+  expectError(load('  dusk: "19:60"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dusk', line: 2, message: /'dusk' must be a time/ });
+  expectError(load('  dawn: "20:00"\n  dusk: "06:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /dawn must be before dusk/ });
+  expectError(load('  dawn: "20:00"\n'), { pack: 't', file: 'clock.yaml', path: 'clock.dawn', line: 2, message: /dawn must be before dusk/ });
+  expectError(errorsOf([fixture({ 'clock.yaml': 'clock: [1]\n' })]), { pack: 't', file: 'clock.yaml', path: 'clock', line: 1, message: /'clock' must be a mapping/ });
 });
 
 test('error: missing manifest', () => {

@@ -8,5 +8,5 @@ measurements:
     label: Thirst
     max: 100
     initial: 10
-    # Thirst builds faster once you are hungry.
-    rate: "0.6 + 0.4 * (self.hunger >= 50)"
+    # Thirst builds faster once you are hungry, and a bit faster in daylight.
+    rate: "0.6 + 0.4 * (self.hunger >= 50) + 0.2 * world.is_day"
