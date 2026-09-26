@@ -1,4 +1,4 @@
-# iso-sandbox — Visão e decisões iniciais
+# isolandia — Visão e decisões iniciais
 
 > Documento-memória para apoiar a escrita das primeiras specs.
 > Não é uma spec: registra o *porquê*, as decisões já tomadas e as

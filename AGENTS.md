@@ -1,4 +1,4 @@
-# [Project Name] – Agent Notes
+# isolandia – Agent Notes
 
 ## Spec-Driven Development
 
