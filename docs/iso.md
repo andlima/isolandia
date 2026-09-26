@@ -35,7 +35,7 @@ unknown pack name — the page shows the complete error list, formatted like
 | Input                          | Action |
 |--------------------------------|--------|
 | Click / tap a tile             | Walk there (A\* path). The target is outlined while the path is active; an unreachable tile flashes red |
-| Arrows, WASD, numpad (held)    | Move in 8 directions (same bindings as the terminal; `W` = north on the map, i.e. up-right on screen). Cancels any path |
+| Arrows, WASD, numpad (held)    | Move in 8 directions, screen-relative (`W` = straight up on screen, `W`+`D` = up-right, i.e. map-north); unlike the terminal, which stays grid-aligned. Cancels any path |
 | Drag (mouse or one finger)     | Pan; stops following the player |
 | Wheel / pinch                  | Zoom around the cursor / pinch centre, 0.25×–3× |
 | `Space`                        | Re-centre on the player and follow again |

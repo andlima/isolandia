@@ -152,11 +152,18 @@ test('gestures: pinch zooms around its centre and cancels the tap', () => {
   assert.deepEqual(r.log, []);
 });
 
-test('keys: arrows, WASD and numpad combine into 8 directions', () => {
-  assert.deepEqual(heldDirection(['KeyW']), { dx: 0, dy: -1 });
-  assert.deepEqual(heldDirection(['KeyW', 'KeyD']), { dx: 1, dy: -1 });
-  assert.deepEqual(heldDirection(['ArrowDown', 'ArrowLeft']), { dx: -1, dy: 1 });
-  assert.deepEqual(heldDirection(['Numpad3']), { dx: 1, dy: 1 });
+test('keys: arrows, WASD and numpad are screen-relative and map to grid steps', () => {
+  assert.deepEqual(heldDirection(['KeyW']), { dx: -1, dy: -1 });
+  assert.deepEqual(heldDirection(['KeyD']), { dx: 1, dy: -1 });
+  assert.deepEqual(heldDirection(['KeyS']), { dx: 1, dy: 1 });
+  assert.deepEqual(heldDirection(['KeyA']), { dx: -1, dy: 1 });
+  assert.deepEqual(heldDirection(['KeyW', 'KeyD']), { dx: 0, dy: -1 });
+  assert.deepEqual(heldDirection(['KeyW', 'KeyA']), { dx: -1, dy: 0 });
+  assert.deepEqual(heldDirection(['KeyS', 'KeyD']), { dx: 1, dy: 0 });
+  assert.deepEqual(heldDirection(['ArrowDown', 'ArrowLeft']), { dx: 0, dy: 1 });
+  assert.deepEqual(heldDirection(['ArrowUp']), { dx: -1, dy: -1 });
+  assert.deepEqual(heldDirection(['Numpad9']), { dx: 0, dy: -1 });
+  assert.deepEqual(heldDirection(['Numpad3']), { dx: 1, dy: 0 });
   assert.equal(heldDirection(['KeyA', 'KeyD']), null);
   assert.equal(heldDirection(['KeyH', 'Space']), null);
 });
