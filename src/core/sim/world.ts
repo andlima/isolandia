@@ -38,6 +38,10 @@ export interface Entity extends ExprEntity {
   readonly st: Uint8Array;
   /** The entity's inventory (from its archetype's `inventory`), or null. */
   readonly inv: Container | null;
+  /** Pending movement intent, applied at the start of the next tick. */
+  intent: Intent | null;
+  /** Result of the entity's most recent goto intent (a new object each time). */
+  lastGoto: GotoRecord | null;
 }
 
 /** Recorded when the pack's `start.defeat` condition becomes true. */
@@ -150,14 +154,14 @@ export interface EntitySnapshot {
   measurements: Record<string, number>;
   /** Active status ids, in definition order. */
   statuses: string[];
+  intent: Intent | null;
+  lastGoto: GotoRecord | null;
 }
 
 export interface WorldSnapshot {
   tick: number;
   rng: number;
   player: number;
-  intent: Intent | null;
-  lastGoto: GotoRecord | null;
   /** Pending actions, in queue order. */
   actions: Action[];
   lastAction: ActionRecord | null;
@@ -200,8 +204,6 @@ export class World {
   /** Expression warnings (e.g. division by zero) with occurrence counts. */
   readonly warnings = new Map<string, number>();
 
-  /** Result of the most recent goto intent (a new object each time). */
-  lastGoto: GotoRecord | null = null;
   /** Set once the defeat condition holds; the world is frozen from then on. */
   defeat: DefeatRecord | null = null;
   /** Result of the most recent action (a new object each time). */
@@ -211,7 +213,6 @@ export class World {
   /** Bumped whenever any container's contents change or a pile appears/disappears (for renderers). */
   containerVersion = 0;
 
-  private intent: Intent | null = null;
   private actions: Action[] = [];
   private nextContainerId = 0;
   /** Cell index → ids of the tile containers and ground piles on it, ascending. */
@@ -295,6 +296,11 @@ export class World {
     return new World(def, seed);
   }
 
+  /** Result of the player's most recent goto intent (a new object each time). */
+  get lastGoto(): GotoRecord | null {
+    return this.player.lastGoto;
+  }
+
   get seconds(): number {
     return this.tick / this.def.ticksPerSecond;
   }
@@ -331,6 +337,8 @@ export class World {
       pathPos: 0,
       st: new Uint8Array(this.def.statuses.length),
       inv,
+      intent: null,
+      lastGoto: null,
     };
     this.entities.push(e);
     return e;
@@ -433,11 +441,15 @@ export class World {
     this.actions.push(action);
   }
 
-  /** Queue the player's next move; the latest intent wins until it is applied. */
-  queueIntent(intent: Intent): void {
+  /**
+   * Queue an entity's next move (the player by default); the latest intent
+   * wins until it is applied. Throws for an entity of another world.
+   */
+  queueIntent(intent: Intent, entity: Entity = this.player): void {
+    if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
     if (this.defeat) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
-    this.intent = intent;
+    entity.intent = intent;
   }
 
   /** Goal tile of an entity's active path, or null. */
@@ -448,14 +460,18 @@ export class World {
   }
 
   /**
-   * Advance exactly one tick (1 / ticksPerSecond seconds): intent, drift,
+   * Advance exactly one tick (1 / ticksPerSecond seconds): every entity's
+   * movement intent (id order), player actions, drift,
    * due systems, clamp, status update, defeat check, `tick++`. A no-op once
    * defeated.
    */
   step(): void {
     if (this.defeat) return;
     this.ctx.tick = this.tick;
-    this.applyIntent();
+    for (const e of this.entities) {
+      if (e.intent || e.path) this.applyIntent(e);
+      else if (e.moveCooldown > 0) e.moveCooldown--;
+    }
     if (this.actions.length > 0) this.applyActions();
     this.drift();
     this.runSystems();
@@ -555,27 +571,27 @@ export class World {
     return k !== undefined && e.st[k] === 1;
   }
 
-  private applyIntent(): void {
-    const p = this.player;
-    const intent = this.intent;
+  /** Resolve an entity's pending intent, count its cooldown down, then step or advance its path. */
+  private applyIntent(p: Entity): void {
+    const intent = p.intent;
     if (intent?.kind === 'goto') {
-      this.intent = null;
+      p.intent = null;
       this.pathfinder ??= new Pathfinder(this.grid);
       const path = intent.adjacent
         ? this.pathfinder.findPathAdjacent(p.x, p.y, intent.x, intent.y)
         : this.pathfinder.findPath(p.x, p.y, intent.x, intent.y);
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
-      this.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+      p.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
     } else if (intent?.kind === 'step') {
       p.path = null;
     }
 
     if (p.moveCooldown > 0) p.moveCooldown--;
     if (p.moveCooldown > 0) return;
-    if (this.intent?.kind === 'step') {
-      const { dx, dy } = this.intent;
-      this.intent = null;
+    if (p.intent?.kind === 'step') {
+      const { dx, dy } = p.intent;
+      p.intent = null;
       this.move(p, dx, dy);
     } else if (p.path) {
       const next = p.path[p.pathPos++]!;
@@ -696,8 +712,6 @@ export class World {
       tick: this.tick,
       rng: this.rng.state,
       player: this.player.id,
-      intent: this.intent,
-      lastGoto: this.lastGoto,
       actions: [...this.actions],
       lastAction: this.lastAction,
       defeat: this.defeat,
@@ -715,6 +729,8 @@ export class World {
           : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
         statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),
+        intent: e.intent,
+        lastGoto: e.lastGoto,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
