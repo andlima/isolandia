@@ -124,7 +124,7 @@ Cada marco termina **jogável** e passa pela regra dos dois gêneros.
 | M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo | ✅ feito |
 | M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso | ✅ feito |
 | M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono | ✅ feito |
-| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa |  |
+| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa | ✅ feito |
 | M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |  |
 | M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |  |
 | M6 | Mundo em chunks, múltiplos andares, mapas Tiled, save/load | Uma cidadezinha explorável |  |
@@ -204,17 +204,44 @@ fica confirmado depois disso.
     `message` opcional); ao disparar, o mundo congela e ignora input.
   - Tiles ganham **`tags`** próprias (`tile.has_tag("x")`), separadas das
     tags de arquétipo.
+- ~~Itens como entidades ou como dados em containers? Como tags de
+  tile/sala alimentam as loot tables?~~ **Decidido no M3:**
+  - **Itens são dados dentro de containers**, não entidades: uma pilha é
+    `{ item, count }` (no máximo uma por item). Há três tipos de
+    container: embutido no tile (`tiles[].container`), **inventário** de
+    entidade (`archetypes[].inventory`) e **pilha no chão** (criada ao
+    largar itens, removida quando esvazia). Ids de container são
+    sequenciais e nunca reusados.
+  - **Pesos em centésimos inteiros**: pesos e capacidades são arredondados
+    a 0,01 no load e somados/comparados como inteiros, sem drift de float
+    (`0.1 × 3` cabe em `0.3`). Expressões e UI mostram unidades normais.
+  - **Salas são retângulos** (`maps[].rooms: [{ rect, tags }]`); as tags de
+    uma célula são a união dos retângulos que a contêm. Tags de sala, de
+    tile e de entidade são três conjuntos separados (`tile.in_room("x")`).
+  - **A distribuição mais específica vence**: cada container de tile usa a
+    primeira entrada de `distributions` cuja `room` está nas tags da
+    célula; senão a primeira sem `room`; empate → ordem de definição.
+  - **Loot tem RNG próprio**, derivado da seed do mundo, rolado uma vez no
+    construtor do `World`; o RNG do mundo não é tocado, então movimento e
+    `random()` não mudam. Tabelas aninhadas, `nothing` e ciclos (erro de
+    load) são suportados.
+  - **Ações são instantâneas até o M5**: `take`/`put`/`drop`/`use` entram
+    numa fila própria (`queueAction`, separada dos intents de movimento),
+    aplicada na fase de intent logo após o movimento, com alcance de 1
+    tile (Chebyshev) e resultado em `world.lastAction`. Duração, barra de
+    progresso e interrupção ficam para o M5.
 
 ## 8. Próximo passo
 
-S0, M0, M1 e M2 estão entregues: zumbi e vampiro já têm um loop de
-sobrevivência (necessidades → statuses → dano, recuperação em tiles com
-tags, derrota e dia/noite no iso), tudo em YAML. O próximo passo é autorar
-via `spec-orchestrator` a **spec do M3**: itens, peso, containers e loot
-tables por tag de sala — o que também permitirá comer/beber como ações em
-vez de só ficar parado num tile.
+S0, M0, M1, M2 e M3 estão entregues: zumbi e vampiro têm um loop de
+sobrevivência e de saque (casas e mansão com salas, containers com loot
+por sala, inventário com peso, comer/beber/curar usando itens), tudo em
+YAML, jogável no terminal e no iso. O próximo passo é autorar via
+`spec-orchestrator` a **spec do M4**: percepção (visão/ruído) e
+`behaviors` declarativos — a horda que ouve a janela quebrando.
 
-Perguntas de design do M3 ainda em aberto (a decidir na spec, não aqui):
-itens como entidades ou como dados dentro de containers, como efeitos de
-`systems` passam a agir sobre itens, e como as tags de tile/sala alimentam
-as loot tables.
+Perguntas de design do M4 ainda em aberto (a decidir na spec, não aqui):
+máquina de estados vs utility AI (ou ambos), como sentidos e ruído são
+representados sem custo por tick proporcional ao mapa, como NPCs usam
+containers e itens (hoje só o player age), e se efeitos de `systems`
+passam a criar ou consumir itens.

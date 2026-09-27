@@ -60,7 +60,7 @@ string in arithmetic is a load error.
 |----------|--------|---------------------------------------------------------------|
 | `self`   | entity | The entity the expression is evaluated for                    |
 | `player` | entity | The player entity                                             |
-| `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`, `tile.has_tag("x")` |
+| `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
 | `world`  | —      | World time; see the fields below                              |
 
 World fields (all derived from the current tick; see the
@@ -84,11 +84,18 @@ Entity members:
   not have the measurement reads `0`.
 - `self.has_tag("tag")` — method form of `has_tag(self, "tag")`.
 - `self.has_status("id")` — method form of `has_status(self, "id")`.
+- `self.count_item("id")`, `self.has_item("id")` — method forms of
+  `count_item(self, "id")` / `has_item(self, "id")`.
+- `self.carry_weight`, `self.carry_capacity` — the load and capacity of
+  the entity's inventory, in normal weight units (`0` without an
+  inventory). These names take precedence over measurements.
 
 `tile.id` is the qualified tile id, e.g. `tile.id == "base:floor"`.
 `tile.has_tag("water")` (or `has_tag(tile, "water")`) tests the tags of the
-tile under `self` (see [tile tags](packs.md#tiles)). Tile tags and entity
-tags are separate sets.
+tile under `self` (see [tile tags](packs.md#tiles)). `tile.in_room("kitchen")`
+(or `in_room(tile, "kitchen")`) tests the [room](packs.md#maps) tags of the
+cell under `self`. Tile tags, room tags and entity tags are three separate
+sets.
 
 ## Built-in functions
 
@@ -105,6 +112,9 @@ tags are separate sets.
 | `has_tag(entity, "tag")`                 | Whether the entity's archetype has the tag               |
 | `has_tag(tile, "tag")`                   | Whether the tile under `self` has the tag                |
 | `has_status(entity, "id")`               | Whether the entity has the status active                 |
+| `count_item(entity, "id")`               | Units of an item in the entity's inventory (`0` without one) |
+| `has_item(entity, "id")`                 | `count_item(entity, "id") > 0`                           |
+| `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 
@@ -115,6 +125,19 @@ array read (`(ctx) => ctx.self.st[k] === 1`), never a string comparison.
 
 ```yaml
 when: 'self.has_status("hungry") and tile.has_tag("food")'
+```
+
+`count_item` and `has_item` also take a **string literal** item id, short
+or qualified, resolved at load time like `has_status` (unknown ids are
+load errors with a suggestion). At runtime they scan the stacks of one
+inventory by item index; no strings are compared. `in_room` takes a string
+literal room tag, checked against the room tags used by the loaded maps
+and resolved to an index, so a test is one array read.
+
+```yaml
+when: 'self.carry_weight >= 0.8 * self.carry_capacity'
+when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
+when: 'self.count_item("canned_beans") >= 2 and tile.in_room("kitchen")'
 ```
 
 `random` and `roll` draw from the world RNG, so results are part of the
@@ -150,7 +173,8 @@ The loader reports, with file, key path and line:
 - type errors (e.g. arithmetic on an entity; a `rate`/`max`, effect
   `delta`/`value` or status rate that is not numeric; a condition that
   evaluates to an entity or tile),
-- `has_status` with a non-literal or unknown id.
+- `has_status`, `count_item`, `has_item` or `in_room` with a non-literal or
+  unknown id / room tag.
 
 Numeric constants are folded: `rate: "-0.8"` is stored as a plain number
 and the tick loop skips the expression call entirely.
