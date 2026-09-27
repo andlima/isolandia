@@ -7,6 +7,9 @@
  *     objects  — one container per diagonal (x + y); raised tiles and
  *                entities, depth-sorted inside their diagonal only
  *
+ * Ground and objects are multiplied by the pack's day/night tint (if any);
+ * markers are not.
+ *
  * Only a bucket whose contents moved gets re-sorted (Pixi sorts a
  * `sortableChildren` container only when one of its children's zIndex
  * changed), so a still scene costs no sorting at all.
@@ -26,6 +29,7 @@ import {
   type CameraState,
 } from './projection.ts';
 import type { AnchoredTexture, TextureBank } from './textures.ts';
+import { sceneTint } from './tint.ts';
 
 export const CHUNK = 16;
 /** Iso-space margin so tall sprites at the viewport edge are not culled early. */
@@ -70,6 +74,7 @@ export class IsoScene {
   private readonly target: Sprite;
   private readonly invalid: Sprite;
   private invalidUntil = 0;
+  private tint = 0xffffff;
 
   constructor(
     private readonly world: World,
@@ -150,6 +155,13 @@ export class IsoScene {
     }
 
     const { tick } = this.world;
+    const tint = sceneTint(this.world.def, tick, alpha);
+    if (tint !== null && tint !== this.tint) {
+      this.tint = tint;
+      this.ground.tint = tint;
+      this.objects.tint = tint;
+    }
+
     let visibleEntities = 0;
     for (const v of this.entities) {
       const r = renderPosition(v.entity, tick, alpha);

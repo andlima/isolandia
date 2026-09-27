@@ -4,7 +4,7 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import type { ArchetypeDef, Definition, MeasurementDef } from '../definition.ts';
+import type { ArchetypeDef, Definition, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
 import { Grid } from './grid.ts';
@@ -33,6 +33,14 @@ export interface Entity extends ExprEntity {
   path: Int32Array | null;
   /** Index of the next cell of `path` to step onto. */
   pathPos: number;
+  /** Active statuses, indexed by status index (1 = active). */
+  readonly st: Uint8Array;
+}
+
+/** Recorded when the pack's `start.defeat` condition becomes true. */
+export interface DefeatRecord {
+  readonly tick: number;
+  readonly message: string;
 }
 
 /** One-tile move in a direction (keyboard); cancels any active path. */
@@ -73,6 +81,8 @@ export interface EntitySnapshot {
   /** Remaining path cells as [x, y] pairs. */
   path: [number, number][] | null;
   measurements: Record<string, number>;
+  /** Active status ids, in definition order. */
+  statuses: string[];
 }
 
 export interface WorldSnapshot {
@@ -81,6 +91,7 @@ export interface WorldSnapshot {
   player: number;
   intent: Intent | null;
   lastGoto: GotoRecord | null;
+  defeat: DefeatRecord | null;
   entities: EntitySnapshot[];
 }
 
@@ -94,6 +105,8 @@ function fnv1a(s: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
+const NO_TAGS: ReadonlySet<string> = new Set();
+
 export class World {
   readonly grid: Grid;
   readonly entities: Entity[] = [];
@@ -105,11 +118,20 @@ export class World {
 
   /** Result of the most recent goto intent (a new object each time). */
   lastGoto: GotoRecord | null = null;
+  /** Set once the defeat condition holds; the world is frozen from then on. */
+  defeat: DefeatRecord | null = null;
 
   private intent: Intent | null = null;
   private pathfinder: Pathfinder | null = null;
   private readonly ctx: ExprContext;
   private readonly tagSets: ReadonlySet<string>[];
+  private readonly tileTagSets: ReadonlySet<string>[];
+  /** Per archetype index: 1 at each measurement index the archetype has. */
+  private readonly hasM: Uint8Array[];
+  /** Per status: its `rates` term by measurement index (undefined = none). */
+  private readonly statusRates: (NumberTerm | undefined)[][];
+  /** Scratch for the status update: next flags of every entity, row-major. */
+  private statusNext = new Uint8Array(0);
 
   constructor(
     readonly def: Definition,
@@ -119,6 +141,18 @@ export class World {
     this.grid = new Grid(map, def.tiles);
     this.rng = new Rng(seed);
     this.tagSets = def.archetypes.map((a) => new Set(a.tags));
+    this.tileTagSets = def.tiles.map((t) => (t.tags.length ? new Set(t.tags) : NO_TAGS));
+    const nm = def.measurements.length;
+    this.hasM = def.archetypes.map((a) => {
+      const has = new Uint8Array(nm);
+      for (const idx of a.measurements) has[idx] = 1;
+      return has;
+    });
+    this.statusRates = def.statuses.map((s) => {
+      const by = new Array<NumberTerm | undefined>(nm).fill(undefined);
+      for (const r of s.rates) by[r.measurement] = r;
+      return by;
+    });
 
     const start = map.playerStart!;
     this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y);
@@ -133,9 +167,11 @@ export class World {
       clock: def.clock,
       random: () => world.rng.next(),
       tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
+      tileTagsAt: (x, y) => (world.grid.inBounds(x, y) ? world.tileTagSets[world.grid.cells[y * world.grid.width + x]!]! : NO_TAGS),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     for (const e of this.entities) this.clamp(e);
+    this.updateStatuses();
   }
 
   static create(def: Definition, seed: number): World {
@@ -169,6 +205,7 @@ export class World {
       stepTick: 0,
       path: null,
       pathPos: 0,
+      st: new Uint8Array(this.def.statuses.length),
     };
     this.entities.push(e);
     return e;
@@ -176,6 +213,7 @@ export class World {
 
   /** Queue the player's next move; the latest intent wins until it is applied. */
   queueIntent(intent: Intent): void {
+    if (this.defeat) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     this.intent = intent;
   }
@@ -187,23 +225,111 @@ export class World {
     return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
-  /** Advance exactly one tick (1 / ticksPerSecond seconds). */
+  /**
+   * Advance exactly one tick (1 / ticksPerSecond seconds): intent, drift,
+   * due systems, clamp, status update, defeat check, `tick++`. A no-op once
+   * defeated.
+   */
   step(): void {
+    if (this.defeat) return;
     this.ctx.tick = this.tick;
     this.applyIntent();
+    this.drift();
+    this.runSystems();
+    for (const e of this.entities) this.clamp(e);
+    this.updateStatuses();
+    this.checkDefeat();
+    this.tick++;
+  }
+
+  /** Measurement drift: `rate` plus the `rates` of the statuses active now. */
+  private drift(): void {
     const ms = this.def.measurements;
     const tps = this.def.ticksPerSecond;
+    const ns = this.def.statuses.length;
+    const ctx = this.ctx;
     for (const e of this.entities) {
-      this.ctx.self = e;
+      ctx.self = e;
       const m = e.m;
+      let any = false;
+      for (let k = 0; k < ns; k++) if (e.st[k] === 1) any = true;
       for (const idx of e.archetype.measurements) {
         const md = ms[idx]!;
-        if (md.rateFn) m[idx] = m[idx]! + Number(md.rateFn(this.ctx)) / tps;
-        else if (md.rateConst !== 0) m[idx] = m[idx]! + md.rateConst / tps;
+        let d = md.rateFn ? Number(md.rateFn(ctx)) : md.rateConst;
+        if (any) {
+          for (let k = 0; k < ns; k++) {
+            if (e.st[k] !== 1) continue;
+            const r = this.statusRates[k]![idx];
+            if (r) d += r.fn ? Number(r.fn(ctx)) : r.constant;
+          }
+        }
+        if (d !== 0) m[idx] = m[idx]! + d / tps;
       }
     }
-    for (const e of this.entities) this.clamp(e);
-    this.tick++;
+  }
+
+  /** Run the systems due this tick, in definition order, once per matching entity. */
+  private runSystems(): void {
+    const t = this.tick + 1;
+    const ctx = this.ctx;
+    for (const sys of this.def.systems) {
+      if (t % sys.period !== 0) continue;
+      for (const e of this.entities) {
+        ctx.self = e;
+        if (sys.forFn && !sys.forFn(ctx)) continue;
+        if (sys.whenFn && !sys.whenFn(ctx)) continue;
+        const has = this.hasM[e.archetype.index]!;
+        for (const eff of sys.effects) {
+          const idx = eff.measurement;
+          if (has[idx] !== 1) continue;
+          const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
+          e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+        }
+      }
+    }
+  }
+
+  /**
+   * Enter/exit statuses. Every condition sees the flags as they were at the
+   * start of the update (next flags go to a scratch buffer first), so the
+   * definition order of statuses does not matter.
+   */
+  private updateStatuses(): void {
+    const statuses = this.def.statuses;
+    const ns = statuses.length;
+    if (ns === 0) return;
+    const ctx = this.ctx;
+    const n = this.entities.length * ns;
+    if (this.statusNext.length < n) this.statusNext = new Uint8Array(n);
+    const next = this.statusNext;
+    let o = 0;
+    for (const e of this.entities) {
+      ctx.self = e;
+      for (let k = 0; k < ns; k++, o++) {
+        const s = statuses[k]!;
+        if (s.forFn && !s.forFn(ctx)) next[o] = 0;
+        else if (e.st[k] === 1) next[o] = s.untilFn(ctx) ? 0 : 1;
+        else next[o] = s.whenFn(ctx) ? 1 : 0;
+      }
+    }
+    o = 0;
+    for (const e of this.entities) {
+      e.st.set(next.subarray(o, o + ns));
+      o += ns;
+    }
+  }
+
+  private checkDefeat(): void {
+    const d = this.def.start.defeat;
+    if (!d) return;
+    this.ctx.self = this.player;
+    if (d.when(this.ctx)) this.defeat = { tick: this.tick, message: d.message };
+  }
+
+  /** Whether an entity has a status (by qualified id). */
+  hasStatus(e: Entity, statusId: string): boolean {
+    const k = this.def.ids.statuses[statusId];
+    return k !== undefined && e.st[k] === 1;
   }
 
   private applyIntent(): void {
@@ -281,6 +407,7 @@ export class World {
       player: this.player.id,
       intent: this.intent,
       lastGoto: this.lastGoto,
+      defeat: this.defeat,
       entities: this.entities.map((e) => ({
         id: e.id,
         archetype: e.archetype.id,
@@ -294,6 +421,7 @@ export class World {
           ? [...e.path.subarray(e.pathPos)].map((i): [number, number] => [i % this.grid.width, Math.floor(i / this.grid.width)])
           : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
+        statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),
       })),
     };
   }

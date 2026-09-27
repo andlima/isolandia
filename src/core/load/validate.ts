@@ -44,6 +44,13 @@ export class Fields {
     return this.obj[key];
   }
 
+  /** Whether a required field is present; reports it as missing otherwise. */
+  present(key: string): boolean {
+    if (this.has(key)) return true;
+    this.missing(key);
+    return false;
+  }
+
   private missing(key: string): undefined {
     this.sink.add(this.src, `missing required field '${key}'`);
     return undefined;

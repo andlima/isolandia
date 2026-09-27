@@ -14,13 +14,16 @@ export interface ExprEntity {
   /** Measurement values, indexed by the definition's measurement index. */
   readonly m: Float64Array;
   readonly tags: ReadonlySet<string>;
+  /** Active statuses: 1 at a status index when that status is active. */
+  readonly st: Uint8Array;
 }
 
-/** A tile reference: position plus qualified tile id. */
+/** A tile reference: position, qualified tile id and the tile's tags. */
 export interface TileRef {
   readonly x: number;
   readonly y: number;
   readonly id: string;
+  readonly tags: ReadonlySet<string>;
 }
 
 export type Value = number | boolean | string | ExprEntity | TileRef;
@@ -39,6 +42,8 @@ export interface ExprContext {
   /** Seeded RNG returning floats in [0, 1). */
   random(): number;
   tileIdAt(x: number, y: number): string;
+  /** Tags of the tile at (x, y); empty out of bounds. */
+  tileTagsAt(x: number, y: number): ReadonlySet<string>;
   warn(message: string): void;
 }
 
@@ -62,6 +67,8 @@ export interface CompileError {
 export interface CompileSymbols {
   /** Resolve a (short or qualified) measurement reference to its index. */
   resolveMeasurement(ref: string): { index: number } | { error: string };
+  /** Resolve a status reference to its index; without it, `has_status` is an error. */
+  resolveStatus?(ref: string): { index: number } | { error: string };
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -179,14 +186,20 @@ const BUILTINS: Record<string, Builtin> = {
     max: 2,
     ret: 'boolean',
     check: (t) =>
-      (t[0] === 'entity' || t[0] === 'any') && (t[1] === 'string' || t[1] === 'any')
+      isPointType(t[0]!) && (t[1] === 'string' || t[1] === 'any')
         ? null
-        : 'has_tag(entity, tag) expects an entity and a string',
-    impl: (a) => (a[0] as ExprEntity).tags.has(a[1] as string),
+        : 'has_tag(x, tag) expects an entity or a tile and a string',
+    impl: (a) => (a[0] as ExprEntity | TileRef).tags.has(a[1] as string),
   },
 };
 
-export const BUILTIN_NAMES: readonly string[] = Object.keys(BUILTINS);
+/** Built-ins compiled specially (their id argument is resolved at load time). */
+const SPECIAL_NAMES = ['has_status'];
+
+/** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
+const METHODS = new Set(['has_tag', 'has_status']);
+
+export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
 const TILE_FIELDS = ['x', 'y', 'id'];
 const WORLD_FIELDS = ['tick', 'seconds', 'day', 'hour', 'minute', 'time_of_day', 'is_day'];
@@ -287,7 +300,10 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'player':
         return { fn: (c) => c.player, type: 'entity' };
       case 'tile':
-        return { fn: (c) => ({ x: c.self.x, y: c.self.y, id: c.tileIdAt(c.self.x, c.self.y) }), type: 'tile' };
+        return {
+          fn: (c) => ({ x: c.self.x, y: c.self.y, id: c.tileIdAt(c.self.x, c.self.y), tags: c.tileTagsAt(c.self.x, c.self.y) }),
+          type: 'tile',
+        };
       case 'world':
         return err(`'world' is not a value; use one of ${WORLD_FIELDS.map((f) => `world.${f}`).join(', ')}`, node.pos);
       default:
@@ -300,12 +316,17 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     let argNodes = node.args;
     if (node.callee.kind === 'ident') {
       name = node.callee.name;
-    } else if (node.callee.kind === 'member' && node.callee.property === 'has_tag') {
+    } else if (node.callee.kind === 'member' && METHODS.has(node.callee.property)) {
       // Method form: `self.has_tag("x")` ≡ `has_tag(self, "x")`.
-      name = 'has_tag';
+      name = node.callee.property;
       argNodes = [node.callee.object, ...node.args];
     } else {
       return err('only built-in functions can be called', node.pos);
+    }
+    if (name === 'has_status') return hasStatus(argNodes, node.pos);
+    if (name === 'has_tag' && argNodes.length === 2) {
+      const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
+      if (fast) return fast;
     }
     const b = BUILTINS[name];
     if (!b) return err(`unknown function '${name}'${hint(name, BUILTIN_NAMES)}`, node.pos);
@@ -329,6 +350,41 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         return impl(vals, c);
       },
     };
+  }
+
+  /** `has_tag(self|player|tile, "literal")` without allocating a tile or argument array. */
+  function hasTagFast(target: Ast, tagNode: Ast): CompiledExpr | null {
+    if (target.kind !== 'ident' || tagNode.kind !== 'string') return null;
+    const tag = tagNode.value;
+    switch (target.name) {
+      case 'self':
+        return { type: 'boolean', fn: (c) => c.self.tags.has(tag) };
+      case 'player':
+        return { type: 'boolean', fn: (c) => c.player.tags.has(tag) };
+      case 'tile':
+        return { type: 'boolean', fn: (c) => c.tileTagsAt(c.self.x, c.self.y).has(tag) };
+      default:
+        return null;
+    }
+  }
+
+  /** `has_status(entity, "id")`: the id is resolved now, so runtime is one array read. */
+  function hasStatus(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`has_status() takes 2 arguments, got ${argNodes.length}`, pos);
+    const idNode = argNodes[1]!;
+    if (idNode.kind !== 'string') return err('has_status() expects a string literal status id, e.g. has_status(self, "hungry")', idNode.pos);
+    if (!symbols.resolveStatus) return err('has_status() is not available here', pos);
+    const r = symbols.resolveStatus(idNode.value);
+    if ('error' in r) return err(`has_status: ${r.error}`, idNode.pos);
+    const k = r.index;
+    const target = argNodes[0]!;
+    if (target.kind === 'ident' && target.name === 'self') return { type: 'boolean', fn: (c) => c.self.st[k] === 1 };
+    if (target.kind === 'ident' && target.name === 'player') return { type: 'boolean', fn: (c) => c.player.st[k] === 1 };
+    const t = walk(target);
+    if (t === fail) return fail;
+    if (t.type !== 'entity' && t.type !== 'any') return err(`has_status(entity, id) expects an entity, got ${t.type}`, pos);
+    const f = t.fn;
+    return { type: 'boolean', fn: (c) => (f(c) as ExprEntity).st[k] === 1 };
   }
 
   function binary(node: Extract<Ast, { kind: 'binary' }>): CompiledExpr {

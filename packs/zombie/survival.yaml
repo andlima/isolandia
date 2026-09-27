@@ -1,0 +1,53 @@
+# Survival loop: needs turn into statuses that drain health; standing on
+# pantry, tap and bed tiles restores them.
+
+statuses:
+  - id: hungry
+    label: Hungry
+    for: 'self.has_tag("living")'
+    when: "self.hunger >= 70"
+    until: "self.hunger < 40"      # hysteresis: eat well before it clears
+    rates: { hp: -0.2 }
+  - id: thirsty
+    label: Thirsty
+    for: 'self.has_tag("living")'
+    when: "self.thirst >= 70"
+    until: "self.thirst < 40"
+    rates: { hp: -0.3 }
+  - id: exhausted
+    label: Exhausted
+    for: 'self.has_tag("living")'
+    when: "self.fatigue >= 80"
+    until: "self.fatigue < 30"
+    rates:
+      hp: -0.1
+      thirst: 0.05                 # everything is harder when exhausted
+
+systems:
+  # Restoring: stand on the right tile.
+  - id: eat
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("food")'
+    effects:
+      - { type: apply, measurement: hunger, delta: -5 }
+  - id: drink
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("water")'
+    effects:
+      - { type: apply, measurement: thirst, delta: -8 }
+  - id: sleep
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("bed")'
+    effects:
+      - { type: apply, measurement: fatigue, delta: -3 }
+      - { type: apply, measurement: hp, delta: "1 - 0.5 * self.has_status(\"hungry\")" }
+  # Hurting: completely starved or parched survivors weaken quickly.
+  - id: collapse
+    every: 5
+    for: 'self.has_tag("living")'
+    when: "self.hunger >= 100 or self.thirst >= 100"
+    effects:
+      - { type: apply, measurement: hp, delta: -3 }
