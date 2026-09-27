@@ -3,7 +3,7 @@
  * codes — per-cell colors are returned separately for the terminal shell.
  */
 
-import { hudModel, type World } from '../core/index.ts';
+import { hudLines, hudModel, type World } from '../core/index.ts';
 
 export interface Viewport {
   /** Map area size in cells. */
@@ -16,7 +16,7 @@ export interface AsciiFrame {
   readonly lines: readonly string[];
   /** Color per map cell (`null` for empty space), same shape as `lines`. */
   readonly colors: readonly (readonly (string | null)[])[];
-  /** HUD: clock line followed by one line per player measurement. */
+  /** HUD: clock line, one line per player measurement, then status/defeat lines if any. */
   readonly hud: readonly string[];
 }
 
@@ -51,8 +51,7 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
   for (const e of world.entities) if (e !== player) draw(e);
   draw(player);
 
-  const model = hudModel(world);
-  const hud = [model.time, ...model.measurements.map((m) => m.text)];
+  const hud = hudLines(hudModel(world));
 
   return { lines: glyphs.map((r) => r.join('')), colors, hud };
 }

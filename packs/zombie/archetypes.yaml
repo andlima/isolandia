@@ -4,7 +4,7 @@ archetypes:
     glyph: "@"
     color: bright_yellow
     tags: [humanoid, living]
-    measurements: [hp, hunger, thirst]
+    measurements: [hp, hunger, thirst, fatigue]
     initial: { hunger: 20 }
   - id: shambler
     label: Shambler

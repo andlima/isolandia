@@ -7,16 +7,19 @@ maps:
       "c": { tile: carpet }
       "=": { tile: coffin }
       "\"": { tile: window }
+      "'": { tile: sunbeam }
+      "C": { tile: crypt }
+      "B": { tile: font }
       "V": { tile: carpet, player: true }
       "h": { tile: floor, spawn: humanoid }
       "b": { tile: carpet, spawn: bat }
     rows:
       - "###\"####\"####\"####\"###"
-      - "#......#ccccccc#.....#"
-      - "#..h...#ccc=ccc#..h..#"
+      - "#..'...#'cccc'c#..'..#"
+      - "#..h...#ccC=Ccc#..h..#"
       - "#......#ccccccc#.....#"
       - "###+####cccVccc####+##"
       - "#......+ccccccc+.....#"
-      - "#..b...#ccccccc#.....#"
-      - "#......#cc=b=cc#.....\""
+      - "#..b...#cccBccc#.....#"
+      - "#..'...#cc=b=cc#...''\""
       - "###\"#######+#######\"##"

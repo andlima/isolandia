@@ -1,14 +1,18 @@
-import { hudModel, type World } from '../core/index.ts';
+import { hudLines, hudModel, type World } from '../core/index.ts';
 
 /** DOM overlay with the same data as the ASCII HUD block; toggled with `H`. */
 export class Hud {
   private readonly el: HTMLPreElement;
+  private readonly banner: HTMLDivElement;
   private lastTick = -1;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement('pre');
     this.el.id = 'hud';
-    parent.appendChild(this.el);
+    this.banner = document.createElement('div');
+    this.banner.id = 'defeat';
+    this.banner.hidden = true;
+    parent.append(this.el, this.banner);
   }
 
   toggle(): void {
@@ -17,9 +21,14 @@ export class Hud {
   }
 
   update(world: World): void {
+    if (world.defeat && this.banner.hidden) {
+      this.banner.textContent = hudModel(world).defeat!.text;
+      this.banner.hidden = false;
+      this.lastTick = -1;
+    }
     if (this.el.hidden || world.tick === this.lastTick) return;
     this.lastTick = world.tick;
     const m = hudModel(world);
-    this.el.textContent = [m.time, ...m.measurements.map((x) => x.text), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud'].join('\n');
+    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud'].join('\n');
   }
 }
