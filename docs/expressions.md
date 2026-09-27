@@ -1,7 +1,8 @@
 # Expression language
 
 A small, pure expression language used in pack fields such as a
-measurement's `max` and `rate`. Ported from rogue-engine, with three
+measurement's `max` and `rate`, system and status conditions, effect
+values, status `rates` and `start.defeat.when`. Ported from rogue-engine, with three
 changes: expressions are **compiled at load time**, identifiers can be
 **namespaced**, and `/` is **float** division.
 
@@ -59,7 +60,7 @@ string in arithmetic is a load error.
 |----------|--------|---------------------------------------------------------------|
 | `self`   | entity | The entity the expression is evaluated for                    |
 | `player` | entity | The player entity                                             |
-| `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`          |
+| `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`, `tile.has_tag("x")` |
 | `world`  | —      | World time; see the fields below                              |
 
 World fields (all derived from the current tick; see the
@@ -82,8 +83,12 @@ Entity members:
   short (`self.hp`) or qualified (`self.base:hp`) id. An entity that does
   not have the measurement reads `0`.
 - `self.has_tag("tag")` — method form of `has_tag(self, "tag")`.
+- `self.has_status("id")` — method form of `has_status(self, "id")`.
 
 `tile.id` is the qualified tile id, e.g. `tile.id == "base:floor"`.
+`tile.has_tag("water")` (or `has_tag(tile, "water")`) tests the tags of the
+tile under `self` (see [tile tags](packs.md#tiles)). Tile tags and entity
+tags are separate sets.
 
 ## Built-in functions
 
@@ -98,8 +103,19 @@ Entity members:
 | `chebyshev(a, b)`                        | King-move distance                                       |
 | `euclidean(a, b)`                        | Straight-line distance (float)                           |
 | `has_tag(entity, "tag")`                 | Whether the entity's archetype has the tag               |
+| `has_tag(tile, "tag")`                   | Whether the tile under `self` has the tag                |
+| `has_status(entity, "id")`               | Whether the entity has the status active                 |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
+
+`has_status` takes a **string literal** status id, short or qualified,
+resolved at load time with the usual namespacing rules; an unknown id is a
+load error with a *did you mean* suggestion. At runtime it is a single
+array read (`(ctx) => ctx.self.st[k] === 1`), never a string comparison.
+
+```yaml
+when: 'self.has_status("hungry") and tile.has_tag("food")'
+```
 
 `random` and `roll` draw from the world RNG, so results are part of the
 deterministic simulation: same seed + same inputs ⇒ same values.
@@ -131,8 +147,10 @@ The loader reports, with file, key path and line:
 - unknown identifiers (`slef` → *did you mean 'self'?*),
 - unknown measurements in member paths (with a near-miss suggestion),
 - unknown functions (`maxx` → *did you mean 'max'?*) and wrong arity,
-- type errors (e.g. arithmetic on an entity; a `rate`/`max` that is not
-  numeric).
+- type errors (e.g. arithmetic on an entity; a `rate`/`max`, effect
+  `delta`/`value` or status rate that is not numeric; a condition that
+  evaluates to an entity or tile),
+- `has_status` with a non-literal or unknown id.
 
 Numeric constants are folded: `rate: "-0.8"` is stored as a plain number
 and the tick loop skips the expression call entirely.

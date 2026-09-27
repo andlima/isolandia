@@ -42,7 +42,7 @@ test('loads base + zombie', () => {
   );
   assert.deepEqual(
     def.measurements.map((m) => m.id),
-    ['base:hp', 'zmb:hunger', 'zmb:thirst'],
+    ['base:hp', 'zmb:hunger', 'zmb:thirst', 'zmb:fatigue'],
   );
   assert.equal(def.archetypes[def.start.player]!.id, 'zmb:survivor');
   assert.equal(def.maps[def.start.map]!.id, 'zmb:town');
@@ -53,7 +53,7 @@ test('loads base + zombie', () => {
   // Numeric literal rate skips the expression entirely; expression rate compiles.
   const hunger = def.measurements[def.ids.measurements['zmb:hunger']!]!;
   assert.equal(hunger.rateFn, null);
-  assert.equal(hunger.rateConst, 0.5);
+  assert.equal(hunger.rateConst, 0.1);
   assert.equal(typeof def.measurements[def.ids.measurements['zmb:thirst']!]!.rateFn, 'function');
   assert.ok(def.maps[def.start.map]!.spawns.length >= 3);
 });
@@ -83,10 +83,17 @@ test('the loaded definition is deeply frozen', () => {
 });
 
 test('zombie and vampire cannot load together without an explicit start choice', () => {
-  // Both define `start` and `clock`: at most one of each is allowed.
+  // Both define `start`, `clock` and `lighting`: at most one of each is allowed.
   const errors = errorsOf([BASE, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 49, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 52, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 68, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 71, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, {
+    pack: 'vamp',
+    file: 'survival.yaml',
+    path: 'lighting',
+    line: 47,
+    message: /duplicate 'lighting': already defined in pack 'zmb' \(lighting\.yaml\)/,
+  });
 });
 
 // ── One failing fixture per validation rule ────────────────────────────────

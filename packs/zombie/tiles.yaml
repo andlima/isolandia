@@ -16,3 +16,21 @@ tiles:
     color: "#a33a2a"
     walkable: false
     sprite: car_img
+  - id: pantry
+    label: Pantry
+    glyph: "%"
+    color: "#c9a227"
+    walkable: true
+    tags: [food]
+  - id: tap
+    label: Water tap
+    glyph: "~"
+    color: "#3b8eea"
+    walkable: true
+    tags: [water]
+  - id: bed
+    label: Bed
+    glyph: "="
+    color: "#8e6fb5"
+    walkable: true
+    tags: [bed]

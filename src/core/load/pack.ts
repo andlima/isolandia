@@ -17,9 +17,9 @@ export interface PackSource {
   readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
-export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start', 'clock'];
+export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start', 'clock', 'lighting'];
 
 export const ID_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -47,6 +47,7 @@ export interface RawPack {
   readonly entries: Record<ListDomain, RawEntry[]>;
   readonly starts: RawEntry[];
   readonly clocks: RawEntry[];
+  readonly lightings: RawEntry[];
 }
 
 export const MANIFEST = 'pack.yaml';
@@ -127,9 +128,10 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     depends,
     manifest,
     otherFiles: new Set(source.otherFiles ?? []),
-    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [] },
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [] },
     starts: [],
     clocks: [],
+    lightings: [],
   };
 }
 
@@ -162,6 +164,11 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
       if (key === 'clock') {
         if (!isObject(value)) sink.add(ksrc, "'clock' must be a mapping (day_length, start, dawn, dusk)");
         else pack.clocks.push({ src: ksrc, value });
+        continue;
+      }
+      if (key === 'lighting') {
+        if (!isObject(value)) sink.add(ksrc, "'lighting' must be a mapping with a 'tint' list");
+        else pack.lightings.push({ src: ksrc, value });
         continue;
       }
       if (!(LIST_DOMAINS as readonly string[]).includes(key)) {

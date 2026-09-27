@@ -11,16 +11,24 @@ import {
   TICKS_PER_SECOND,
   type ArchetypeDef,
   type AssetDef,
+  type DefeatDef,
   type Definition,
+  type EffectDef,
+  type LightingDef,
   type MapDef,
   type MeasurementDef,
+  type NumberTerm,
   type PackInfo,
   type SpawnDef,
+  type StatusDef,
+  type StatusRate,
+  type SystemDef,
   type TileDef,
+  type TintKeyframe,
 } from '../definition.ts';
 import { compileSource, nearMiss, type Compiled } from '../expr/index.ts';
 import { at, ErrorSink, PackLoadError, type LoadError, type Src } from './errors.ts';
-import { ID_RE, isObject, parsePack, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
+import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
 import { SymbolTable, type Kind, type Scope } from './resolve.ts';
 import { Fields } from './validate.ts';
 
@@ -39,11 +47,18 @@ const KIND_OF: Record<ListDomain, Kind> = {
   tiles: 'tile',
   archetypes: 'archetype',
   maps: 'map',
+  systems: 'system',
+  statuses: 'status',
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
+const DEFAULT_DEFEAT_MESSAGE = 'Game over';
+const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value' };
+const always = (): boolean => true;
 
 function deepFreeze<T>(o: T): T {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
@@ -56,7 +71,15 @@ function deepFreeze<T>(o: T): T {
 class Loader {
   readonly sink = new ErrorSink();
   readonly symbols = new SymbolTable();
-  readonly defined: Record<ListDomain, Defined[]> = { measurements: [], assets: [], tiles: [], archetypes: [], maps: [] };
+  readonly defined: Record<ListDomain, Defined[]> = {
+    measurements: [],
+    assets: [],
+    tiles: [],
+    archetypes: [],
+    maps: [],
+    systems: [],
+    statuses: [],
+  };
   packs: { raw: RawPack; scope: Scope }[] = [];
 
   run(sources: readonly PackSource[]): LoadResult {
@@ -67,8 +90,11 @@ class Loader {
     const tiles = this.defined.tiles.map((d) => this.tile(d));
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements));
     const maps = this.defined.maps.map((d) => this.map(d));
+    const statuses = this.defined.statuses.map((d) => this.status(d));
+    const systems = this.defined.systems.map((d) => this.system(d));
     const start = this.start(maps);
     const clock = this.clock();
+    const lighting = this.lighting();
     if (this.sink.count > 0 || !start) return { ok: false, errors: this.sink.errors };
 
     const ids = (list: readonly { id: string; index: number }[]) => Object.fromEntries(list.map((d) => [d.id, d.index]));
@@ -87,9 +113,20 @@ class Loader {
       tiles,
       archetypes,
       maps,
+      systems,
+      statuses,
       start,
       clock,
-      ids: { measurements: ids(measurements), assets: ids(assets), tiles: ids(tiles), archetypes: ids(archetypes), maps: ids(maps) },
+      lighting,
+      ids: {
+        measurements: ids(measurements),
+        assets: ids(assets),
+        tiles: ids(tiles),
+        archetypes: ids(archetypes),
+        maps: ids(maps),
+        systems: ids(systems),
+        statuses: ids(statuses),
+      },
     };
     return { ok: true, definition: deepFreeze(definition) };
   }
@@ -132,23 +169,67 @@ class Loader {
 
   // ── Expressions ─────────────────────────────────────────────────────────
 
-  /** Compile a numeric expression; reports and returns null on error. */
-  private expr(source: string, scope: Scope, src: Src): { fn: Compiled; constant?: number } | null {
+  /**
+   * Compile a numeric (or boolean) expression; reports and returns null on
+   * error. `what` names the expected result in the type error.
+   */
+  private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number } | null {
+    const resolver = (kind: 'measurement' | 'status') => (ref: string) => {
+      const r = this.symbols.resolve(kind, ref, scope);
+      return 'error' in r ? r : { index: r.index };
+    };
     const { expr, errors, syntax } = compileSource(source, {
-      resolveMeasurement: (ref) => {
-        const r = this.symbols.resolve('measurement', ref, scope);
-        return 'error' in r ? r : { index: r.index };
-      },
+      resolveMeasurement: resolver('measurement'),
+      resolveStatus: resolver('status'),
     });
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
       return null;
     }
     if (expr.type !== 'number' && expr.type !== 'boolean' && expr.type !== 'any') {
-      this.sink.add(src, `expression "${source}" must produce a number, got ${expr.type}`);
+      this.sink.add(src, `expression "${source}" must produce ${what}, got ${expr.type}`);
       return null;
     }
     return expr;
+  }
+
+  /**
+   * A condition field (`for`/`when`/`until`/`defeat.when`): an expression or
+   * a boolean literal. Returns undefined when absent, null after an error.
+   */
+  private condition(f: Fields, key: string, scope: Scope, required = false): Compiled | null | undefined {
+    const v = f.raw(key);
+    if (v === undefined || v === null) {
+      if (required) f.present(key);
+      return required ? null : undefined;
+    }
+    if (typeof v === 'boolean') return () => v;
+    if (typeof v !== 'string') {
+      this.sink.add(f.at(key), `field '${key}' must be an expression (string) or true/false`);
+      return null;
+    }
+    return this.expr(v, scope, f.at(key), 'a boolean or a number')?.fn ?? null;
+  }
+
+  /** A number or numeric expression, folded to a constant when possible; null after an error. */
+  private numberTerm(v: Json | undefined, key: string, scope: Scope, src: Src): NumberTerm | null {
+    if (typeof v === 'number' && Number.isFinite(v)) return { constant: v, fn: null };
+    if (typeof v === 'string') {
+      const e = this.expr(v, scope, src);
+      if (!e) return null;
+      return e.constant !== undefined ? { constant: e.constant, fn: null } : { constant: 0, fn: e.fn };
+    }
+    this.sink.add(src, `field '${key}' must be a number or an expression`);
+    return null;
+  }
+
+  /** Validate a tag list (archetype or tile). */
+  private tags(f: Fields): string[] {
+    const tags = f.stringList('tags');
+    tags.forEach((t, i) => {
+      if (!ID_RE.test(t)) this.sink.add(f.at('tags', i), `invalid tag '${t}': tags must match [a-z][a-z0-9_]*`);
+    });
+    return tags;
   }
 
   // ── Stage 3: build definitions ──────────────────────────────────────────
@@ -230,7 +311,7 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'sprite'], 'tile');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'sprite', 'tags'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
     return {
       id: d.id,
@@ -241,6 +322,7 @@ class Loader {
       walkable,
       raised: f.boolean('raised', false) ?? !walkable,
       sprite: this.sprite(f, d),
+      tags: this.tags(f),
     };
   }
 
@@ -255,10 +337,7 @@ class Loader {
     const label = f.string('label') ?? d.id;
     const glyph = f.glyph() ?? '?';
     const color = f.color() ?? 'white';
-    const tags = f.stringList('tags');
-    tags.forEach((t, i) => {
-      if (!ID_RE.test(t)) this.sink.add(f.at('tags', i), `invalid tag '${t}': tags must match [a-z][a-z0-9_]*`);
-    });
+    const tags = this.tags(f);
 
     const indices: number[] = [];
     (f.list('measurements') ?? []).forEach((ref, i) => {
@@ -359,7 +438,85 @@ class Loader {
     return { id: d.id, index: d.index, width, height, cells, spawns, playerStart };
   }
 
-  private start(maps: readonly MapDef[]): { map: number; player: number } | null {
+  private status(d: Defined): StatusDef {
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
+    const label = f.string('label') ?? d.id;
+    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const whenFn = this.condition(f, 'when', d.scope, true) ?? always;
+    const untilFn = this.condition(f, 'until', d.scope) ?? ((c) => !whenFn(c));
+    const rates: StatusRate[] = [];
+    for (const [ref, value] of Object.entries(f.mapping('rates') ?? {})) {
+      const src = f.at('rates', ref);
+      const r = this.symbols.ref('measurement', ref, d.scope, src, this.sink);
+      const term = this.numberTerm(value, `rates.${ref}`, d.scope, src);
+      if (!r || !term) continue;
+      if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
+      else rates.push({ measurement: r.index, ...term });
+    }
+    return { id: d.id, index: d.index, label, forFn, whenFn, untilFn, rates };
+  }
+
+  private system(d: Defined): SystemDef {
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'every', 'for', 'when', 'effects'], 'system');
+    let every = f.number('every', false) ?? DEFAULT_EVERY;
+    const ticks = every * TICKS_PER_SECOND;
+    let period = Math.round(ticks);
+    if (every <= 0) {
+      this.sink.add(f.at('every'), `field 'every' must be a number of sim seconds > 0, got ${every}`);
+      every = DEFAULT_EVERY;
+      period = 1;
+    } else if (Math.abs(ticks - period) > 1e-6 || period < 1) {
+      this.sink.add(f.at('every'), `field 'every' must be a whole number of ticks (a multiple of ${DEFAULT_EVERY} s), got ${every}`);
+      period = Math.max(1, period);
+    }
+    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+
+    const effects: EffectDef[] = [];
+    const list = f.list('effects');
+    if (!list) {
+      if (!f.has('effects')) f.present('effects');
+    } else if (list.length === 0) {
+      this.sink.add(f.at('effects'), `field 'effects' must list at least one effect`);
+    }
+    (list ?? []).forEach((raw, i) => {
+      const src = f.at('effects', i);
+      if (!isObject(raw)) {
+        this.sink.add(src, `effects must be mappings like { type: apply, measurement: hp, delta: -1 }`);
+        return;
+      }
+      const type = raw['type'];
+      if (typeof type !== 'string' || !(type in EFFECT_FIELDS)) {
+        if (type === undefined || type === null) this.sink.add(src, `missing required field 'type'`);
+        else {
+          const s = typeof type === 'string' ? nearMiss(type, Object.keys(EFFECT_FIELDS)) : null;
+          this.sink.add(
+            at(src, 'type'),
+            `unknown effect type ${JSON.stringify(type)}${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${Object.keys(EFFECT_FIELDS).join(', ')}`,
+          );
+        }
+        return;
+      }
+      const t = type as EffectDef['type'];
+      const valueKey = EFFECT_FIELDS[t];
+      const ef = new Fields(this.sink, src, raw, ['type', 'measurement', valueKey], `'${t}' effect`);
+      const m = ef.present('measurement') ? this.symbols.ref('measurement', ef.raw('measurement'), d.scope, ef.at('measurement'), this.sink) : null;
+      const term = ef.present(valueKey) ? this.numberTerm(ef.raw(valueKey), valueKey, d.scope, ef.at(valueKey)) : null;
+      if (m && term) effects.push({ type: t, measurement: m.index, ...term });
+    });
+    return { id: d.id, index: d.index, every, period, forFn, whenFn, effects };
+  }
+
+  private defeat(f: Fields, scope: Scope): DefeatDef | null {
+    const raw = f.mapping('defeat');
+    if (!raw) return null;
+    const df = new Fields(this.sink, f.at('defeat'), raw, ['when', 'message'], 'defeat');
+    const when = this.condition(df, 'when', scope, true);
+    const message = df.string('message', false) ?? DEFAULT_DEFEAT_MESSAGE;
+    return when ? { when, message } : null;
+  }
+
+  private start(maps: readonly MapDef[]): Definition['start'] | null {
     const all = this.packs.flatMap(({ raw, scope }) => raw.starts.map((entry) => ({ entry, scope })));
     if (all.length === 0) {
       const last = this.packs[this.packs.length - 1];
@@ -376,7 +533,8 @@ class Loader {
       this.sink.add(extra.entry.src, `duplicate 'start': already defined in pack '${s.source.pack}' (${s.source.file})`);
     }
     const { entry, scope } = first!;
-    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player'], 'start');
+    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat'], 'start');
+    const defeat = this.defeat(f, scope);
     const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), scope, f.at('map'), this.sink) : f.string('map');
     const player = f.has('player') ? this.symbols.ref('archetype', f.raw('player'), scope, f.at('player'), this.sink) : f.string('player');
     if (!map || typeof map !== 'object' || !player || typeof player !== 'object') return null;
@@ -385,7 +543,7 @@ class Loader {
       this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (a legend entry with 'player: true')`);
       return null;
     }
-    return { map: map.index, player: player.index };
+    return { map: map.index, player: player.index, defeat };
   }
 
   private clock(): ClockDef {
@@ -419,6 +577,53 @@ class Loader {
       this.sink.add(f.has('dawn') ? f.at('dawn') : f.at('dusk'), `dawn must be before dusk (daylight cannot wrap past midnight)`);
     }
     return { dayLength, start, dawn, dusk };
+  }
+
+  private lighting(): LightingDef | null {
+    const all = this.packs.flatMap(({ raw }) => raw.lightings);
+    const [first, ...rest] = all;
+    if (!first) return null;
+    for (const extra of rest) {
+      const s = first.src;
+      this.sink.add(extra.src, `duplicate 'lighting': already defined in pack '${s.source.pack}' (${s.source.file})`);
+    }
+    const f = new Fields(this.sink, first.src, first.value, ['tint'], 'lighting');
+    const list = f.list('tint');
+    if (!list) {
+      if (!f.has('tint')) f.present('tint');
+      return null;
+    }
+    if (list.length === 0) {
+      this.sink.add(f.at('tint'), `field 'tint' must list at least one keyframe`);
+      return null;
+    }
+    const tint: TintKeyframe[] = [];
+    list.forEach((raw, i) => {
+      const src = f.at('tint', i);
+      if (!isObject(raw)) {
+        this.sink.add(src, `tint keyframes must be mappings like { at: "07:00", color: "#ffffff" }`);
+        return;
+      }
+      const kf = new Fields(this.sink, src, raw, ['at', 'color'], 'tint keyframe');
+      const atStr = kf.string('at');
+      const colorStr = kf.string('color');
+      const minutes = atStr === undefined ? null : parseTimeOfDay(atStr);
+      const colorOk = colorStr !== undefined && HEX_COLOR_RE.test(colorStr);
+      if (atStr !== undefined && minutes === null) {
+        this.sink.add(kf.at('at'), `field 'at' must be a time "HH:MM" (00:00–23:59), got ${JSON.stringify(atStr)}`);
+      }
+      if (colorStr !== undefined && !colorOk) {
+        this.sink.add(kf.at('color'), `field 'color' must be a '#rrggbb' colour, got ${JSON.stringify(colorStr)}`);
+      }
+      if (minutes === null || !colorOk) return;
+      if (tint.some((k) => k.at === minutes)) {
+        this.sink.add(kf.at('at'), `duplicate tint keyframe time '${atStr}'`);
+        return;
+      }
+      tint.push({ at: minutes, color: parseInt(colorStr.slice(1), 16) });
+    });
+    tint.sort((a, b) => a.at - b.at);
+    return tint.length ? { tint } : null;
   }
 }
 

@@ -5,8 +5,8 @@ measurements:
     # Blood capacity is tied to health: half of current hp, at least 10.
     max: "max(10, self.base:hp / 2)"
     initial: 50
-    # Drains 0.8 per second at night, 2.0 in daylight.
-    rate: "-0.8 - 1.2 * world.is_day"
+    # Drains 0.05 per second at night, 0.1 in daylight.
+    rate: "-0.05 - 0.05 * world.is_day"
 
 tiles:
   - id: carpet
@@ -15,6 +15,25 @@ tiles:
     color: "#8b1e2d"
     walkable: true
     sprite: carpet_img
+    tags: [shade]
+  - id: sunbeam
+    label: Sunlit floor
+    glyph: "'"
+    color: "#e8d27a"
+    walkable: true
+    tags: [sunlit]
+  - id: crypt
+    label: Crypt floor
+    glyph: "_"
+    color: "#3b3346"
+    walkable: true
+    tags: [shade, crypt]
+  - id: font
+    label: Blood font
+    glyph: "u"
+    color: "#c0182c"
+    walkable: true
+    tags: [shade, blood]
   - id: coffin
     label: Coffin
     glyph: "="
@@ -51,3 +70,6 @@ clock:
 start:
   map: mansion
   player: vampire
+  defeat:
+    when: "self.hp <= 0"
+    message: "Your unlife has ended."

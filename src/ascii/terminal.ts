@@ -101,7 +101,8 @@ export interface TerminalIO {
 export function runTerminal(world: World, io: TerminalIO): Promise<void> {
   const { stdin, stdout } = io;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 2;
+  // Clock, measurements, status and defeat lines, blank line, help line.
+  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 2 + 2;
 
   return new Promise((resolve) => {
     const draw = () => {

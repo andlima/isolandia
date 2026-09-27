@@ -3,7 +3,7 @@
  * overlay are built from `hudModel`, so they always show the same values.
  */
 
-import type { ClockTime } from './clock.ts';
+import { clockAt, type ClockTime } from './clock.ts';
 import type { World } from './sim/world.ts';
 
 export interface HudMeasurement {
@@ -22,10 +22,32 @@ export interface HudModel {
   /** `Time: Day D HH:MM (tick N)`. */
   readonly time: string;
   readonly measurements: readonly HudMeasurement[];
+  /** Labels of the player's active statuses, in definition order. */
+  readonly statuses: readonly string[];
+  /** `Status: A, B`, or null when no status is active. */
+  readonly statusLine: string | null;
+  /** Set once the world is defeated. */
+  readonly defeat: HudDefeat | null;
+}
+
+export interface HudDefeat {
+  readonly message: string;
+  /** In-game clock at the defeat tick, `Day D HH:MM`. */
+  readonly clock: string;
+  /** `message (Day D HH:MM)`. */
+  readonly text: string;
 }
 
 function fmt(n: number): string {
   return n.toFixed(1);
+}
+
+/** HUD text lines shared by the shells: time, measurements, then status/defeat lines when present. */
+export function hudLines(m: HudModel): string[] {
+  const lines = [m.time, ...m.measurements.map((x) => x.text)];
+  if (m.statusLine) lines.push(m.statusLine);
+  if (m.defeat) lines.push(m.defeat.text);
+  return lines;
 }
 
 /** `Day D HH:MM`. */
@@ -44,5 +66,16 @@ export function hudModel(world: World): HudModel {
     const text = Number.isFinite(max) ? `${label}: ${fmt(value)}/${fmt(max)}` : `${label}: ${fmt(value)}`;
     return { label, value, max, text };
   });
-  return { clock, tick: world.tick, time: `Time: ${clock} (tick ${world.tick})`, measurements };
+  const statuses = world.def.statuses.filter((s) => player.st[s.index] === 1).map((s) => s.label);
+  const d = world.defeat;
+  const defeatClock = d ? formatClock(clockAt(world.def.clock, d.tick, world.def.ticksPerSecond)) : '';
+  return {
+    clock,
+    tick: world.tick,
+    time: `Time: ${clock} (tick ${world.tick})`,
+    measurements,
+    statuses,
+    statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,
+    defeat: d ? { message: d.message, clock: defeatClock, text: `${d.message} (${defeatClock})` } : null,
+  };
 }

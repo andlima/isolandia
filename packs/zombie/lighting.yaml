@@ -1,0 +1,7 @@
+# Day/night tint of the iso view (visual only).
+lighting:
+  tint:
+    - { at: "05:00", color: "#3a4a80" }
+    - { at: "07:00", color: "#ffffff" }
+    - { at: "19:00", color: "#ffd9b0" }
+    - { at: "21:00", color: "#3a4a80" }

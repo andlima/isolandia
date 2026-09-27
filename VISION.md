@@ -123,7 +123,7 @@ Cada marco termina **jogável** e passa pela regra dos dois gêneros.
 | S0 | **Spike de viabilidade** (antes de tudo): 4×4 chunks de 32×32 tiles isométricos, ~500 entidades vagando com A*, player move por clique; medir fps em notebook médio e celular | Confirma (ou não) TS + Pixi | ✅ feito¹ |
 | M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo | ✅ feito |
 | M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso | ✅ feito |
-| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono | 🔜 próximo (relógio já entregue) |
+| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono | ✅ feito |
 | M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa |  |
 | M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |  |
 | M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |  |
@@ -184,15 +184,37 @@ fica confirmado depois disso.
   `world.is_day`; `rate` continua por segundo de simulação. **No máximo um
   pack** define `clock` até existir semântica de override (M7). Ver
   `docs/packs.md`.
+- ~~Como `systems` agendam trabalho, como `statuses` entram e saem, como o
+  dia/noite é configurado, e como o jogo termina?~~ **Decidido no M2:**
+  - **`systems`** usam **segundos de simulação** (`every: 1`, padrão um
+    tick); `every` precisa ser um número inteiro de ticks e vira período em
+    ticks no load. Rodam uma vez por entidade (`for` filtra, depois `when`),
+    com efeitos `apply`/`set` em `self`. Unidades de tempo de jogo
+    (`every: 30m`) ficam para depois.
+  - **`statuses`** entram com `when` e saem com `until` (padrão
+    `not when`), o que dá **histerese**; enquanto ativos somam `rates` ao
+    drift. São estado da simulação (snapshot/hash) e as expressões os
+    testam com `has_status(entity, "id")`, resolvido no load para um índice.
+  - A ordem do tick é fixa: intent → drift (com `rates` dos statuses do
+    início do tick) → systems → clamp → statuses → derrota → `tick++`.
+  - O tint de dia/noite é um **domínio próprio, `lighting`** (keyframes
+    `at`/`color` interpolados em RGB), puramente visual; no máximo um pack
+    o define, como `clock`.
+  - A derrota é **`start.defeat`** (`when` avaliado com `self` = player,
+    `message` opcional); ao disparar, o mundo congela e ignora input.
+  - Tiles ganham **`tags`** próprias (`tile.has_tag("x")`), separadas das
+    tags de arquétipo.
 
 ## 8. Próximo passo
 
-S0, M0 e M1 estão entregues, e o relógio do mundo (`clock`, com
-`world.*` nas expressões e no HUD) já existe. O próximo passo é autorar via
-`spec-orchestrator` a **spec do M2**: **`systems`**, **`statuses`** e o
-**tint de dia/noite** no renderer iso, tudo em cima do relógio.
+S0, M0, M1 e M2 estão entregues: zumbi e vampiro já têm um loop de
+sobrevivência (necessidades → statuses → dano, recuperação em tiles com
+tags, derrota e dia/noite no iso), tudo em YAML. O próximo passo é autorar
+via `spec-orchestrator` a **spec do M3**: itens, peso, containers e loot
+tables por tag de sala — o que também permitirá comer/beber como ações em
+vez de só ficar parado num tile.
 
-Perguntas de design do M2 ainda em aberto (a decidir na spec, não aqui):
-como `systems` agendam trabalho (`every:` em ticks ou em tempo de jogo?),
-como `statuses` entram e saem e interagem com measurements, e como o tint
-de dia/noite é configurado pelo pack.
+Perguntas de design do M3 ainda em aberto (a decidir na spec, não aqui):
+itens como entidades ou como dados dentro de containers, como efeitos de
+`systems` passam a agir sobre itens, e como as tags de tile/sala alimentam
+as loot tables.
