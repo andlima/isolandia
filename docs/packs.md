@@ -149,6 +149,7 @@ The ASCII renderer ignores sprites.
 | `color`    | `#rrggbb` or name|              | e.g. `"#8a8a8a"`, `white`, `bright_yellow`; also the placeholder color |
 | `walkable` | boolean          |              | |
 | `raised`   | boolean          | `!walkable`  | Iso rendering only: a raised block, depth-sorted with entities, instead of flat ground. Walkability is unchanged |
+| `opaque`   | boolean          | `!walkable`  | Blocks line of sight (`can_see`). Like `raised`, it defaults from `walkable` and an explicit value wins: a window is `walkable: false, opaque: false` |
 | `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex |
 | `tags`     | list of `[a-z][a-z0-9_]*` | `[]` | Tested by `tile.has_tag("x")` / `has_tag(tile, "x")` |
 | `container`| `{ capacity: <number ≥ 0> }` | none | Every map cell with this tile gets its own [container](#containers); its label is the tile's label |
@@ -322,6 +323,19 @@ statuses:
     when: "self.hunger >= 70"
     until: "self.hunger < 40"      # stays hungry until well fed
     rates: { hp: -0.2 }
+```
+
+Statuses can react to sight with
+[`can_see`](expressions.md#built-in-functions). A range pair gives the
+hysteresis: notice at 8 tiles, lose track only past 12 or behind a wall.
+
+```yaml
+statuses:
+  - id: alert
+    label: Alert
+    for: 'self.has_tag("undead")'
+    when: 'can_see(self, player, 8)'
+    until: 'not can_see(self, player, 12)'
 ```
 
 ### `items`

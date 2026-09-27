@@ -39,12 +39,14 @@ tiles:
     glyph: "="
     color: "#4a3426"
     walkable: false
+    opaque: false                   # low: blocks the way, not the view
     sprite: coffin_img
   - id: window
     label: Window
     glyph: "\""
     color: "#6fa8dc"
     walkable: false
+    opaque: false                   # you can see through it, not walk through it
   - id: bookshelf
     label: Bookshelf
     glyph: "L"
@@ -56,6 +58,7 @@ tiles:
     glyph: "X"
     color: "#8a6a3a"
     walkable: false
+    opaque: false                   # low: blocks the way, not the view
     container: { capacity: 30 }
   - id: wine_rack
     label: Wine rack

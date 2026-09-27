@@ -9,6 +9,7 @@ import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
 import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
 import { Grid } from './grid.ts';
+import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
 
 export interface Entity extends ExprEntity {
@@ -286,6 +287,7 @@ export class World {
       tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
       tileTagsAt: (x, y) => (world.grid.inBounds(x, y) ? world.tileTagSets[world.grid.cells[y * world.grid.width + x]!]! : NO_TAGS),
       inRoom: (x, y, tag) => world.grid.inBounds(x, y) && world.roomHas[world.roomCell[y * world.grid.width + x]! * nt + tag] === 1,
+      los: (x0, y0, x1, y1) => lineOfSight(world.grid, x0, y0, x1, y1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     for (const e of this.entities) this.clamp(e);

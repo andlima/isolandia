@@ -7,6 +7,8 @@ export class Grid {
   readonly cells: Uint16Array;
   /** 1 where the cell is walkable, row-major (for pathfinding). */
   readonly walk: Uint8Array;
+  /** 1 where the cell blocks line of sight, row-major. */
+  readonly opaque: Uint8Array;
 
   constructor(
     map: MapDef,
@@ -16,6 +18,7 @@ export class Grid {
     this.height = map.height;
     this.cells = Uint16Array.from(map.cells);
     this.walk = Uint8Array.from(this.cells, (t) => (tiles[t]!.walkable ? 1 : 0));
+    this.opaque = Uint8Array.from(this.cells, (t) => (tiles[t]!.opaque ? 1 : 0));
   }
 
   inBounds(x: number, y: number): boolean {
@@ -29,6 +32,11 @@ export class Grid {
 
   walkable(x: number, y: number): boolean {
     return this.inBounds(x, y) && this.walk[y * this.width + x] === 1;
+  }
+
+  /** Whether (x, y) blocks line of sight; out of bounds counts as opaque. */
+  opaqueAt(x: number, y: number): boolean {
+    return !this.inBounds(x, y) || this.opaque[y * this.width + x] === 1;
   }
 
   /**

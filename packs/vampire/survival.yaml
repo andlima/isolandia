@@ -16,6 +16,12 @@ statuses:
     when: "self.blood <= 10"
     until: "self.blood >= 25"
     rates: { hp: -0.25 }
+  # Bats notice the vampire (through windows too) and lose interest slowly.
+  - id: alert
+    label: Alert
+    for: 'self.has_tag("beast")'
+    when: 'can_see(self, player, 6)'
+    until: 'not can_see(self, player, 10)'
 
 systems:
   # Hurting.

@@ -53,6 +53,8 @@ export interface TileDef {
   readonly walkable: boolean;
   /** Rendered as a raised block (depth-sorted with entities) instead of flat ground. */
   readonly raised: boolean;
+  /** Blocks line of sight (default: not walkable). */
+  readonly opaque: boolean;
   /** Asset index, or null for a generated placeholder. */
   readonly sprite: number | null;
   /** Tile tags (separate from archetype tags). */

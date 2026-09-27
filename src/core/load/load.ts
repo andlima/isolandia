@@ -346,7 +346,7 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'sprite', 'tags', 'container'], 'tile');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
     let container: ContainerSpec | null = null;
     const c = f.mapping('container');
@@ -363,6 +363,7 @@ class Loader {
       color: f.color() ?? 'white',
       walkable,
       raised: f.boolean('raised', false) ?? !walkable,
+      opaque: f.boolean('opaque', false) ?? !walkable,
       sprite: this.sprite(f, d),
       tags: this.tags(f),
       container,

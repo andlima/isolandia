@@ -49,6 +49,8 @@ export interface ExprContext {
   tileTagsAt(x: number, y: number): ReadonlySet<string>;
   /** Whether the cell at (x, y) is in a room with the room tag of that index. */
   inRoom(x: number, y: number, tag: number): boolean;
+  /** Tile line of sight between two cells (see `lineOfSight`). */
+  los(x0: number, y0: number, x1: number, y1: number): boolean;
   warn(message: string): void;
 }
 
@@ -203,7 +205,7 @@ const BUILTINS: Record<string, Builtin> = {
 };
 
 /** Built-ins compiled specially (their id argument is resolved at load time). */
-const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room'];
+const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see'];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
 const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room']);
@@ -337,6 +339,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'has_status') return hasStatus(argNodes, node.pos);
     if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
     if (name === 'in_room') return inRoom(argNodes, node.pos);
+    if (name === 'can_see') return canSee(argNodes, node.pos);
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
       if (fast) return fast;
@@ -454,6 +457,49 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if ('error' in r) return err(`in_room: ${r.error}`, tagNode.pos);
     const k = r.index;
     return { type: 'boolean', fn: (c) => c.inRoom(c.self.x, c.self.y, k) };
+  }
+
+  /** Point argument without allocating: `tile` reads as `self`'s cell, since both share a position. */
+  function pointArg(node: Ast): CompiledExpr {
+    if (node.kind === 'ident' && (node.name === 'self' || node.name === 'tile')) return { type: 'entity', fn: (c) => c.self };
+    if (node.kind === 'ident' && node.name === 'player') return { type: 'entity', fn: (c) => c.player };
+    return walk(node);
+  }
+
+  /** `can_see(a, b[, range])`: euclidean range check first, then tile line of sight; no argument array. */
+  function canSee(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2 && argNodes.length !== 3) return err(`can_see() takes 2 or 3 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const a = pointArg(argNodes[0]!);
+    const b = pointArg(argNodes[1]!);
+    const r = argNodes.length === 3 ? walk(argNodes[2]!) : null;
+    if (errors.length > before) return fail;
+    if (!isPointType(a.type) || !isPointType(b.type)) return err('can_see(a, b) expects two entities or tiles', pos);
+    if (r && !isNumericType(r.type)) return err('can_see(a, b, range) expects a numeric range', pos);
+    const A = a.fn as (c: ExprContext) => Point;
+    const B = b.fn as (c: ExprContext) => Point;
+    if (!r) {
+      return {
+        type: 'boolean',
+        fn: (c) => {
+          const p = A(c);
+          const q = B(c);
+          return c.los(p.x, p.y, q.x, q.y);
+        },
+      };
+    }
+    const R = r.fn as (c: ExprContext) => number;
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const p = A(c);
+        const q = B(c);
+        const dx = q.x - p.x;
+        const dy = q.y - p.y;
+        if (Math.sqrt(dx * dx + dy * dy) > Number(R(c))) return false;
+        return c.los(p.x, p.y, q.x, q.y);
+      },
+    };
   }
 
   function binary(node: Extract<Ast, { kind: 'binary' }>): CompiledExpr {
