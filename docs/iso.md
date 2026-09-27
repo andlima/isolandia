@@ -44,7 +44,20 @@ unknown pack name — the page shows the complete error list, formatted like
 A drag never counts as a click (8 px threshold). The HUD shows the
 in-game day and time (`Day 1 08:02`, from the pack's `clock`) and the
 player's measurements, from the same `hudModel` as
-the ASCII HUD.
+the ASCII HUD, plus a `Status: …` line while the player has active
+statuses. When the pack's `start.defeat` condition is met, the HUD adds the
+defeat message and a centred banner covers the canvas; the camera still
+pans and zooms, but movement input is ignored.
+
+## Day/night tint
+
+If a pack defines [`lighting`](packs.md#lighting), the ground and object
+layers are multiplied by `tintAt(lighting, timeOfDay)` (Pixi `tint` on the
+two containers, updated only when the colour changes). The time of day is
+computed from `tick + alpha`, so the tint changes smoothly between ticks.
+Path/target markers and the DOM HUD are not tinted. Without `lighting` the
+scene is untinted. The colour logic lives in pure functions
+(`src/core/lighting.ts`, `src/iso/tint.ts`).
 
 ## Projection
 
