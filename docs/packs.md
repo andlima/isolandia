@@ -10,6 +10,10 @@ npm run play  -- packs/std packs/std-needs packs/zombie   # play in the terminal
 npm run play  -- packs/std packs/vampire --seed 7
 ```
 
+`check` also accepts a *library* stack with no `start` (e.g.
+`npm run check -- packs/std packs/std-needs`): it validates the content and
+reports it as not playable on its own. `play` still requires a `start`.
+
 Packs are loaded in the order given. Keys: arrows / WASD / numpad /
 `hjklyubn` move (8 directions), `q` quits. When the player has an
 inventory, `g` takes everything that fits from every reachable container,
