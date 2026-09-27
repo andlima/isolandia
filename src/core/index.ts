@@ -1,9 +1,11 @@
 export * from './definition.ts';
 export * from './clock.ts';
+export * from './lighting.ts';
 export * from './load/index.ts';
 export {
   World,
   type Entity,
+  type DefeatRecord,
   type Intent,
   type StepIntent,
   type GotoIntent,

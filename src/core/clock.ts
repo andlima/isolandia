@@ -63,6 +63,14 @@ export function clockAt(clock: ClockDef, tick: number, ticksPerSecond: number): 
   };
 }
 
+/**
+ * Hours since midnight, in [0, 24), at a possibly fractional tick (e.g.
+ * `tick + alpha` for smooth rendering between ticks). Still one division.
+ */
+export function timeOfDayAt(clock: ClockDef, tick: number, ticksPerSecond: number): number {
+  return minuteOfDay(clock, tick, ticksPerSecond) / 60;
+}
+
 /** `"HH:MM"` → minutes since midnight, or null if malformed / out of range. */
 export function parseTimeOfDay(s: string): number | null {
   const match = /^(\d\d):(\d\d)$/.exec(s);
