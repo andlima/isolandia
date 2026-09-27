@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadPacksOrThrow, Pathfinder, renderPosition, World, type Intent } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { loadFixture } from './helpers.ts';
+import { GAMES, loadFixture } from './helpers.ts';
 
 /** A world over an ASCII map: `#` wall, `.` floor, `@` player on floor. */
 function worldOf(rows: string[], ticksPerStep = 2): World {
@@ -161,8 +161,8 @@ test('goto: path and pending intent are part of the snapshot', () => {
 });
 
 test('determinism: mixed goto and keyboard intents ⇒ same hash', () => {
-  for (const genre of ['packs/zombie', 'packs/vampire']) {
-    const def = loadPacksOrThrow(['packs/base', genre].map(readPack));
+  for (const dirs of Object.values(GAMES)) {
+    const def = loadPacksOrThrow(dirs.map(readPack));
     const run = () => {
       const w = World.create(def, 99);
       const map = def.maps[def.start.map]!;

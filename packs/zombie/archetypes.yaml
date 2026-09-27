@@ -15,7 +15,7 @@ archetypes:
     color: "#5fae3e"
     sprite: shambler_img
     tags: [undead]
-    measurements: [base:hp]
+    measurements: [std:hp]
     initial: { hp: 40 }
   - id: crawler
     label: Crawler

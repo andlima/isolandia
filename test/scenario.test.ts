@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
+import { GAMES } from './helpers.ts';
 import { Looter, type LooterOptions } from './looter.ts';
 
 // Headless scenarios on the real genre packs (M3 AC 18).
@@ -10,7 +11,7 @@ const DAY_TICKS = 14400; // 1440 s × 10 ticks/s
 const SEEDS = [1, 2, 3, 4, 5];
 
 function genre(name: string): Definition {
-  const r = loadPacks([readPack('packs/base'), readPack(`packs/${name}`)]);
+  const r = loadPacks(GAMES[name as keyof typeof GAMES].map(readPack));
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   return r.definition;
 }
@@ -21,10 +22,10 @@ const RESTORING: Record<string, readonly string[]> = { zombie: ['bed', 'food', '
 const LOOTERS: Record<string, LooterOptions> = {
   zombie: {
     needs: [
-      { measurement: 'zmb:thirst', above: 40, items: ['zmb:water_bottle', 'zmb:soda'], stock: 3 },
-      { measurement: 'zmb:hunger', above: 40, items: ['zmb:canned_beans', 'zmb:crackers'], stock: 3 },
-      { measurement: 'zmb:fatigue', above: 45, items: ['zmb:coffee'], stock: 2 },
-      { measurement: 'base:hp', below: 70, items: ['zmb:bandage'], stock: 1 },
+      { measurement: 'std_needs:thirst', above: 40, items: ['zmb:water_bottle', 'zmb:soda'], stock: 3 },
+      { measurement: 'std_needs:hunger', above: 40, items: ['zmb:canned_beans', 'zmb:crackers'], stock: 3 },
+      { measurement: 'std_needs:fatigue', above: 45, items: ['zmb:coffee'], stock: 2 },
+      { measurement: 'std:hp', below: 70, items: ['zmb:bandage'], stock: 1 },
     ],
   },
   vampire: {

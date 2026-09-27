@@ -1,38 +1,14 @@
-# Survival loop: needs turn into statuses that drain health. Food, water,
+# Survival loop: the needs and the statuses that drain health come from
+# std-needs (hunger, hungry, …, referenced here by short name). Food, water,
 # coffee and bandages are looted items used from the inventory (items.yaml);
 # lying on a bed still restores fatigue.
 
 statuses:
-  - id: hungry
-    label: Hungry
-    for: 'self.has_tag("living")'
-    when: "self.hunger >= 70"
-    until: "self.hunger < 40"      # hysteresis: eat well before it clears
-    rates: { hp: -0.2 }
-  - id: thirsty
-    label: Thirsty
-    for: 'self.has_tag("living")'
-    when: "self.thirst >= 70"
-    until: "self.thirst < 40"
-    rates: { hp: -0.3 }
-  - id: burdened
-    label: Burdened
-    for: 'self.has_tag("living")'
-    when: "self.carry_weight >= 0.8 * self.carry_capacity"
-    rates: { fatigue: 0.1 }         # hauling junk wears you out
   - id: stocked
     label: Stocked
     for: 'self.has_tag("living")'
     when: 'self.count_item("canned_beans") + self.count_item("water_bottle") >= 4'
     rates: { fatigue: -0.01 }       # peace of mind
-  - id: exhausted
-    label: Exhausted
-    for: 'self.has_tag("living")'
-    when: "self.fatigue >= 80"
-    until: "self.fatigue < 30"
-    rates:
-      hp: -0.1
-      thirst: 0.05                 # everything is harder when exhausted
 
 systems:
   # Restoring: lie on a bed.

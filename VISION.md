@@ -67,7 +67,7 @@ code.
 3. **Fixed-tick time** (on the order of 10 ticks/s) over a **tile grid**;
    movement interpolated only at render time. Mutable state in the
    simulation (no immutable copy per tick).
-4. **Namespaced IDs from day one** (`base:hunger`, `vamp:blood`), even
+4. **Namespaced IDs from day one** (`std_needs:hunger`, `vamp:blood`), even
    before a mod system exists.
 5. **Two-genre rule:** every milestone is validated with **two mini-games
    of different genres** (e.g. zombie + vampire), to keep genre
@@ -127,7 +127,7 @@ code.
   or utility AI:
   ```yaml
   behaviors:
-    base:shambler:
+    zmb:shambler:
       senses: { sight: 8, hearing: 15 }
       states:
         wander:      { do: random_walk, on: { sees: player -> chase, hears: noise -> investigate } }
@@ -204,11 +204,23 @@ only confirmed after that.
   at the center of the tile floor. See `docs/iso.md`. Cutaway walls remain
   open (M6).
 - How much of the ASCII renderer survives as a permanent debugging tool?
-- Stdpack (decision 8): the current `base` pack (`hp`, `humanoid`) already
+- ~~Stdpack (decision 8): the current `base` pack (`hp`, `humanoid`) already
   plays this role. Rename it to namespace `std`? One pack or several
   optional ones (`std-needs`, `std-melee`…)? The needs currently in
   `packs/zombie/needs.yaml` and generic statuses like `burdened`
-  (`packs/zombie/survival.yaml`) are candidates to move up into it.
+  (`packs/zombie/survival.yaml`) are candidates to move up into it.~~
+  **Decided (task `stdpack-split`):** the stdpack is **several optional
+  packs**. `base` became **`packs/std/`** (namespace `std`: `hp`,
+  `humanoid`, `floor`/`wall`/`door`), and **`packs/std-needs/`** (namespace
+  `std_needs`, depends on `std`) holds the `hunger`/`thirst`/`fatigue`
+  measurements and the `hungry`/`thirsty`/`exhausted`/`burdened` statuses.
+  Entities opt in to the needs by listing the measurements and carrying
+  the **`living`** tag. What is zombie-specific stayed in the zombie pack
+  (the `stocked` status and the `sleep`/`bleed`/`collapse` systems); zombie
+  depends on `[std, std_needs]`, vampire only on `[std]`. More packs (e.g.
+  `std-melee`) get added as genres repeat patterns. The engine guard test
+  rejects stdpack terms in `src/` as well as genre words. See
+  `docs/packs.md`.
 - ~~Time scale / game calendar?~~ **Decided (task `world-clock`, M2
   groundwork):** the scale comes from a pack-defined **`clock`** domain
   (`day_length`, `start`, `dawn`, `dusk`); the default is **1 game day =

@@ -3,7 +3,7 @@ measurements:
     label: Blood
     min: 0
     # Blood capacity is tied to health: half of current hp, at least 10.
-    max: "max(10, self.base:hp / 2)"
+    max: "max(10, self.std:hp / 2)"
     initial: 50
     # Drains 0.05 per second at night, 0.1 in daylight.
     rate: "-0.05 - 0.05 * world.is_day"

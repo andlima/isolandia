@@ -4,7 +4,8 @@ import { formatError, loadPacks, type LoadError, type PackSource } from '../src/
 import { readPack } from '../src/node/read-pack.ts';
 import { fixture, MANIFEST_T, pack, TILES_T } from './helpers.ts';
 
-const BASE = readPack('packs/base');
+const STD = readPack('packs/std');
+const NEEDS = readPack('packs/std-needs');
 const ZOMBIE = readPack('packs/zombie');
 const VAMPIRE = readPack('packs/vampire');
 
@@ -32,45 +33,45 @@ function expectError(errors: readonly LoadError[], exp: Expected): void {
 
 // ── Happy paths ─────────────────────────────────────────────────────────────
 
-test('loads base + zombie', () => {
-  const r = loadPacks([BASE, ZOMBIE]);
+test('loads std + std-needs + zombie', () => {
+  const r = loadPacks([STD, NEEDS, ZOMBIE]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const def = r.definition;
   assert.deepEqual(
     def.packs.map((p) => p.namespace),
-    ['base', 'zmb'],
+    ['std', 'std_needs', 'zmb'],
   );
   assert.deepEqual(
     def.measurements.map((m) => m.id),
-    ['base:hp', 'zmb:hunger', 'zmb:thirst', 'zmb:fatigue'],
+    ['std:hp', 'std_needs:hunger', 'std_needs:thirst', 'std_needs:fatigue'],
   );
   assert.equal(def.archetypes[def.start.player]!.id, 'zmb:survivor');
   assert.equal(def.maps[def.start.map]!.id, 'zmb:town');
-  // Short reference `hp` in zmb resolved through depends to base:hp.
+  // Short reference `hp` in zmb resolved through depends to std:hp.
   const shambler = def.archetypes[def.ids.archetypes['zmb:shambler']!]!;
-  assert.deepEqual(shambler.measurements, [def.ids.measurements['base:hp']]);
+  assert.deepEqual(shambler.measurements, [def.ids.measurements['std:hp']]);
   assert.deepEqual(shambler.initial, [40]);
   // Numeric literal rate skips the expression entirely; expression rate compiles.
-  const hunger = def.measurements[def.ids.measurements['zmb:hunger']!]!;
+  const hunger = def.measurements[def.ids.measurements['std_needs:hunger']!]!;
   assert.equal(hunger.rateFn, null);
   assert.equal(hunger.rateConst, 0.1);
-  assert.equal(typeof def.measurements[def.ids.measurements['zmb:thirst']!]!.rateFn, 'function');
+  assert.equal(typeof def.measurements[def.ids.measurements['std_needs:thirst']!]!.rateFn, 'function');
   assert.ok(def.maps[def.start.map]!.spawns.length >= 3);
 });
 
-test('loads base + vampire, with an expression max tied to base:hp', () => {
-  const r = loadPacks([BASE, VAMPIRE]);
+test('loads std + vampire (no std-needs), with an expression max tied to std:hp', () => {
+  const r = loadPacks([STD, VAMPIRE]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const blood = r.definition.measurements[r.definition.ids.measurements['vamp:blood']!]!;
   assert.equal(typeof blood.maxFn, 'function');
   assert.equal(typeof blood.rateFn, 'function'); // reads world.is_day
-  // A humanoid from base spawned via the vampire map legend.
-  const humanoid = r.definition.ids.archetypes['base:humanoid'];
+  // A humanoid from std spawned via the vampire map legend.
+  const humanoid = r.definition.ids.archetypes['std:humanoid'];
   assert.ok(r.definition.maps[0]!.spawns.some((s) => s.archetype === humanoid));
 });
 
 test('the loaded definition is deeply frozen', () => {
-  const r = loadPacks([BASE, ZOMBIE]);
+  const r = loadPacks([STD, NEEDS, ZOMBIE]);
   assert.ok(r.ok);
   const def = r.definition;
   assert.ok(Object.isFrozen(def));
@@ -84,7 +85,7 @@ test('the loaded definition is deeply frozen', () => {
 
 test('zombie and vampire cannot load together without an explicit start choice', () => {
   // Both define `start`, `clock` and `lighting`: at most one of each is allowed.
-  const errors = errorsOf([BASE, ZOMBIE, VAMPIRE]);
+  const errors = errorsOf([STD, NEEDS, ZOMBIE, VAMPIRE]);
   expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 89, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
   expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 92, message: /duplicate 'start': already defined in pack 'zmb'/ });
   expectError(errors, {
@@ -171,15 +172,15 @@ test('error: duplicate id (across files, short and qualified forms)', () => {
 
 test('error: duplicate id across packs (no overrides yet)', () => {
   const errors = errorsOf([
-    BASE,
+    STD,
     pack('x', {
-      'pack.yaml': 'namespace: base2\nname: X\nversion: 1\ndepends: [base]\n',
-      't.yaml': 'tiles:\n  - { id: "base:floor", label: F, glyph: x, color: blue, walkable: true }\n',
+      'pack.yaml': 'namespace: std2\nname: X\nversion: 1\ndepends: [std]\n',
+      't.yaml': 'tiles:\n  - { id: "std:floor", label: F, glyph: x, color: blue, walkable: true }\n',
     }),
   ]);
-  expectError(errors, { pack: 'base2', file: 't.yaml', path: 'tiles[0].id', line: 2, message: /uses namespace 'base' but is defined in pack 'base2'/ });
-  const errors2 = errorsOf([BASE, pack('b', { 'pack.yaml': 'namespace: base\nname: Again\nversion: 1\n' })]);
-  expectError(errors2, { pack: 'base', file: 'pack.yaml', path: 'namespace', line: 1, message: /namespace 'base' is already loaded/ });
+  expectError(errors, { pack: 'std2', file: 't.yaml', path: 'tiles[0].id', line: 2, message: /uses namespace 'std' but is defined in pack 'std2'/ });
+  const errors2 = errorsOf([STD, pack('b', { 'pack.yaml': 'namespace: std\nname: Again\nversion: 1\n' })]);
+  expectError(errors2, { pack: 'std', file: 'pack.yaml', path: 'namespace', line: 1, message: /namespace 'std' is already loaded/ });
 });
 
 test('error: unknown reference with did-you-mean', () => {
@@ -251,15 +252,15 @@ start: { map: m, player: p }
 
 test('error: reference to a namespace the pack does not depend on', () => {
   const errors = errorsOf([
-    BASE,
-    fixture({ 'archetypes.yaml': 'archetypes:\n  - { id: hero, label: H, glyph: "@", color: red, measurements: [base:hp] }\n' }),
+    STD,
+    fixture({ 'archetypes.yaml': 'archetypes:\n  - { id: hero, label: H, glyph: "@", color: red, measurements: [std:hp] }\n' }),
   ]);
   expectError(errors, {
     pack: 't',
     file: 'archetypes.yaml',
     path: 'archetypes[0].measurements[0]',
     line: 2,
-    message: /namespace 'base', which pack 't' does not depend on/,
+    message: /namespace 'std', which pack 't' does not depend on/,
   });
 });
 
@@ -340,19 +341,36 @@ start: { map: room, player: hero }
 });
 
 test('error: unmet depends', () => {
-  const errors = errorsOf([ZOMBIE, BASE]);
+  const errors = errorsOf([ZOMBIE, STD, NEEDS]);
   expectError(errors, {
     pack: 'zmb',
     file: 'pack.yaml',
     path: 'depends[0]',
     line: 4,
-    message: /unmet dependency: pack 'zmb' depends on 'base', which must be loaded before it/,
+    message: /unmet dependency: pack 'zmb' depends on 'std', which must be loaded before it/,
   });
 });
 
+test('error: zombie without std-needs is an unmet dependency', () => {
+  const errors = errorsOf([STD, ZOMBIE]);
+  expectError(errors, {
+    pack: 'zmb',
+    file: 'pack.yaml',
+    path: 'depends[1]',
+    line: 4,
+    message: /unmet dependency: pack 'zmb' depends on 'std_needs', which must be loaded before it/,
+  });
+});
+
+test('std + std-needs validate on their own (only the missing start is reported)', () => {
+  const errors = errorsOf([STD, NEEDS]);
+  assert.equal(errors.length, 1, errors.map(formatError).join('\n'));
+  assert.match(errors[0]!.message, /no 'start' defined/);
+});
+
 test('error: missing start', () => {
-  const errors = errorsOf([BASE]);
-  expectError(errors, { pack: 'base', file: 'pack.yaml', path: '', line: 1, message: /no 'start' defined/ });
+  const errors = errorsOf([STD]);
+  expectError(errors, { pack: 'std', file: 'pack.yaml', path: '', line: 1, message: /no 'start' defined/ });
 });
 
 test('error: duplicate start', () => {
@@ -374,13 +392,13 @@ test('clock: fields parse to seconds and minutes since midnight', () => {
   assert.deepEqual(r.definition.clock, { dayLength: 600, start: 21 * 60 + 30, dawn: 5 * 60 + 15, dusk: 19 * 60 });
 });
 
-test('clock: the genre packs define different calendars; base does not', () => {
-  const zombie = loadPacks([BASE, ZOMBIE]);
-  const vampire = loadPacks([BASE, VAMPIRE]);
+test('clock: the genre packs define different calendars; the stdpack does not', () => {
+  const zombie = loadPacks([STD, NEEDS, ZOMBIE]);
+  const vampire = loadPacks([STD, VAMPIRE]);
   assert.ok(zombie.ok && vampire.ok);
   assert.equal(zombie.definition.clock.start, 8 * 60);
   assert.equal(vampire.definition.clock.start, 20 * 60);
-  assert.ok(!Object.values(BASE.files).some((text) => /^clock:/m.test(text)));
+  assert.ok(![STD, NEEDS].some((p) => Object.values(p.files).some((text) => /^clock:/m.test(text))));
 });
 
 test('error: duplicate clock names the other pack', () => {
@@ -498,8 +516,8 @@ test('assets: a sprite can reference an asset of a dependency by short id', () =
 });
 
 test('assets: the real genre packs load with their assets', () => {
-  for (const genre of [ZOMBIE, VAMPIRE]) {
-    const r = loadPacks([BASE, genre]);
+  for (const packs of [[STD, NEEDS, ZOMBIE], [STD, VAMPIRE]]) {
+    const r = loadPacks(packs);
     assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
     const def = r.definition;
     assert.ok(def.assets.length >= 2);

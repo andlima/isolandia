@@ -825,7 +825,7 @@ class Loader {
     (list ?? []).forEach((raw, i) => {
       const src = f.at('effects', i);
       if (!isObject(raw)) {
-        this.sink.add(src, `effects must be mappings like { type: apply, measurement: hp, delta: -1 }`);
+        this.sink.add(src, `effects must be mappings like { type: apply, measurement: energy, delta: -1 }`);
         return;
       }
       const type = raw['type'];

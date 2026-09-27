@@ -105,8 +105,8 @@ console.log(`\nWorld.step(), ${SIZE}×${SIZE} map, ${worldTicks} ticks\n`);
 console.log('| variant | entities | ticks/s | avg tick |');
 console.log('|---|---|---|---|');
 const variants: [string, () => PackSource[]][] = [
-  ['base+zombie', () => [readPack('packs/base'), readPack('packs/zombie')]],
-  ['base+vampire', () => [readPack('packs/base'), readPack('packs/vampire')]],
+  ['std+std-needs+zombie', () => ['packs/std', 'packs/std-needs', 'packs/zombie'].map(readPack)],
+  ['std+vampire', () => ['packs/std', 'packs/vampire'].map(readPack)],
   ['stress plain', () => [stressPack(false)]],
   ['stress survival', () => [stressPack(true)]],
 ];

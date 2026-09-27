@@ -385,7 +385,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
   function hasStatus(argNodes: Ast[], pos: number): CompiledExpr {
     if (argNodes.length !== 2) return err(`has_status() takes 2 arguments, got ${argNodes.length}`, pos);
     const idNode = argNodes[1]!;
-    if (idNode.kind !== 'string') return err('has_status() expects a string literal status id, e.g. has_status(self, "hungry")', idNode.pos);
+    if (idNode.kind !== 'string') return err('has_status() expects a string literal status id, e.g. has_status(self, "stunned")', idNode.pos);
     if (!symbols.resolveStatus) return err('has_status() is not available here', pos);
     const r = symbols.resolveStatus(idNode.value);
     if ('error' in r) return err(`has_status: ${r.error}`, idNode.pos);

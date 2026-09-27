@@ -1,0 +1,11 @@
+# Standard needs: hunger, thirst and fatigue, and the generic statuses they
+# drive (hungry, thirsty, exhausted, burdened).
+#
+# Opt-in: an entity takes part by listing the measurements in its archetype
+# (`measurements: [hp, hunger, thirst, fatigue]`) and carrying the `living`
+# tag, which every status's `for` filter tests. An entity without the tag or
+# the measurements is unaffected. Health (`hp`) comes from `std`.
+namespace: std_needs
+name: Standard needs
+version: 0.1.0
+depends: [std]
