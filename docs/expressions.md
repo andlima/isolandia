@@ -115,6 +115,7 @@ sets.
 | `count_item(entity, "id")`               | Units of an item in the entity's inventory (`0` without one) |
 | `has_item(entity, "id")`                 | `count_item(entity, "id") > 0`                           |
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
+| `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 
@@ -138,6 +139,30 @@ and resolved to an index, so a test is one array read.
 when: 'self.carry_weight >= 0.8 * self.carry_capacity'
 when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
 when: 'self.count_item("canned_beans") >= 2 and tile.in_room("kitchen")'
+```
+
+`can_see` answers "can `a` see `b`?" over the tile grid. `a` and `b` are
+entities or tiles; there is no method form and no four-number form. The
+rules:
+
+- Only tiles block sight, through their [`opaque`](packs.md#tiles) flag
+  (default `!walkable`). Entities never block.
+- Endpoints are ignored: only cells strictly between `a` and `b` are
+  tested, so a wall is visible from the floor in front of it, and the same
+  or an adjacent cell is always visible.
+- A diagonal step between two opaque orthogonal neighbours is blocked (no
+  peeking through wall corners, like movement's no corner cutting).
+- The result is symmetric: `can_see(a, b) == can_see(b, a)`. It is
+  integer-only and deterministic.
+- With `range`, the result is `false` when `euclidean(a, b) > range`
+  (a pair exactly `range` apart can still see each other). The range is checked before the
+  line is walked, so distant pairs are cheap.
+
+The result is a boolean, so it works in arithmetic (`1 + can_see(self, player)`).
+
+```yaml
+when: 'can_see(self, player, 8)'
+until: 'not can_see(self, player, 12)'
 ```
 
 `random` and `roll` draw from the world RNG, so results are part of the

@@ -279,6 +279,15 @@ only confirmed after that.
     applied in the intent phase right after movement, with a reach of 1
     tile (Chebyshev) and the result in `world.lastAction`. Duration,
     progress bar and interruption come in M5.
+- ~~How is sight represented?~~ **Decided (task `line-of-sight`, M4
+  groundwork):** sight is **tile-based line of sight**. Tiles get an
+  **`opaque`** flag (default `!walkable`; the vampire window is
+  `opaque: false`). The test walks integer Bresenham lines both ways and
+  ORs them, so it is **symmetric**; endpoints are ignored, diagonal wall
+  corners block, **entities never block**, and it allocates nothing. Pack
+  data uses it through the **`can_see(a, b[, range])`** expression
+  built-in (euclidean range, inclusive, checked first). No field of view,
+  fog of war, light or facing yet. See `docs/expressions.md`.
 
 ## 8. Next step
 
@@ -289,6 +298,10 @@ all in YAML, playable in the terminal and in iso. The next step is to
 author, via `spec-orchestrator`, the **M4 spec**: perception
 (sight/noise) and declarative `behaviors` — the horde that hears the
 window breaking.
+
+M4 groundwork already delivered: **sight** (`opaque` tiles, `can_see`), with
+an `alert` status on the NPCs of both genres. Noise and `behaviors` stay
+open.
 
 M4 design questions still open (to be decided in the spec, not here):
 state machine vs utility AI (or both), how senses and noise are

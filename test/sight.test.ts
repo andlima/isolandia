@@ -1,0 +1,177 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { Grid, lineOfSight, loadPacksOrThrow, Rng, World, type MapDef, type TileDef } from '../src/core/index.ts';
+import { readPack } from '../src/node/read-pack.ts';
+import { GAMES, loadFixture } from './helpers.ts';
+
+function tileDef(index: number, id: string, walkable: boolean, opaque: boolean): TileDef {
+  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null };
+}
+
+/** `.` floor, `#` wall, `+` door, `"` window (not walkable, not opaque). */
+const TILES = [tileDef(0, 'floor', true, false), tileDef(1, 'wall', false, true), tileDef(2, 'door', true, false), tileDef(3, 'window', false, false)];
+const CODES: Record<string, number> = { '.': 0, '#': 1, '+': 2, '"': 3 };
+
+function grid(rows: string[]): Grid {
+  const cells = rows.flatMap((r) => [...r].map((ch) => CODES[ch]!));
+  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, cells } as unknown as MapDef;
+  return new Grid(map, TILES);
+}
+
+test('sight: everything is visible in an open room', () => {
+  const g = grid(['......', '......', '......', '......']);
+  for (let y0 = 0; y0 < g.height; y0++)
+    for (let x0 = 0; x0 < g.width; x0++)
+      for (let y1 = 0; y1 < g.height; y1++)
+        for (let x1 = 0; x1 < g.width; x1++) assert.ok(lineOfSight(g, x0, y0, x1, y1), `(${x0},${y0})→(${x1},${y1})`);
+});
+
+test('sight: a wall blocks, a door in it lets sight through', () => {
+  const g = grid(['.....', '.....', '##+##', '.....']);
+  assert.equal(lineOfSight(g, 0, 0, 0, 3), false);
+  assert.equal(lineOfSight(g, 4, 1, 4, 3), false);
+  assert.equal(lineOfSight(g, 2, 0, 2, 3), true);
+  assert.equal(lineOfSight(g, 2, 3, 2, 0), true);
+});
+
+test('sight: endpoints are ignored', () => {
+  const g = grid(['#####', '....#', '.....']);
+  // Standing next to a wall, looking along it.
+  assert.equal(lineOfSight(g, 0, 1, 3, 1), true);
+  // A wall tile itself is visible from the floor in front of it.
+  assert.equal(lineOfSight(g, 0, 1, 4, 1), true);
+  assert.equal(lineOfSight(g, 4, 1, 0, 1), true);
+  assert.equal(lineOfSight(g, 2, 2, 2, 0), true);
+  // Same and adjacent cells are always visible, even into walls.
+  assert.equal(lineOfSight(g, 1, 1, 1, 1), true);
+  assert.equal(lineOfSight(g, 1, 1, 2, 0), true);
+});
+
+test('sight: no peeking through diagonal wall corners', () => {
+  const both = grid(['.#.', '#..', '...']);
+  assert.equal(lineOfSight(both, 0, 0, 2, 2), false);
+  assert.equal(lineOfSight(both, 2, 2, 0, 0), false);
+  // Adjacent diagonal cells still see each other.
+  assert.equal(lineOfSight(both, 0, 0, 1, 1), true);
+  const one = grid(['.#.', '...', '...']);
+  assert.equal(lineOfSight(one, 0, 0, 2, 2), true);
+  assert.equal(lineOfSight(one, 2, 2, 0, 0), true);
+});
+
+test('sight: a window blocks movement but not sight', () => {
+  const g = grid(['.....', '##"##', '.....']);
+  assert.equal(g.walkable(2, 1), false);
+  assert.equal(g.opaqueAt(2, 1), false);
+  assert.equal(lineOfSight(g, 2, 0, 2, 2), true);
+  assert.equal(lineOfSight(g, 0, 0, 0, 2), false);
+});
+
+test('sight: out-of-bounds endpoints are never visible; out of bounds is opaque', () => {
+  const g = grid(['...', '...', '...']);
+  assert.equal(lineOfSight(g, -1, 0, 1, 0), false);
+  assert.equal(lineOfSight(g, 1, 1, 3, 1), false);
+  assert.equal(lineOfSight(g, 0, 0, 0, 0 + g.height), false);
+  assert.equal(g.opaqueAt(-1, 0), true);
+  assert.equal(g.opaqueAt(0, 3), true);
+});
+
+test('sight: symmetric for every pair of cells on a random map', () => {
+  const W = 14;
+  const H = 13;
+  const rng = new Rng(20260927);
+  const rows: string[] = [];
+  for (let y = 0; y < H; y++) {
+    let r = '';
+    for (let x = 0; x < W; x++) r += rng.next() < 0.3 ? '#' : '.';
+    rows.push(r);
+  }
+  const g = grid(rows);
+  let visible = 0;
+  let blocked = 0;
+  for (let a = 0; a < W * H; a++) {
+    for (let b = a; b < W * H; b++) {
+      const ax = a % W, ay = (a - (a % W)) / W;
+      const bx = b % W, by = (b - (b % W)) / W;
+      const ab = lineOfSight(g, ax, ay, bx, by);
+      assert.equal(ab, lineOfSight(g, bx, by, ax, ay), `(${ax},${ay})↔(${bx},${by})`);
+      if (ab) visible++;
+      else blocked++;
+    }
+  }
+  // The map is interesting: both outcomes occur.
+  assert.ok(visible > 0 && blocked > 0);
+});
+
+test('sight: opaque defaults to !walkable; an explicit value wins', () => {
+  const def = loadFixture({
+    'tiles.yaml': `tiles:
+  - { id: floor, label: Floor, glyph: ".", color: white, walkable: true }
+  - { id: wall, label: Wall, glyph: "#", color: gray, walkable: false }
+  - { id: window, label: Window, glyph: "w", color: blue, walkable: false, opaque: false }
+  - { id: fog, label: Fog, glyph: "f", color: gray, walkable: true, opaque: true }
+`,
+  });
+  const tile = (id: string) => def.tiles.find((t) => t.id === id)!;
+  assert.equal(tile('t:floor').opaque, false);
+  assert.equal(tile('t:wall').opaque, true);
+  assert.equal(tile('t:window').opaque, false);
+  assert.equal(tile('t:fog').opaque, true);
+});
+
+// ── Two-genre scenarios ────────────────────────────────────────────────────
+
+function game(name: keyof typeof GAMES): World {
+  return World.create(loadPacksOrThrow(GAMES[name].map((d) => readPack(d))), 1);
+}
+
+function place(e: { x: number; y: number; fromX: number; fromY: number }, x: number, y: number): void {
+  e.x = e.fromX = x;
+  e.y = e.fromY = y;
+}
+
+test('zombie: an undead NPC in sight gets alert, and loses it behind a wall or far away', () => {
+  const w = game('zombie');
+  const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === 16 && e.y === 10)!;
+  assert.ok(z);
+  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+  // Clear road, 6 tiles away.
+  place(w.player, 22, 10);
+  w.step();
+  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
+  assert.equal(w.hasStatus(w.player, 'zmb:alert'), false);
+  // 10 tiles away: out of `when` range but within `until` range, so it stays alert.
+  place(w.player, 26, 10);
+  w.step();
+  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
+  // Past 12 tiles: cleared.
+  place(w.player, 29, 10);
+  w.step();
+  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+  // Close again, then behind the house wall: cleared although only ~6 tiles away.
+  place(w.player, 22, 10);
+  w.step();
+  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
+  place(w.player, 12, 6);
+  w.step();
+  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+});
+
+test('vampire: the window is see-through, and a bat spots the vampire through it', () => {
+  const w = game('vampire');
+  const window = w.def.tiles.find((t) => t.id === 'vamp:window')!;
+  assert.equal(window.walkable, false);
+  assert.equal(window.opaque, false);
+  assert.equal(w.grid.tileAt(3, 8)!.id, 'vamp:window');
+  const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === 3 && e.y === 6)!;
+  assert.ok(bat);
+  assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
+  // The only cell between (3,7) and (3,9) is the window.
+  place(bat, 3, 7);
+  place(w.player, 3, 9);
+  w.step();
+  assert.equal(w.hasStatus(bat, 'vamp:alert'), true);
+  assert.equal(w.hasStatus(w.player, 'vamp:alert'), false);
+  // The same shape through a wall is blocked.
+  assert.equal(w.grid.tileAt(1, 8)!.id, 'std:wall');
+  assert.equal(lineOfSight(w.grid, 1, 7, 1, 9), false);
+});

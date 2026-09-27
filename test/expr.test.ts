@@ -38,6 +38,7 @@ function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings
     tileIdAt: (x, y) => (x === 1 && y === 2 ? 't:floor' : 't:wall'),
     tileTagsAt: (x, y) => new Set(x === 1 && y === 2 ? ['shade'] : []),
     inRoom: () => false,
+    los: () => true,
     warn: (m) => warnings.push(m),
     warnings,
     ...overrides,
@@ -183,6 +184,41 @@ test('compile: built-ins', () => {
   assert.ok(Number.isInteger(r) && r >= 1 && r <= 6);
   const d = run('roll(3, 6)') as number;
   assert.ok(d >= 3 && d <= 18);
+});
+
+test('compile: can_see with entities, tiles and an inclusive euclidean range', () => {
+  const calls: number[][] = [];
+  const ctx = context({
+    los: (x0, y0, x1, y1) => {
+      calls.push([x0, y0, x1, y1]);
+      return x1 !== 9;
+    },
+  });
+  // self (1,2), player (4,6): euclidean distance 5.
+  assert.equal(run('can_see(self, player)', ctx), true);
+  assert.deepEqual(calls.pop(), [1, 2, 4, 6]);
+  assert.equal(run('can_see(tile, player)', ctx), true);
+  assert.deepEqual(calls.pop(), [1, 2, 4, 6]);
+  assert.equal(run('can_see(player, tile, 5)', ctx), true);
+  assert.deepEqual(calls.pop(), [4, 6, 1, 2]);
+  // Out of range: false without walking the line.
+  assert.equal(run('can_see(self, player, 4.9)', ctx), false);
+  assert.equal(calls.length, 0);
+  assert.equal(run('can_see(self, player, self.hp)', ctx), true);
+  assert.equal(run('1 + can_see(self, player)', ctx), 2);
+  assert.equal(run('1 + can_see(self, player, 1)', ctx), 1);
+  // The line walk decides once in range.
+  const far = context({ player: entity(9, 2, [0, 0, 0]), los: (_a, _b, x1) => x1 !== 9 });
+  assert.equal(run('can_see(self, player, 10)', far), false);
+});
+
+test('compile: can_see errors are load errors', () => {
+  assert.deepEqual(errorsOf('can_see(self)'), ['can_see() takes 2 or 3 arguments, got 1']);
+  assert.deepEqual(errorsOf('can_see(self, player, 1, 2)'), ['can_see() takes 2 or 3 arguments, got 4']);
+  assert.deepEqual(errorsOf('can_see(self, 3)'), ['can_see(a, b) expects two entities or tiles']);
+  assert.deepEqual(errorsOf('can_see(self, player, "far")'), ['can_see(a, b, range) expects a numeric range']);
+  assert.deepEqual(errorsOf('can_se(self, player)'), ["unknown function 'can_se' (did you mean 'can_see'?)"]);
+  assert.deepEqual(errorsOf('self.can_see(player)'), ['only built-in functions can be called']);
 });
 
 test('compile: random/roll use the context RNG (deterministic)', () => {
