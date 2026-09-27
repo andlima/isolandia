@@ -1,89 +1,117 @@
-# isolandia — Visão e decisões iniciais
+# isolandia — Vision and early decisions
 
-> Documento-memória para apoiar a escrita das primeiras specs.
-> Não é uma spec: registra o *porquê*, as decisões já tomadas e as
-> perguntas em aberto. Atualize-o quando uma decisão mudar.
+> Memory document to support writing the first specs.
+> It is not a spec: it records the *why*, the decisions already made and the
+> open questions. Update it when a decision changes.
 
-## 1. Objetivo
+## 1. Goal
 
-Um engine **data-driven** para RPGs open world em **perspectiva isométrica**,
-na linha de *Project Zomboid*: simulação sistêmica (necessidades, tempo,
-loot, IA, crafting) num mundo persistente baseado em grade de tiles.
+A **data-driven** engine for open-world RPGs in **isometric perspective**,
+in the vein of *Project Zomboid*: systemic simulation (needs, time, loot,
+AI, crafting) in a persistent world built on a tile grid.
 
-O diferencial buscado: criar mundos de **gêneros completamente diferentes**
-(zumbi, vampiro, velho oeste, noir…) **do zero**, essencialmente com
-**assets + arquivos declarativos de configuração**, com pouca necessidade
-de scripts. Trocar de gênero deve significar trocar de *pack*, não de código.
+The differentiator we are after: building worlds of **completely different
+genres** (zombie, vampire, wild west, noir…) **from scratch**, essentially
+with **assets + declarative configuration files**, with little need for
+scripts. Switching genre should mean switching *pack*, not code.
 
-Meta realista: **80–90% declarativo**, com uma porta de saída (hooks de
-script sandboxed) para o restante. Não é objetivo igualar o Zomboid em
-escopo.
+Realistic target: **80–90% declarative**, with an escape hatch (sandboxed
+script hooks) for the rest. Matching Zomboid's scope is not a goal.
 
-## 2. Origem: lições do `rogue-engine`
+## 2. Origin: lessons from `rogue-engine`
 
-Projeto irmão em `~/code/rogue-engine` — roguelike por turnos, ASCII,
-totalmente definido em YAML. Serve de prova de conceito do modelo
-declarativo.
+Sibling project at `~/code/rogue-engine` — a turn-based ASCII roguelike,
+fully defined in YAML. It serves as a proof of concept for the declarative
+model.
 
-**Reaproveitar (conceitos, e possivelmente código portado):**
+**Reuse (concepts, and possibly ported code):**
 
-| Conceito | Onde está no rogue-engine | Uso aqui |
+| Concept | Where it lives in rogue-engine | Use here |
 |---|---|---|
-| Measurements genéricas (`hp` é só mais uma) | `docs/schema.md`, `src/runtime/state.js` | Fome, sangue, reputação, suspeita… tudo é measurement |
-| Linguagem de expressões | `src/expressions/`, `docs/expressions.md` | Condições e fórmulas em todo o schema |
-| Pipeline de efeitos | `src/runtime/effects.js` | Base do vocabulário de efeitos (a ser ampliado) |
-| Interaction flows | `src/runtime/flow.js`, `docs/interaction-flows.md` | Menu de contexto (clique direito) e targeting |
-| Tags + validação no load | `src/config/loader.js` | Ainda mais crítico com mods empilhados |
-| Renderer ASCII | `src/renderer/ascii.js` | Debug/testes da simulação antes do isométrico |
-| Fluxo spec-driven com agentes | `AGENTS.md`, `.spec.toml`, `specs/` | Mesmo fluxo neste repo |
+| Generic measurements (`hp` is just another one) | `docs/schema.md`, `src/runtime/state.js` | Hunger, blood, reputation, suspicion… everything is a measurement |
+| Expression language | `src/expressions/`, `docs/expressions.md` | Conditions and formulas across the schema |
+| Effects pipeline | `src/runtime/effects.js` | Basis of the effects vocabulary (to be expanded) |
+| Interaction flows | `src/runtime/flow.js`, `docs/interaction-flows.md` | Context menu (right click) and targeting |
+| Tags + load-time validation | `src/config/loader.js` | Even more critical with stacked mods |
+| ASCII renderer | `src/renderer/ascii.js` | Debugging/testing the simulation before isometric |
+| Spec-driven agent workflow | `AGENTS.md`, `.spec.toml`, `specs/` | Same workflow in this repo |
 
-**Não reaproveitar:**
+**Do not reuse:**
 
-- `dispatch(state, action)` **imutável por turno** — não escala para ticks
-  contínuos com centenas/milhares de entidades.
-- **Mapas como strings ASCII** — ok para fixtures de teste, não para o mundo.
+- **Immutable per-turn** `dispatch(state, action)` — does not scale to
+  continuous ticks with hundreds/thousands of entities.
+- **Maps as ASCII strings** — fine for test fixtures, not for the world.
 
-**Alerta aprendido:** YAML tende a virar uma linguagem de programação ruim.
-Ex.: o shrine em `games/pirate.yaml` repete `when: 'actor.doubloons >= 5'`
-em cinco efeitos. Defesa: **primitivos ricos** (systems, behaviors, recipes,
-loot tables, dialogues, statuses) em vez de controle de fluxo genérico
-cada vez mais poderoso; e aceitar hooks de script quando o YAML ficar pior
-que código.
+**Lesson learned:** YAML tends to turn into a bad programming language.
+E.g. the shrine in `games/pirate.yaml` repeats `when: 'actor.doubloons >= 5'`
+across five effects. Defense: **rich primitives** (systems, behaviors,
+recipes, loot tables, dialogues, statuses) instead of ever more powerful
+generic control flow; and accept script hooks when YAML gets worse than
+code.
 
-## 3. Decisões tomadas
+## 3. Decisions made
 
-1. **Stack: TypeScript.** Simulação em TS puro; renderer com **PixiJS**
-   (WebGL); jogo servível a partir de um HTML. Desktop depois via
-   **Tauri** (ou Electron) embrulhando o mesmo build, se necessário.
-   - Motivo principal: o fluxo spec-driven com agentes funciona melhor com
-     tudo em texto, testes headless em Node (`node:test`) e verificação
-     visual via Playwright.
-   - Godot foi considerado (também exporta para web, tem ótimo editor e
-     melhor desempenho), mas num engine data-driven o editor seria em
-     grande parte contornado. Se um dia migrar, **specs, schema e packs
-     sobrevivem**; só o código é reescrito.
-2. **Simulação desacoplada:** o core não depende de DOM nem de Pixi.
-   Roda em Node (testes), num Web Worker (browser) ou num shell desktop.
-   Renderer é só um consumidor do estado.
-3. **Tempo em ticks fixos** (ordem de 10 ticks/s) sobre **grade de tiles**;
-   movimento interpolado apenas na renderização. Estado mutável na
-   simulação (sem cópia imutável por tick).
-4. **IDs com namespace desde o primeiro dia** (`base:hunger`,
-   `vamp:blood`), mesmo antes de existir sistema de mods.
-5. **Regra dos dois gêneros:** todo marco é validado com **dois mini-jogos
-   de gêneros diferentes** (ex.: zumbi + vampiro), para impedir que
-   suposições de gênero vazem para o engine.
-6. **Mapas do mundo editados no Tiled** (JSON) quando o mundo crescer;
-   ASCII continua válido para fixtures.
-7. **Dependências mínimas**, no espírito do rogue-engine (parser YAML,
-   PixiJS; o resto justificado caso a caso).
+1. **Stack: TypeScript.** Simulation in plain TS; renderer with **PixiJS**
+   (WebGL); game servable from an HTML page. Desktop later via **Tauri**
+   (or Electron) wrapping the same build, if needed.
+   - Main reason: the spec-driven agent workflow works best with
+     everything in text, headless tests in Node (`node:test`) and visual
+     verification via Playwright.
+   - Godot was considered (it also exports to web, has a great editor and
+     better performance), but in a data-driven engine the editor would be
+     largely bypassed. If we ever migrate, **specs, schema and packs
+     survive**; only the code is rewritten.
+2. **Decoupled simulation:** the core does not depend on the DOM or Pixi.
+   It runs in Node (tests), in a Web Worker (browser) or in a desktop
+   shell. The renderer is just a consumer of the state.
+3. **Fixed-tick time** (on the order of 10 ticks/s) over a **tile grid**;
+   movement interpolated only at render time. Mutable state in the
+   simulation (no immutable copy per tick).
+4. **Namespaced IDs from day one** (`base:hunger`, `vamp:blood`), even
+   before a mod system exists.
+5. **Two-genre rule:** every milestone is validated with **two mini-games
+   of different genres** (e.g. zombie + vampire), to keep genre
+   assumptions from leaking into the engine.
+6. **World maps edited in Tiled** (JSON) once the world grows; ASCII stays
+   valid for fixtures.
+7. **Minimal dependencies**, in the spirit of rogue-engine (YAML parser,
+   PixiJS; anything else justified case by case).
+8. **Three tiers, GURPS-style** (a generic core + setting supplements, not
+   a system with the genre built in like D&D):
+   - **Engine (code, genre-free):** vocabulary only — entities,
+     components, measurements, statuses, tags, actions with duration,
+     systems, behaviors, containers, grid/space, time, expressions. No
+     "hunger", "hp", "combat", not even a special "player": the player is
+     an entity controlled by input; life and death are measurements and
+     rules declared by a pack.
+   - **Stdpack (data, optional, "batteries included"):** pieces that
+     several genres reuse — needs (hunger/thirst/sleep), health and
+     damage, weighted inventory, day/night, melee combat… Each game picks
+     what it uses (a noir game can skip combat) and can tune or replace
+     any piece.
+   - **Genre packs:** zombie, vampire, wild west… they only compose and
+     tune the engine and the stdpack; this is where zombies, coffins and
+     shuriken live.
 
-## 4. Primitivos-alvo do schema (esboço, não final)
+   Working rules:
+   - When two genre packs repeat the same YAML pattern, it moves up into
+     the stdpack (or becomes a new engine primitive) — it never becomes
+     generic control flow in YAML (see §2).
+   - Engine code contains no genre terms; a test that searches `src/` for
+     words like `zombie`, `vampire`, `hunger`, `hp` catches leaks.
+   - Whatever the stdpack does, a third-party pack must be able to do the
+     same way: the stdpack uses no shortcuts the engine does not expose
+     to everyone.
+   - When possible, validate with a very different third genre (noir with
+     no combat, a space station with oxygen instead of food) to expose
+     assumptions that zombie and vampire share.
 
-- **measurements** — valores numéricos com min/max/initial (herdado).
-- **statuses** — estados derivados de limites (`hunger > 70 → Hungry`),
-  com efeitos contínuos (equivalente aos *moodles*).
-- **systems** — regras que rodam sozinhas no tempo:
+## 4. Target schema primitives (sketch, not final)
+
+- **measurements** — numeric values with min/max/initial (inherited).
+- **statuses** — states derived from thresholds (`hunger > 70 → Hungry`),
+  with ongoing effects (the equivalent of *moodles*).
+- **systems** — rules that run on their own over time:
   ```yaml
   systems:
     - id: vamp:sunburn
@@ -93,10 +121,10 @@ que código.
       effects:
         - { type: apply, measurement: hp, delta: -2 }
   ```
-- **actions** — com `requires`, `flow`, **`duration`** e interrupção
-  (quase tudo no Zomboid leva tempo e tem barra de progresso).
-- **behaviors** — IA declarativa: sentidos (visão, audição) + máquina de
-  estados ou utility AI:
+- **actions** — with `requires`, `flow`, **`duration`** and interruption
+  (almost everything in Zomboid takes time and has a progress bar).
+- **behaviors** — declarative AI: senses (sight, hearing) + state machine
+  or utility AI:
   ```yaml
   behaviors:
     base:shambler:
@@ -106,142 +134,152 @@ que código.
         investigate: { do: goto_last_noise, timeout: 30s -> wander }
         chase:       { do: pursue, on: { adjacent: target -> attack, lost: target -> investigate } }
   ```
-- **items / containers** — peso, capacidade, categorias.
-- **loot tables** — distribuição por **tag de sala** (`kitchen`, `saloon`…).
-- **recipes** — crafting declarativo.
-- **factions, dialogues, quest flags, journal** — camada social (noir,
-  velho oeste).
-- **assets manifest** — sprites/spritesheets referenciados por ID.
-- **packs** — base + packs que sobrescrevem/estendem, validados em conjunto.
+- **items / containers** — weight, capacity, categories.
+- **loot tables** — distribution by **room tag** (`kitchen`, `saloon`…).
+- **recipes** — declarative crafting.
+- **factions, dialogues, quest flags, journal** — social layer (noir,
+  wild west).
+- **assets manifest** — sprites/spritesheets referenced by ID.
+- **packs** — base + packs that override/extend, validated together.
 
-## 5. Roteiro incremental
+## 5. Incremental roadmap
 
-Cada marco termina **jogável** e passa pela regra dos dois gêneros.
+Every milestone ends **playable** and passes the two-genre rule.
 
-| # | Marco | Resultado jogável | Status |
+| # | Milestone | Playable result | Status |
 |---|---|---|---|
-| S0 | **Spike de viabilidade** (antes de tudo): 4×4 chunks de 32×32 tiles isométricos, ~500 entidades vagando com A*, player move por clique; medir fps em notebook médio e celular | Confirma (ou não) TS + Pixi | ✅ feito¹ |
-| M0 | Núcleo da simulação: grade, entidades, loop de ticks, measurements, expressões compiladas, loader YAML com namespaces; render **ASCII top-down** | Andar e ver measurements mudando com o tempo | ✅ feito |
-| M1 | Renderer isométrico: tiles, depth sort, câmera, click-to-move (A*), manifesto de assets | O mesmo jogo, em iso | ✅ feito |
-| M2 | Relógio, dia/noite, `systems`, `statuses` | Sobreviver um dia com fome/sede/sono | ✅ feito |
-| M3 | Itens, peso, containers, loot tables por tag de sala | Saquear uma casa | ✅ feito |
-| M4 | Percepção (visão/ruído) + `behaviors` | Horda que ouve a janela quebrando |  |
-| M5 | Ações com duração, menu de contexto, receitas | Curativo, cozinhar, barricar |  |
-| M6 | Mundo em chunks, múltiplos andares, mapas Tiled, save/load | Uma cidadezinha explorável |  |
-| M7 | Packs/mods: empilhamento, overrides, validação conjunta | Zumbi e vampiro como mods da mesma base |  |
-| M8 | Camada social: facções, diálogos, quests, journal | Mistério noir curto / duelo no velho oeste |  |
-| M9 | Hooks de script sandboxed | Um mod "impossível" em YAML puro |  |
+| S0 | **Feasibility spike** (before anything else): 4×4 chunks of 32×32 isometric tiles, ~500 entities wandering with A*, player moves by click; measure fps on a mid-range laptop and a phone | Confirms (or not) TS + Pixi | ✅ done¹ |
+| M0 | Simulation core: grid, entities, tick loop, measurements, compiled expressions, namespaced YAML loader; **top-down ASCII** render | Walk around and watch measurements change over time | ✅ done |
+| M1 | Isometric renderer: tiles, depth sort, camera, click-to-move (A*), assets manifest | The same game, in iso | ✅ done |
+| M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
+| M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
+| M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking |  |
+| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading |  |
+| M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
+| M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
+| M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
+| M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
 
-¹ S0: benchmark headless da simulação medido; os números de **fps no
-browser** (notebook médio e celular) seguem **pendentes** — a tabela manual
-e o `s0-bench.json` ainda precisam ser preenchidos (ver
-`docs/spikes/s0-results.md`, "Browser benchmark"). O veredito do spike só
-fica confirmado depois disso.
+¹ S0: the headless simulation benchmark is measured; the **browser fps**
+numbers (mid-range laptop and phone) are still **pending** — the manual
+table and `s0-bench.json` still need to be filled in (see
+`docs/spikes/s0-results.md`, "Browser benchmark"). The spike's verdict is
+only confirmed after that.
 
-## 6. Riscos
+## 6. Risks
 
-- **Arte isométrica é cara** e é o que faz um gênero *parecer* outro.
-  Começar com placeholders (blocos coloridos, packs Kenney) até ~M4.
-- **Desempenho:** compilar expressões para closures no load; simulação em
-  LOD para chunks distantes; ordenação de profundidade por chunk.
-- **Escopo:** o Zomboid tem mais de uma década de desenvolvimento. O alvo é
-  um núcleo pequeno em que trocar de gênero = trocar de pack.
-- **Creep do YAML** (ver §2): preferir novos primitivos ou hooks de script
-  a condicionais genéricas cada vez mais complexas.
-- **Mods no browser:** instalar mods de terceiros exige upload de zip ou
-  File System Access API; com Tauri vira pasta normal.
+- **Isometric art is expensive**, and it is what makes one genre *look*
+  like another. Start with placeholders (colored blocks, Kenney packs)
+  until ~M4.
+- **Performance:** compile expressions to closures at load; LOD
+  simulation for distant chunks; per-chunk depth sorting.
+- **Scope:** Zomboid has more than a decade of development. The target is
+  a small core in which switching genre = switching pack.
+- **YAML creep** (see §2): prefer new primitives or script hooks over ever
+  more complex generic conditionals.
+- **Mods in the browser:** installing third-party mods requires a zip
+  upload or the File System Access API; with Tauri it becomes a normal
+  folder.
 
-## 7. Perguntas em aberto
+## 7. Open questions
 
-- ~~Formato dos packs: YAML puro, ou YAML + JSON gerado? Um arquivo por
-  domínio (`items.yaml`, `systems.yaml`…) ou livre?~~ **Decidido no M0:**
-  **YAML puro** (sem JSON gerado). Um pack é um diretório com `pack.yaml`
-  (`namespace`, `name`, `version`, `depends`) e **layout livre** de
-  arquivos `*.yaml` em qualquer profundidade; cada arquivo traz uma ou
-  mais **chaves de domínio** (`measurements`, `tiles`, `archetypes`,
-  `maps`, `start`…) e o conteúdo é **mesclado por domínio** dentro do
-  pack. Chaves desconhecidas são erro de load. Ver `docs/packs.md`.
-- Máquina de estados vs utility AI para `behaviors` — ou ambos?
-- Semântica de override entre packs: substituição total por ID, merge
-  profundo, ou operações de patch explícitas?
-- Linguagem dos hooks de script: JS sandboxed (Worker/`ShadowRealm`) ou
-  Lua (wasmoon/fengari)?
-- Combate: tempo real sobre ticks, ou algo mais tático?
-- ~~Projeção: 2:1 dimétrica clássica? Tamanho de tile?~~ **Decidido no
-  M1:** **2:1 dimétrica clássica** com losango de tile de **64×32 px**
-  (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); blocos elevados de 32 px;
-  sprites de tile ancorados no vértice inferior do losango, de arquétipo no
-  centro do chão do tile. Ver `docs/iso.md`. Paredes com cutaway continuam
-  em aberto (M6).
-- Quanto do renderer ASCII sobrevive como ferramenta de debug permanente?
-- ~~Escala de tempo / calendário do jogo?~~ **Decidido (task
-  `world-clock`, base do M2):** a escala vem de um domínio **`clock`**
-  definido pelo pack (`day_length`, `start`, `dawn`, `dusk`); o padrão é
-  **1 dia de jogo = 24 minutos reais** (1 s de simulação = 1 minuto de
-  jogo). O tempo de jogo é **derivado do tick** — não acrescenta estado,
-  então determinismo, snapshots e hashes não mudam. Expressões leem
-  `world.day`, `world.hour`, `world.minute`, `world.time_of_day` e
-  `world.is_day`; `rate` continua por segundo de simulação. **No máximo um
-  pack** define `clock` até existir semântica de override (M7). Ver
-  `docs/packs.md`.
-- ~~Como `systems` agendam trabalho, como `statuses` entram e saem, como o
-  dia/noite é configurado, e como o jogo termina?~~ **Decidido no M2:**
-  - **`systems`** usam **segundos de simulação** (`every: 1`, padrão um
-    tick); `every` precisa ser um número inteiro de ticks e vira período em
-    ticks no load. Rodam uma vez por entidade (`for` filtra, depois `when`),
-    com efeitos `apply`/`set` em `self`. Unidades de tempo de jogo
-    (`every: 30m`) ficam para depois.
-  - **`statuses`** entram com `when` e saem com `until` (padrão
-    `not when`), o que dá **histerese**; enquanto ativos somam `rates` ao
-    drift. São estado da simulação (snapshot/hash) e as expressões os
-    testam com `has_status(entity, "id")`, resolvido no load para um índice.
-  - A ordem do tick é fixa: intent → drift (com `rates` dos statuses do
-    início do tick) → systems → clamp → statuses → derrota → `tick++`.
-  - O tint de dia/noite é um **domínio próprio, `lighting`** (keyframes
-    `at`/`color` interpolados em RGB), puramente visual; no máximo um pack
-    o define, como `clock`.
-  - A derrota é **`start.defeat`** (`when` avaliado com `self` = player,
-    `message` opcional); ao disparar, o mundo congela e ignora input.
-  - Tiles ganham **`tags`** próprias (`tile.has_tag("x")`), separadas das
-    tags de arquétipo.
-- ~~Itens como entidades ou como dados em containers? Como tags de
-  tile/sala alimentam as loot tables?~~ **Decidido no M3:**
-  - **Itens são dados dentro de containers**, não entidades: uma pilha é
-    `{ item, count }` (no máximo uma por item). Há três tipos de
-    container: embutido no tile (`tiles[].container`), **inventário** de
-    entidade (`archetypes[].inventory`) e **pilha no chão** (criada ao
-    largar itens, removida quando esvazia). Ids de container são
-    sequenciais e nunca reusados.
-  - **Pesos em centésimos inteiros**: pesos e capacidades são arredondados
-    a 0,01 no load e somados/comparados como inteiros, sem drift de float
-    (`0.1 × 3` cabe em `0.3`). Expressões e UI mostram unidades normais.
-  - **Salas são retângulos** (`maps[].rooms: [{ rect, tags }]`); as tags de
-    uma célula são a união dos retângulos que a contêm. Tags de sala, de
-    tile e de entidade são três conjuntos separados (`tile.in_room("x")`).
-  - **A distribuição mais específica vence**: cada container de tile usa a
-    primeira entrada de `distributions` cuja `room` está nas tags da
-    célula; senão a primeira sem `room`; empate → ordem de definição.
-  - **Loot tem RNG próprio**, derivado da seed do mundo, rolado uma vez no
-    construtor do `World`; o RNG do mundo não é tocado, então movimento e
-    `random()` não mudam. Tabelas aninhadas, `nothing` e ciclos (erro de
-    load) são suportados.
-  - **Ações são instantâneas até o M5**: `take`/`put`/`drop`/`use` entram
-    numa fila própria (`queueAction`, separada dos intents de movimento),
-    aplicada na fase de intent logo após o movimento, com alcance de 1
-    tile (Chebyshev) e resultado em `world.lastAction`. Duração, barra de
-    progresso e interrupção ficam para o M5.
+- ~~Pack format: pure YAML, or YAML + generated JSON? One file per domain
+  (`items.yaml`, `systems.yaml`…) or free-form?~~ **Decided in M0:**
+  **pure YAML** (no generated JSON). A pack is a directory with `pack.yaml`
+  (`namespace`, `name`, `version`, `depends`) and a **free-form layout** of
+  `*.yaml` files at any depth; each file carries one or more **domain
+  keys** (`measurements`, `tiles`, `archetypes`, `maps`, `start`…) and the
+  content is **merged per domain** within the pack. Unknown keys are a
+  load error. See `docs/packs.md`.
+- State machine vs utility AI for `behaviors` — or both?
+- Override semantics between packs: full replacement by ID, deep merge,
+  or explicit patch operations?
+- Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
+  (wasmoon/fengari)?
+- Combat: real time over ticks, or something more tactical?
+- ~~Projection: classic 2:1 dimetric? Tile size?~~ **Decided in M1:**
+  **classic 2:1 dimetric** with a **64×32 px** tile diamond
+  (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); 32 px raised blocks; tile
+  sprites anchored at the bottom vertex of the diamond, archetype sprites
+  at the center of the tile floor. See `docs/iso.md`. Cutaway walls remain
+  open (M6).
+- How much of the ASCII renderer survives as a permanent debugging tool?
+- Stdpack (decision 8): the current `base` pack (`hp`, `humanoid`) already
+  plays this role. Rename it to namespace `std`? One pack or several
+  optional ones (`std-needs`, `std-melee`…)? The needs currently in
+  `packs/zombie/needs.yaml` and generic statuses like `burdened`
+  (`packs/zombie/survival.yaml`) are candidates to move up into it.
+- ~~Time scale / game calendar?~~ **Decided (task `world-clock`, M2
+  groundwork):** the scale comes from a pack-defined **`clock`** domain
+  (`day_length`, `start`, `dawn`, `dusk`); the default is **1 game day =
+  24 real minutes** (1 simulation second = 1 game minute). Game time is
+  **derived from the tick** — it adds no state, so determinism, snapshots
+  and hashes do not change. Expressions read `world.day`, `world.hour`,
+  `world.minute`, `world.time_of_day` and `world.is_day`; `rate` stays per
+  simulation second. **At most one pack** defines `clock` until override
+  semantics exist (M7). See `docs/packs.md`.
+- ~~How do `systems` schedule work, how do `statuses` enter and exit, how
+  is day/night configured, and how does the game end?~~ **Decided in M2:**
+  - **`systems`** use **simulation seconds** (`every: 1`, default one
+    tick); `every` must be a whole number of ticks and becomes a period in
+    ticks at load. They run once per entity (`for` filters, then `when`),
+    with `apply`/`set` effects on `self`. Game-time units (`every: 30m`)
+    come later.
+  - **`statuses`** enter with `when` and exit with `until` (default
+    `not when`), which gives **hysteresis**; while active they add their
+    `rates` to the drift. They are simulation state (snapshot/hash) and
+    expressions test them with `has_status(entity, "id")`, resolved to an
+    index at load.
+  - The tick order is fixed: intent → drift (with the `rates` of the
+    statuses active at the start of the tick) → systems → clamp →
+    statuses → defeat → `tick++`.
+  - The day/night tint is **its own domain, `lighting`** (`at`/`color`
+    keyframes interpolated in RGB), purely visual; at most one pack
+    defines it, like `clock`.
+  - Defeat is **`start.defeat`** (`when` evaluated with `self` = player,
+    optional `message`); when it fires, the world freezes and ignores
+    input.
+  - Tiles get their own **`tags`** (`tile.has_tag("x")`), separate from
+    archetype tags.
+- ~~Items as entities or as data in containers? How do tile/room tags feed
+  loot tables?~~ **Decided in M3:**
+  - **Items are data inside containers**, not entities: a stack is
+    `{ item, count }` (at most one per item). There are three kinds of
+    container: built into the tile (`tiles[].container`), an entity's
+    **inventory** (`archetypes[].inventory`) and a **ground pile**
+    (created when items are dropped, removed when it empties). Container
+    ids are sequential and never reused.
+  - **Weights in integer hundredths**: weights and capacities are rounded
+    to 0.01 at load and summed/compared as integers, with no float drift
+    (`0.1 × 3` fits in `0.3`). Expressions and UI show normal units.
+  - **Rooms are rectangles** (`maps[].rooms: [{ rect, tags }]`); a cell's
+    tags are the union of the rectangles that contain it. Room, tile and
+    entity tags are three separate sets (`tile.in_room("x")`).
+  - **The most specific distribution wins**: each tile container uses the
+    first `distributions` entry whose `room` is in the cell's tags;
+    otherwise the first one without `room`; ties → definition order.
+  - **Loot has its own RNG**, derived from the world seed, rolled once in
+    the `World` constructor; the world RNG is untouched, so movement and
+    `random()` do not change. Nested tables, `nothing` and cycles (a load
+    error) are supported.
+  - **Actions are instant until M5**: `take`/`put`/`drop`/`use` go into
+    their own queue (`queueAction`, separate from movement intents),
+    applied in the intent phase right after movement, with a reach of 1
+    tile (Chebyshev) and the result in `world.lastAction`. Duration,
+    progress bar and interruption come in M5.
 
-## 8. Próximo passo
+## 8. Next step
 
-S0, M0, M1, M2 e M3 estão entregues: zumbi e vampiro têm um loop de
-sobrevivência e de saque (casas e mansão com salas, containers com loot
-por sala, inventário com peso, comer/beber/curar usando itens), tudo em
-YAML, jogável no terminal e no iso. O próximo passo é autorar via
-`spec-orchestrator` a **spec do M4**: percepção (visão/ruído) e
-`behaviors` declarativos — a horda que ouve a janela quebrando.
+S0, M0, M1, M2 and M3 are delivered: zombie and vampire have a survival
+and looting loop (houses and a mansion with rooms, containers with
+per-room loot, weighted inventory, eating/drinking/healing with items),
+all in YAML, playable in the terminal and in iso. The next step is to
+author, via `spec-orchestrator`, the **M4 spec**: perception
+(sight/noise) and declarative `behaviors` — the horde that hears the
+window breaking.
 
-Perguntas de design do M4 ainda em aberto (a decidir na spec, não aqui):
-máquina de estados vs utility AI (ou ambos), como sentidos e ruído são
-representados sem custo por tick proporcional ao mapa, como NPCs usam
-containers e itens (hoje só o player age), e se efeitos de `systems`
-passam a criar ou consumir itens.
+M4 design questions still open (to be decided in the spec, not here):
+state machine vs utility AI (or both), how senses and noise are
+represented without a per-tick cost proportional to the map, how NPCs use
+containers and items (today only the player acts), and whether `systems`
+effects start creating or consuming items.

@@ -121,8 +121,8 @@ from the console `BENCH_RESULT` line, or read the HUD during free play.
   share one sorted container, so Pixi re-sorts every child whenever any
   `zIndex` changes, which is every frame while anything moves. That includes
   hidden children. This is O(k log k) with k ≈ 4500 at n=2000. Per-chunk or
-  per-row buckets (VISION §6 already suggests "ordenação de profundidade por
-  chunk") would bound it to what is visible.
+  per-row buckets (VISION §6 already suggests "per-chunk depth sorting")
+  would bound it to what is visible.
 - **The zoomed-out overview is the worst case.** Everything is visible, so no
   culling helps. The benchmark measures this phase on its own.
 - **Path request bursts.** A burst of full-map A\* searches caps the tick at
