@@ -45,6 +45,24 @@ tiles:
     glyph: "\""
     color: "#6fa8dc"
     walkable: false
+  - id: bookshelf
+    label: Bookshelf
+    glyph: "L"
+    color: "#6a4a2a"
+    walkable: false
+    container: { capacity: 20 }
+  - id: chest
+    label: Oak chest
+    glyph: "X"
+    color: "#8a6a3a"
+    walkable: false
+    container: { capacity: 30 }
+  - id: wine_rack
+    label: Wine rack
+    glyph: "R"
+    color: "#5a1a2a"
+    walkable: false
+    container: { capacity: 8 }
 
 archetypes:
   - id: vampire
@@ -55,6 +73,9 @@ archetypes:
     tags: [humanoid, undead]
     measurements: [hp, blood]
     ticks_per_step: 1
+    inventory:
+      capacity: 8
+      items: { blood_vial: 1 }
   - id: bat
     label: Bat
     glyph: b

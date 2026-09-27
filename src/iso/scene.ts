@@ -4,8 +4,8 @@
  *   root (camera transform)
  *     ground   — flat tiles, one container per 16×16 render chunk (culled)
  *     markers  — path target outline, unreachable flash
- *     objects  — one container per diagonal (x + y); raised tiles and
- *                entities, depth-sorted inside their diagonal only
+ *     objects  — one container per diagonal (x + y); raised tiles, ground
+ *                piles and entities, depth-sorted inside their diagonal only
  *
  * Ground and objects are multiplied by the pack's day/night tint (if any);
  * markers are not.
@@ -45,6 +45,12 @@ interface Chunk {
   visible: boolean;
 }
 
+interface PileView {
+  readonly sprite: Sprite;
+  /** Item index shown (the pile's first stack). */
+  item: number;
+}
+
 interface EntityView {
   readonly entity: Entity;
   readonly sprite: Sprite;
@@ -71,6 +77,8 @@ export class IsoScene {
   private readonly buckets: Container[] = [];
   private readonly chunks: Chunk[] = [];
   private readonly entities: EntityView[] = [];
+  private readonly piles = new Map<number, PileView>();
+  private pileVersion = -1;
   private readonly target: Sprite;
   private readonly invalid: Sprite;
   private invalidUntil = 0;
@@ -78,7 +86,7 @@ export class IsoScene {
 
   constructor(
     private readonly world: World,
-    textures: TextureBank,
+    private readonly textures: TextureBank,
   ) {
     this.root.addChild(this.ground, this.markers, this.objects);
     const { grid } = world;
@@ -129,6 +137,39 @@ export class IsoScene {
     this.markers.addChild(this.target, this.invalid);
   }
 
+  /** Add, retexture or remove ground-pile sprites after container changes. */
+  private syncPiles(): void {
+    const { world } = this;
+    if (world.containerVersion === this.pileVersion) return;
+    this.pileVersion = world.containerVersion;
+    const live = new Set<number>();
+    for (const c of world.containers.values()) {
+      if (c.kind !== 'ground' || c.stacks.length === 0) continue;
+      live.add(c.id);
+      const item = c.stacks[0]!.item;
+      let v = this.piles.get(c.id);
+      if (!v) {
+        const s = sprite(this.textures.item(world.def.items[item]!));
+        const p = groundCentreIso(c.x, c.y);
+        s.position.set(p.x, p.y);
+        s.zIndex = depthKey(c.x, c.y, Layer.Pile);
+        this.buckets[diagonalOf(c.x, c.y)]!.addChild(s);
+        v = { sprite: s, item };
+        this.piles.set(c.id, v);
+      } else if (v.item !== item) {
+        const t = this.textures.item(world.def.items[item]!);
+        v.sprite.texture = t.texture;
+        v.sprite.anchor.set(t.anchorX, t.anchorY);
+        v.item = item;
+      }
+    }
+    for (const [id, v] of this.piles) {
+      if (live.has(id)) continue;
+      v.sprite.destroy();
+      this.piles.delete(id);
+    }
+  }
+
   /** Flash a tile red: the player cannot get there. */
   flashUnreachable(x: number, y: number, now: number): void {
     const p = tileAnchorIso(x, y);
@@ -161,6 +202,8 @@ export class IsoScene {
       this.ground.tint = tint;
       this.objects.tint = tint;
     }
+
+    this.syncPiles();
 
     let visibleEntities = 0;
     for (const v of this.entities) {

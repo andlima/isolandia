@@ -1,5 +1,6 @@
-# Survival loop: needs turn into statuses that drain health; standing on
-# pantry, tap and bed tiles restores them.
+# Survival loop: needs turn into statuses that drain health. Food, water,
+# coffee and bandages are looted items used from the inventory (items.yaml);
+# lying on a bed still restores fatigue.
 
 statuses:
   - id: hungry
@@ -14,6 +15,16 @@ statuses:
     when: "self.thirst >= 70"
     until: "self.thirst < 40"
     rates: { hp: -0.3 }
+  - id: burdened
+    label: Burdened
+    for: 'self.has_tag("living")'
+    when: "self.carry_weight >= 0.8 * self.carry_capacity"
+    rates: { fatigue: 0.1 }         # hauling junk wears you out
+  - id: stocked
+    label: Stocked
+    for: 'self.has_tag("living")'
+    when: 'self.count_item("canned_beans") + self.count_item("water_bottle") >= 4'
+    rates: { fatigue: -0.01 }       # peace of mind
   - id: exhausted
     label: Exhausted
     for: 'self.has_tag("living")'
@@ -24,19 +35,7 @@ statuses:
       thirst: 0.05                 # everything is harder when exhausted
 
 systems:
-  # Restoring: stand on the right tile.
-  - id: eat
-    every: 1
-    for: 'self.has_tag("living")'
-    when: 'tile.has_tag("food")'
-    effects:
-      - { type: apply, measurement: hunger, delta: -5 }
-  - id: drink
-    every: 1
-    for: 'self.has_tag("living")'
-    when: 'tile.has_tag("water")'
-    effects:
-      - { type: apply, measurement: thirst, delta: -8 }
+  # Restoring: lie on a bed.
   - id: sleep
     every: 1
     for: 'self.has_tag("living")'
@@ -44,6 +43,13 @@ systems:
     effects:
       - { type: apply, measurement: fatigue, delta: -3 }
       - { type: apply, measurement: hp, delta: "1 - 0.5 * self.has_status(\"hungry\")" }
+  # Wounds hurt more without a bandage in your pocket (morale).
+  - id: bleed
+    every: 10
+    for: 'self.has_tag("living")'
+    when: 'self.hp < 50 and not self.has_item("bandage")'
+    effects:
+      - { type: apply, measurement: hp, delta: -1 }
   # Hurting: completely starved or parched survivors weaken quickly.
   - id: collapse
     every: 5

@@ -39,6 +39,7 @@ export function loadOrExit(dirs: readonly string[]): Definition {
     fail(`cannot read pack: ${(e as Error).message}`);
   }
   const r = loadPacks(sources);
+  for (const w of r.warnings) console.error(`warning: ${formatError(w)}`);
   if (!r.ok) {
     for (const e of r.errors) console.error(formatError(e));
     fail(`\n${r.errors.length} error(s); packs not loaded.`);

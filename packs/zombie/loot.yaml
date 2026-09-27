@@ -1,0 +1,64 @@
+loot:
+  - id: kitchen_food
+    rolls: [2, 4]
+    entries:
+      - { item: canned_beans, weight: 5, count: [1, 2] }
+      - { item: crackers, weight: 2 }
+      - { item: water_bottle, weight: 3, count: [1, 2] }
+      - { item: soda, weight: 2 }
+      - { item: coffee, weight: 2 }
+      - { table: junk, weight: 1 }
+      - { nothing: true, weight: 1 }
+  - id: fridge_food
+    rolls: [2, 4]
+    entries:
+      - { item: water_bottle, weight: 5, count: [1, 3] }
+      - { item: soda, weight: 3, count: [1, 2] }
+      - { item: canned_beans, weight: 2 }
+      - { nothing: true, weight: 1 }
+  - id: bathroom_meds
+    rolls: [1, 3]
+    entries:
+      - { item: bandage, weight: 4, count: [1, 2] }
+      - { item: coffee, weight: 1 }
+      - { nothing: true, weight: 2 }
+  - id: bedroom_stuff
+    rolls: [1, 3]
+    entries:
+      - { table: junk, weight: 3 }
+      - { item: coffee, weight: 2 }
+      - { item: bandage, weight: 1 }
+      - { item: crackers, weight: 1 }
+      - { nothing: true, weight: 2 }
+  - id: glovebox
+    rolls: [0, 2]
+    entries:
+      - { item: soda, weight: 2 }
+      - { item: crackers, weight: 2 }
+      - { item: coffee, weight: 1 }
+      - { table: junk, weight: 1 }
+      - { nothing: true, weight: 3 }
+  - id: junk
+    rolls: 1
+    entries:
+      - { item: toaster, weight: 2 }
+      - { item: lamp, weight: 2 }
+      - { item: magazine, weight: 3, count: [1, 3] }
+  - id: garage
+    rolls: [2, 3]
+    entries:
+      - { item: car_battery, weight: 2 }
+      - { table: junk, weight: 3 }
+      - { item: water_bottle, weight: 1, count: [2, 4] }
+
+# Which table fills which container: a room-specific entry beats a
+# room-less one for the same container tile.
+distributions:
+  - { container: cupboard, room: kitchen, table: kitchen_food }
+  - { container: cupboard, table: bedroom_stuff }
+  - { container: fridge, table: fridge_food }
+  - { container: cabinet, room: bathroom, table: bathroom_meds }
+  - { container: dresser, room: bedroom, table: bedroom_stuff }
+  - { container: dresser, table: junk }
+  - { container: car, table: glovebox }
+  - { container: crate, table: garage }
