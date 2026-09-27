@@ -479,12 +479,19 @@ A `goto` intent with `adjacent: true` ends on the reachable walkable tile
 8-adjacent to the goal (or the goal itself, if walkable) with the shortest
 path; the browser uses it when you click a non-walkable container.
 
+Movement intents (`step` and `goto`) are queued with
+`world.queueIntent(intent, entity?)`; `entity` defaults to the player, and
+an entity of another world throws. Each entity keeps its own pending
+`intent` and `lastGoto` (both in its snapshot); `world.lastGoto` is the
+player's. Entities do not block each other. Only the player is driven by
+the shells for now; NPC intents are groundwork for M4 behaviors.
+
 ### Tick order
 
 `World.step()` runs these phases in order:
 
-1. apply the player's intent (movement), then the queued actions, in
-   FIFO order;
+1. apply **each entity's** movement intent, in ascending id order (the
+   player is id 0), then the queued (player) actions, in FIFO order;
 2. measurement drift: `rate` plus the `rates` of the statuses active at the
    **start** of the tick;
 3. systems that are due, in definition order;

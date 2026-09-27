@@ -276,7 +276,7 @@ test('defeat: freezes the world and ignores intents; default message', () => {
   w.queueIntent({ kind: 'step', dx: 1, dy: 1 });
   w.step();
   assert.equal(w.hash(), before);
-  assert.equal(w.snapshot().intent, null);
+  assert.equal(w.snapshot().entities[0]!.intent, null);
   assert.deepEqual(w.snapshot().defeat, { tick: 2, message: 'Game over' });
 });
 

@@ -152,12 +152,12 @@ test('goto: unreachable or blocked goals are dropped and recorded', () => {
 test('goto: path and pending intent are part of the snapshot', () => {
   const w = worldOf(['@....'], 2);
   w.queueIntent({ kind: 'goto', x: 3, y: 0 });
-  assert.deepEqual(w.snapshot().intent, { kind: 'goto', x: 3, y: 0 });
+  assert.deepEqual(w.snapshot().entities[0]!.intent, { kind: 'goto', x: 3, y: 0 });
   w.step();
   const snap = w.snapshot();
-  assert.equal(snap.intent, null);
+  assert.equal(snap.entities[0]!.intent, null);
   assert.deepEqual(snap.entities[0]!.path, [[2, 0], [3, 0]]);
-  assert.deepEqual(snap.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
+  assert.deepEqual(snap.entities[0]!.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
 });
 
 test('determinism: mixed goto and keyboard intents ⇒ same hash', () => {
