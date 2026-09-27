@@ -16,7 +16,7 @@ export interface AsciiFrame {
   readonly lines: readonly string[];
   /** Color per map cell (`null` for empty space), same shape as `lines`. */
   readonly colors: readonly (readonly (string | null)[])[];
-  /** HUD: clock line, one line per player measurement, then status/defeat lines if any. */
+  /** HUD: clock line, one line per player measurement, then inventory/status/nearby/action/defeat lines if any. */
   readonly hud: readonly string[];
 }
 
@@ -38,6 +38,17 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
     }
     glyphs.push(row);
     colors.push(crow);
+  }
+
+  // Ground piles show their first stack's item; entities draw over them.
+  for (const c of world.containers.values()) {
+    if (c.kind !== 'ground' || c.stacks.length === 0) continue;
+    const vx = c.x - x0;
+    const vy = c.y - y0;
+    if (vx < 0 || vy < 0 || vx >= width || vy >= height) continue;
+    const item = world.def.items[c.stacks[0]!.item]!;
+    glyphs[vy]![vx] = item.glyph;
+    colors[vy]![vx] = item.color;
   }
 
   // Entities on top of tiles; the player last so it is always visible.

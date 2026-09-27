@@ -49,7 +49,7 @@ export class Input {
         this.held.add(ev.code);
         if (!ev.repeat) this.queueHeld();
       } else if (!ev.repeat) {
-        if (ev.code === 'Space') ev.preventDefault();
+        if (ev.code === 'Space' || ev.code === 'Tab') ev.preventDefault();
         on.key(ev.code);
       }
     });

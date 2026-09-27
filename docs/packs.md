@@ -11,7 +11,11 @@ npm run play  -- packs/base packs/vampire --seed 7
 ```
 
 Packs are loaded in the order given. Keys: arrows / WASD / numpad /
-`hjklyubn` move (8 directions), `q` quits. The same packs run in the
+`hjklyubn` move (8 directions), `q` quits. When the player has an
+inventory, `g` takes everything that fits from every reachable container,
+`1`–`9` use inventory stack N and `d` followed by `1`–`9` drops stack N (so
+digits and `d` no longer move; arrows, `hjklyubn`, `w`/`a`/`s` and the
+numpad with NumLock off still do). The same packs run in the
 browser in isometric view: see [iso.md](iso.md).
 
 Diagonal moves never cut corners: a diagonal step needs the target and
@@ -31,6 +35,8 @@ packs/zombie/
   start.yaml
   clock.yaml
   survival.yaml        # statuses and systems
+  items.yaml
+  loot.yaml            # loot tables and distributions
   lighting.yaml
 ```
 
@@ -47,6 +53,9 @@ domain. Any other top-level key is a load error.
 | `maps`         | list of entries |
 | `systems`      | list of entries |
 | `statuses`     | list of entries |
+| `items`        | list of entries |
+| `loot`         | list of entries |
+| `distributions`| list (no ids)   |
 | `start`        | one mapping     |
 | `clock`        | one mapping     |
 | `lighting`     | one mapping     |
@@ -139,6 +148,7 @@ The ASCII renderer ignores sprites.
 | `raised`   | boolean          | `!walkable`  | Iso rendering only: a raised block, depth-sorted with entities, instead of flat ground. Walkability is unchanged |
 | `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex |
 | `tags`     | list of `[a-z][a-z0-9_]*` | `[]` | Tested by `tile.has_tag("x")` / `has_tag(tile, "x")` |
+| `container`| `{ capacity: <number ≥ 0> }` | none | Every map cell with this tile gets its own [container](#containers); its label is the tile's label |
 
 Tile tags and archetype tags are separate: `self.has_tag("water")` never
 sees the tags of the tile the entity stands on, and `tile.has_tag(...)`
@@ -147,7 +157,12 @@ never sees the entity's.
 ```yaml
 tiles:
   - { id: tap, label: Water tap, glyph: "~", color: "#3b8eea", walkable: true, tags: [water] }
+  - { id: fridge, label: Fridge, glyph: F, color: "#e8e8f0", walkable: false, container: { capacity: 25 } }
+  - { id: crate, label: Crate, glyph: x, color: "#b08850", walkable: true, container: { capacity: 40 } }
 ```
+
+Tile containers may be walkable (a floor crate you stand on) or not (a
+fridge you walk up to).
 
 ### `archetypes`
 
@@ -163,6 +178,7 @@ Templates for entities (the player and everything else).
 | `initial`        | map id → number       |         | Overrides a measurement's `initial` |
 | `ticks_per_step` | positive integer      | `2`     | Movement speed (ticks per tile) |
 | `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
+| `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
 
 ```yaml
 archetypes:
@@ -173,7 +189,15 @@ archetypes:
     tags: [undead]
     measurements: [base:hp]
     initial: { hp: 40 }
+  - id: survivor
+    # …
+    inventory:
+      capacity: 15
+      items: { water_bottle: 1, crackers: 1 }
 ```
+
+Entities without `inventory` have none: expressions read `0`/`false` for
+their items, and player actions fail with `no_inventory`.
 
 ### `maps`
 
@@ -184,6 +208,7 @@ ASCII maps are a fixture format for M0 (larger worlds will use Tiled).
 | `id`     | id                           | |
 | `legend` | map char → `{ tile, spawn?, player? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map) |
 | `rows`   | list of equal-length strings | every character must be in the legend |
+| `rooms`  | list of `{ rect: [x, y, w, h], tags: [...] }` | optional; see below |
 
 ```yaml
 maps:
@@ -197,6 +222,20 @@ maps:
       - "#####"
       - "#.@Z#"
       - "#####"
+```
+
+**Rooms** are rectangles of cells with room tags (`kitchen`, `cellar`…).
+A cell's room tags are the union of the tags of every rect that contains
+it; rects may overlap. A rect must lie inside the map with `w, h ≥ 1`, and
+`tags` must be a non-empty list of `[a-z][a-z0-9_]*`. Room tags are not
+namespaced, and they are a third tag set, separate from tile and
+archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
+[`distributions`](#distributions) use them to pick loot tables.
+
+```yaml
+    rooms:
+      - { rect: [2, 2, 4, 3], tags: [kitchen] }
+      - { rect: [7, 2, 2, 3], tags: [bathroom] }
 ```
 
 ### `systems`
@@ -282,11 +321,167 @@ statuses:
     rates: { hp: -0.2 }
 ```
 
+### `items`
+
+Item kinds. Items are **plain data inside containers**, not entities: a
+container holds stacks `{ item, count }`.
+
+| Field    | Type                      | Default     | Notes |
+|----------|---------------------------|-------------|-------|
+| `id`     | id                        | required    | Own id space |
+| `label`  | string                    | required    | |
+| `glyph`, `color` | as for tiles      | required    | ASCII ground piles; iso placeholder colour |
+| `weight` | number ≥ 0                | required    | Per unit; rounded to 0.01 |
+| `tags`   | list of `[a-z][a-z0-9_]*` | `[]`        | Item tags (separate from tile, room and archetype tags) |
+| `sprite` | asset id                  | placeholder | Iso ground-pile sprite, anchored at the tile's ground centre |
+| `use`    | mapping                   | none        | Items without `use` cannot be used |
+
+`use` is `{ label?, when?, effects, consume? }`:
+
+- `label` — the verb shown in the UI, `"Use"` by default;
+- `when` — an optional condition with `self` = the user; when falsy the
+  use fails with `cannot_use`;
+- `effects` — a non-empty list of `apply`/`set` effects on `self`, exactly
+  as in [`systems`](#systems). They run immediately, in order, and see each
+  other's results; values are clamped at the next clamp phase;
+- `consume` — units removed per use, a non-negative integer (default `1`;
+  `0` makes the item reusable).
+
+```yaml
+items:
+  - id: canned_beans
+    label: Canned beans
+    glyph: "%"
+    color: "#c9a227"
+    weight: 0.4
+    tags: [food]
+    use:
+      label: Eat
+      effects:
+        - { type: apply, measurement: hunger, delta: -35 }
+  - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3 }
+```
+
+### Containers
+
+A container holds items up to a weight **capacity**. There are three
+kinds:
+
+- **tile** containers — one per map cell whose tile has `container`;
+- **inventories** — one per entity whose archetype has `inventory`;
+- **ground piles** — created when the player drops items on a cell with
+  no pile yet; unlimited capacity; removed when they become empty.
+
+Contents are an ordered list of stacks with **at most one stack per item**:
+adding an item already present grows its stack, a new item is appended,
+and a stack that reaches 0 is removed. Weight is the only limit (no slot
+or stack limits).
+
+Weights and capacities are rounded to 0.01 at load and the simulation
+sums and compares them as integer **hundredths**, so `0.1 × 3` fits a
+capacity of `0.3` exactly. A container's load is Σ `weight × count`; a
+move into it is allowed only if the load stays ≤ `capacity`. Expressions
+and the HUD show weights in normal units.
+
+Containers get sequential integer ids that are never reused: tile
+containers in row-major cell order, then inventories in entity order;
+ground piles get the next id when they are created. Containers are
+simulation state (`snapshot().containers`, covered by `hash()`) and do no
+per-tick work.
+
+### `loot`
+
+Loot tables fill tile containers when the world is created.
+
+```yaml
+loot:
+  - id: kitchen_food
+    rolls: [1, 3]                    # integer, or [min, max] inclusive
+    entries:
+      - { item: canned_beans, weight: 3, count: [1, 2] }
+      - { item: water_bottle, weight: 2 }       # count defaults to 1
+      - { table: junk, weight: 1 }             # nested table, rolled once
+      - { nothing: true, weight: 2 }
+```
+
+| Field     | Type                          | Default  | Notes |
+|-----------|-------------------------------|----------|-------|
+| `id`      | id                            | required | Own id space |
+| `rolls`   | integer ≥ 0 or `[min, max]`   | `1`      | Number of picks |
+| `entries` | list                          | required | Non-empty |
+
+Each roll picks one entry with probability proportional to its `weight`
+(a positive integer, default `1`). An entry is **exactly one** of
+`item: <id>`, `table: <loot id>` or `nothing: true`. `count` (an integer
+or `[min, max]`, both ≥ 1, default `1`) is only allowed on `item` entries.
+A nested `table` is rolled once, with its own `rolls`. Cycles between
+tables are a load error.
+
+### `distributions`
+
+Which loot table fills which tile container. A plain list without ids:
+
+```yaml
+distributions:
+  - { container: cupboard, room: kitchen, table: kitchen_food }
+  - { container: cupboard, table: bedroom_stuff }
+  - { container: car, table: glovebox }
+```
+
+- `container` — a tile id; the tile must have `container`;
+- `room` — optional room tag;
+- `table` — a loot table id.
+
+Each tile container takes the **first most specific** match: an entry
+whose `room` is one of the cell's room tags beats an entry without
+`room`; ties go to the first entry in definition order. A container with
+no match starts empty.
+
+**Loot generation** happens once, in the `World` constructor, over tile
+containers in row-major order, with a **dedicated RNG** derived from the
+world seed: it never touches the world RNG, so movement and `random()`
+sequences are the same as without loot. The same definition and seed
+always give the same contents. Items that do not fit a container are
+dropped silently; the loader **warns** (without failing) when a table's
+maximum possible weight exceeds the capacity of a container it is
+distributed to.
+
+### Actions
+
+The shells change containers through instant player **actions**, queued
+with `world.queueAction(action)`. This queue is separate from movement
+intents, so looting never cancels walking.
+
+| Kind   | Fields                                  | Effect |
+|--------|-----------------------------------------|--------|
+| `take` | `container`, `item`, `count?` (default all) | Container → player inventory |
+| `put`  | `container`, `item`, `count?`           | Player inventory → container |
+| `drop` | `item`, `count?`                        | Player inventory → the ground pile on the player's cell (created if missing) |
+| `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units |
+
+- `container` is a numeric container id (`world.containersAt(x, y)`,
+  `world.reachableContainers()`); `item` is a qualified item id.
+- **Reach:** the container's cell must be the player's cell or one of the
+  8 around it. Inventories cannot be targeted by `take`/`put`.
+- `take`/`put` move as many units as fit, up to `count`; moving 0 units is
+  a failure.
+- Every action records `world.lastAction`:
+  `{ kind, item, moved, ok, reason?, tick }`, where `reason` is one of
+  `out_of_reach`, `too_heavy`, `missing`, `cannot_use`, `no_inventory` or
+  `unknown_container`.
+- Pending actions and `lastAction` are part of `snapshot()`. After defeat
+  `queueAction` ignores its input.
+
+A `goto` intent with `adjacent: true` ends on the reachable walkable tile
+8-adjacent to the goal (or the goal itself, if walkable) with the shortest
+path; the browser uses it when you click a non-walkable container.
+
 ### Tick order
 
 `World.step()` runs these phases in order:
 
-1. apply the player's intent (movement);
+1. apply the player's intent (movement), then the queued actions, in
+   FIFO order;
 2. measurement drift: `rate` plus the `rates` of the statuses active at the
    **start** of the tick;
 3. systems that are due, in definition order;
@@ -386,7 +581,8 @@ tinted. Like `clock`, **at most one** loaded pack may define it.
 - A qualified reference must name the pack's own namespace or one of its
   `depends`.
 - Each kind (measurements, assets, tiles, archetypes, maps, systems,
-  statuses) has its own id space.
+  statuses, items, loot tables) has its own id space. Tags (tile,
+  archetype, item and room tags) are not namespaced.
 - Redefining an existing id is an error — overrides come in M7.
 
 ## Validation
@@ -413,6 +609,16 @@ measurements in effects or `rates` keys (with suggestions); conditions
 non-numeric `delta`/`value`/`rates`; `has_status` with a non-literal or
 unknown id; malformed tile tags; and `lighting` problems (empty `tint`,
 malformed times or colours, duplicate `at`, a second pack defining it).
+For M3 content it checks: negative weights or capacities; unknown item,
+loot table, tile or room tag references (with suggestions); `use` with
+empty `effects` or a negative or non-integer `consume`; a starting
+inventory over its capacity; room rects out of bounds or empty, and empty
+room tags; loot entries that are not exactly one of `item`/`table`/
+`nothing`, non-positive or non-integer entry weights, bad `rolls`/`count`
+ranges, `count` on a non-item entry, and table cycles; `distributions`
+whose `container` tile has no `container`; and non-literal ids in
+`count_item`/`has_item`/`in_room`. Warnings (e.g. a loot table that can
+exceed a container's capacity) are printed but do not fail the load.
 A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
 
@@ -422,13 +628,14 @@ resolved definition (ids → indices, expressions → closures).
   compiler), `load/` (pack parsing, namespaces, validation), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
   `hud.ts` (renderer-independent HUD model), `sim/`
-  (world, grid, RNG). No Node built-ins, DOM or Pixi.
+  (world, grid, RNG, A*, containers). No Node built-ins, DOM or Pixi.
 - `src/node/read-pack.ts` — reads a pack directory into
   `{ relativePath: text }` (plus the names of its other files) for the
   loader.
 - `src/iso/` — Pixi isometric renderer: projection, depth buckets,
   camera, textures and placeholders.
-- `src/web/` — browser shell: pack loading via Vite, input, HUD, error
-  screen, `main.ts`.
+- `src/web/` — browser shell: pack loading via Vite, input, HUD,
+  inventory/loot panels (`panels.ts`, `I`/`Tab` toggles the inventory),
+  error screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
 - `src/cli/` — `play` and `check`.

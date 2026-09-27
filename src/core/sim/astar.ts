@@ -27,6 +27,8 @@ export class Pathfinder {
   private readonly parent: Int32Array;
   private readonly seen: Uint32Array;
   private readonly closed: Uint32Array;
+  /** Goal cells of the current search (stamped with `gen`). */
+  private readonly goal: Uint32Array;
   private gen = 0;
   private heapNode = new Int32Array(256);
   private heapF = new Float64Array(256);
@@ -40,6 +42,7 @@ export class Pathfinder {
     this.parent = new Int32Array(n);
     this.seen = new Uint32Array(n);
     this.closed = new Uint32Array(n);
+    this.goal = new Uint32Array(n);
   }
 
   /**
@@ -48,27 +51,60 @@ export class Pathfinder {
    * not walkable, or unreachable.
    */
   findPath(sx: number, sy: number, gx: number, gy: number): Int32Array | null {
-    const { width, height, walk } = this.grid;
+    const { width, walk } = this.grid;
     if (!this.grid.inBounds(sx, sy) || !this.grid.inBounds(gx, gy)) return null;
-    const start = sy * width + sx;
     const goal = gy * width + gx;
     if (walk[goal] !== 1) return null;
-    if (start === goal) return new Int32Array(0);
-
     const gen = ++this.gen;
+    this.goal[goal] = gen;
+    return this.search(sx, sy, gx, gy, 0);
+  }
+
+  /**
+   * Shortest path to any walkable tile 8-adjacent to (gx, gy), or to the
+   * goal itself when it is walkable (same return convention as `findPath`).
+   * One multi-goal search; ties are broken like `findPath`.
+   */
+  findPathAdjacent(sx: number, sy: number, gx: number, gy: number): Int32Array | null {
+    const { width, height, walk } = this.grid;
+    if (!this.grid.inBounds(sx, sy) || !this.grid.inBounds(gx, gy)) return null;
+    const gen = ++this.gen;
+    let any = false;
+    for (let y = Math.max(0, gy - 1); y <= Math.min(height - 1, gy + 1); y++) {
+      for (let x = Math.max(0, gx - 1); x <= Math.min(width - 1, gx + 1); x++) {
+        const i = y * width + x;
+        if (walk[i] === 1) {
+          this.goal[i] = gen;
+          any = true;
+        }
+      }
+    }
+    // Every goal is within octile distance √2 of (gx, gy), so this stays admissible.
+    return any ? this.search(sx, sy, gx, gy, SQRT2) : null;
+  }
+
+  /** A* towards the cells stamped in `goal` for the current generation; h = octile to (gx, gy) − slack. */
+  private search(sx: number, sy: number, gx: number, gy: number, slack: number): Int32Array | null {
+    const { width, height, walk } = this.grid;
+    const start = sy * width + sx;
+    const gen = this.gen;
+    const goal = this.goal;
+    if (goal[start] === gen) return new Int32Array(0);
+    const h = (x: number, y: number) => (slack === 0 ? octile(x, y, gx, gy) : Math.max(0, octile(x, y, gx, gy) - slack));
+
     const { g, parent, seen, closed } = this;
     this.heapSize = 0;
     this.seq = 0;
     g[start] = 0;
     parent[start] = -1;
     seen[start] = gen;
-    this.push(start, octile(sx, sy, gx, gy));
+    this.push(start, h(sx, sy));
 
     while (this.heapSize > 0) {
       const cur = this.pop();
       if (closed[cur] === gen) continue;
       closed[cur] = gen;
-      if (cur === goal) return this.reconstruct(goal);
+      if (goal[cur] === gen) return this.reconstruct(cur);
 
       const cx = cur % width;
       const cy = (cur / width) | 0;
@@ -85,7 +121,7 @@ export class Pathfinder {
         seen[ni] = gen;
         g[ni] = ng;
         parent[ni] = cur;
-        this.push(ni, ng + octile(nx, ny, gx, gy));
+        this.push(ni, ng + h(nx, ny));
       }
     }
     return null;

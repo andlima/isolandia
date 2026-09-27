@@ -22,7 +22,7 @@ const symbols: CompileSymbols = {
 };
 
 function entity(x: number, y: number, m: number[], tags: string[] = [], statuses: number[] = []): ExprEntity {
-  return { x, y, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses) };
+  return { x, y, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses), inv: null };
 }
 
 function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings: string[] } {
@@ -37,6 +37,7 @@ function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings
     random: () => ((s = (s * 16807) % 2147483647) / 2147483647),
     tileIdAt: (x, y) => (x === 1 && y === 2 ? 't:floor' : 't:wall'),
     tileTagsAt: (x, y) => new Set(x === 1 && y === 2 ? ['shade'] : []),
+    inRoom: () => false,
     warn: (m) => warnings.push(m),
     warnings,
     ...overrides,

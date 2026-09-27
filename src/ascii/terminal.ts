@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import type { Intent, World } from '../core/index.ts';
+import { hudModel, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -92,6 +92,47 @@ export const KEYMAP: Readonly<Record<string, Intent>> = {
   n: d(1, 1),
 };
 
+/** Pending multi-key input (the `d` drop prefix). */
+export interface KeyState {
+  dropPending: boolean;
+}
+
+/**
+ * Apply one key to the world. With an inventory, `g` takes everything that
+ * fits from every reachable container, `1`–`9` use inventory stack N and
+ * `d` then `1`–`9` drops stack N (so digits and `d` stop moving; arrows,
+ * `hjklyubn`, `wsa` and the numpad with NumLock off still do). Returns
+ * `'quit'` for `q`/Ctrl-C.
+ */
+export function handleKey(world: World, key: string, state: KeyState): 'quit' | void {
+  if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  const inv = world.player.inv;
+  if (inv) {
+    const digit = /^[1-9]$/.test(key) ? Number(key) : 0;
+    if (state.dropPending) {
+      state.dropPending = false;
+      if (digit) {
+        const s = inv.stacks[digit - 1];
+        if (s) world.queueAction({ kind: 'drop', item: world.def.items[s.item]!.id });
+        return;
+      }
+    } else if (key === 'd') {
+      state.dropPending = true;
+      return;
+    } else if (digit) {
+      const s = inv.stacks[digit - 1];
+      if (s) world.queueAction({ kind: 'use', item: world.def.items[s.item]!.id });
+      return;
+    }
+    if (key === 'g') {
+      for (const c of hudModel(world).nearby) for (const s of c.stacks) world.queueAction({ kind: 'take', container: c.id, item: s.item });
+      return;
+    }
+  }
+  const intent = KEYMAP[key] ?? KEYMAP[key.toLowerCase()];
+  if (intent) world.queueIntent(intent);
+}
+
 export interface TerminalIO {
   readonly stdin: NodeJS.ReadStream;
   readonly stdout: NodeJS.WriteStream;
@@ -101,22 +142,21 @@ export interface TerminalIO {
 export function runTerminal(world: World, io: TerminalIO): Promise<void> {
   const { stdin, stdout } = io;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, status and defeat lines, blank line, help line.
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 2 + 2;
+  // Clock, measurements, carrying/inventory, status, nearby, action and defeat lines, blank line, help line.
+  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 6 + 2;
+  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop' : 'q: quit';
+  const keys: KeyState = { dropPending: false };
 
   return new Promise((resolve) => {
     const draw = () => {
       const width = Math.max(10, stdout.columns ?? 80);
       const height = Math.max(5, (stdout.rows ?? 24) - HUD_ROWS);
       const frame = renderAscii(world, { width, height });
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + '\x1b[K\n\x1b[2mq: quit\x1b[0m\x1b[J');
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
     };
 
     const onKey = (buf: Buffer) => {
-      const key = buf.toString('utf8');
-      if (key === 'q' || key === 'Q' || key === '\x03') return stop();
-      const intent = KEYMAP[key] ?? KEYMAP[key.toLowerCase()];
-      if (intent) world.queueIntent(intent);
+      if (handleKey(world, buf.toString('utf8'), keys) === 'quit') return stop();
     };
 
     const start = Date.now();

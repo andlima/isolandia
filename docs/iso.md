@@ -40,6 +40,7 @@ unknown pack name — the page shows the complete error list, formatted like
 | Wheel / pinch                  | Zoom around the cursor / pinch centre, 0.25×–3× |
 | `Space`                        | Re-centre on the player and follow again |
 | `H`                            | Toggle the HUD |
+| `I` / `Tab`                    | Toggle the inventory panel (when the player has an inventory) |
 
 A drag never counts as a click (8 px threshold). The HUD shows the
 in-game day and time (`Day 1 08:02`, from the pack's `clock`) and the
@@ -48,6 +49,23 @@ the ASCII HUD, plus a `Status: …` line while the player has active
 statuses. When the pack's `start.defeat` condition is met, the HUD adds the
 defeat message and a centred banner covers the canvas; the camera still
 pans and zooms, but movement input is ignored.
+
+## Inventory and loot panels
+
+Two DOM panels are built from the same `hudModel` (`src/web/panels.ts`;
+the view functions are pure and unit-tested) and turn button clicks into
+`world.queueAction`:
+
+- the **inventory panel** (`I`/`Tab`) lists the player's stacks with the
+  item's use button (its `use.label`) and *Drop*, plus `Carrying: w/cap`;
+- the **loot panel** opens by itself whenever a container is within reach
+  (the player's cell or the 8 around it). It lists each container's stacks
+  with *Take* (one unit) and *Take all*, and a *Put* section to move
+  inventory stacks into a reachable container.
+
+Clicking a non-walkable container tile (a fridge) walks to the closest
+tile next to it (`goto` with `adjacent: true`). After defeat the panels
+stay visible but read-only.
 
 ## Day/night tint
 
@@ -76,9 +94,9 @@ inverts the projection and floors; a click on a raised block's top face
 
 - Flat tiles are drawn in a ground layer of 16×16-tile render chunks;
   chunks outside the viewport are hidden.
-- Raised tiles and entities share an object layer with one container per
-  diagonal `x + y`. Inside a diagonal, objects sort by `x + y`, then `x`,
-  then entities after blocks. Moving entities use their interpolated
+- Raised tiles, ground piles and entities share an object layer with one
+  container per diagonal `x + y`. Inside a diagonal, objects sort by
+  `x + y`, then `x`, then blocks, piles and entities in that order. Moving entities use their interpolated
   position and change container when their diagonal changes, so only the
   containers whose contents changed are re-sorted.
 - The sim runs at 10 ticks/s from an accumulator (at most 5 ticks per
@@ -100,6 +118,9 @@ its `color`:
 - **raised tile** — a 32 px block: the top face in the color, the left and
   right faces darkened to 72 % and 55 %;
 - **entity** — an upright rounded marker in the color with a drop shadow and
-  the archetype's `glyph` drawn on it (dark or light text by luminance).
+  the archetype's `glyph` drawn on it (dark or light text by luminance);
+- **ground pile** — a small sack in the colour of the pile's first item
+  (or that item's `sprite`, anchored at the ground centre). Piles are
+  tinted by day/night like other objects.
 
 Colors are `#rrggbb` or the terminal color names (`bright_yellow`, …).

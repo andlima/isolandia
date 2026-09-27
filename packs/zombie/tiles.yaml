@@ -16,21 +16,41 @@ tiles:
     color: "#a33a2a"
     walkable: false
     sprite: car_img
-  - id: pantry
-    label: Pantry
-    glyph: "%"
-    color: "#c9a227"
-    walkable: true
-    tags: [food]
-  - id: tap
-    label: Water tap
-    glyph: "~"
-    color: "#3b8eea"
-    walkable: true
-    tags: [water]
+    container: { capacity: 6 }      # the glovebox
   - id: bed
     label: Bed
     glyph: "="
     color: "#8e6fb5"
     walkable: true
     tags: [bed]
+  # Containers, filled by `distributions` (loot.yaml).
+  - id: fridge
+    label: Fridge
+    glyph: "F"
+    color: "#e8e8f0"
+    walkable: false
+    container: { capacity: 25 }
+  - id: cupboard
+    label: Cupboard
+    glyph: "K"
+    color: "#9a6a3a"
+    walkable: false
+    container: { capacity: 12 }
+  - id: cabinet
+    label: Medicine cabinet
+    glyph: "M"
+    color: "#d0e0e0"
+    walkable: false
+    container: { capacity: 3 }
+  - id: dresser
+    label: Dresser
+    glyph: "D"
+    color: "#7a5230"
+    walkable: false
+    container: { capacity: 15 }
+  - id: crate
+    label: Crate
+    glyph: "x"
+    color: "#b08850"
+    walkable: true                  # a floor crate you can stand on
+    container: { capacity: 40 }

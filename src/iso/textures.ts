@@ -5,7 +5,7 @@
  */
 
 import { Assets, Container, Graphics, Text, type Renderer, type Texture } from 'pixi.js';
-import type { ArchetypeDef, AssetDef, Definition, TileDef } from '../core/index.ts';
+import type { ArchetypeDef, AssetDef, Definition, ItemDef, TileDef } from '../core/index.ts';
 import { luminance, parseColor, shade } from './colors.ts';
 import { BLOCK_H, TILE_H, TILE_W } from './projection.ts';
 
@@ -22,13 +22,13 @@ const HH = TILE_H / 2;
 const BAKE_RESOLUTION = 3;
 
 /**
- * Load every asset referenced by a tile or archetype (result index-aligned
+ * Load every asset referenced by a tile, archetype or item (result index-aligned
  * with `def.assets`; `urls[i]` null when the shell has no URL for it).
  * Failures log a warning and yield null, so the caller falls back to
  * placeholders; unreferenced assets are skipped.
  */
 export async function loadAssetTextures(def: Definition, urls: readonly (string | null)[]): Promise<(Texture | null)[]> {
-  const used = new Set<number | null>([...def.tiles.map((t) => t.sprite), ...def.archetypes.map((a) => a.sprite)]);
+  const used = new Set<number | null>([...def.tiles.map((t) => t.sprite), ...def.archetypes.map((a) => a.sprite), ...def.items.map((i) => i.sprite)]);
   return Promise.all(
     def.assets.map(async (a: AssetDef, i) => {
       if (!used.has(i)) return null;
@@ -51,6 +51,7 @@ export async function loadAssetTextures(def: Definition, urls: readonly (string 
 export class TextureBank {
   private readonly tiles: (AnchoredTexture | undefined)[] = [];
   private readonly archetypes: (AnchoredTexture | undefined)[] = [];
+  private readonly items: (AnchoredTexture | undefined)[] = [];
   private readonly markers = new Map<number, AnchoredTexture>();
 
   constructor(
@@ -68,6 +69,11 @@ export class TextureBank {
   /** Texture for an archetype; its anchor goes on the tile's ground centre. */
   archetype(a: ArchetypeDef): AnchoredTexture {
     return (this.archetypes[a.index] ??= this.fromAsset(a.sprite) ?? this.bake(marker(a.color, a.glyph)));
+  }
+
+  /** Texture for a ground pile of an item; its anchor goes on the tile's ground centre. */
+  item(i: ItemDef): AnchoredTexture {
+    return (this.items[i.index] ??= this.fromAsset(i.sprite) ?? this.bake(pile(i.color)));
   }
 
   /** Diamond outline for tile highlights; anchored like a flat tile. */
@@ -125,6 +131,17 @@ function block(color: string): Graphics {
     .poly([0, -TILE_H - H, HW, -HH - H, 0, -H, -HW, -HH - H]) // top face
     .fill(c)
     .stroke({ width: 1, color: shade(c, 0.4), alpha: 0.8 });
+}
+
+/** A small sack in the item's colour, resting on the ground centre. */
+function pile(color: string): Graphics {
+  const c = parseColor(color);
+  return new Graphics()
+    .ellipse(0, 0, 10, 4)
+    .fill({ color: 0x000000, alpha: 0.3 })
+    .roundRect(-7, -12, 14, 12, 4)
+    .fill(c)
+    .stroke({ width: 1.5, color: shade(c, 0.45) });
 }
 
 function marker(color: string, glyph: string): Container {

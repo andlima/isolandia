@@ -10,6 +10,9 @@ maps:
       "'": { tile: sunbeam }
       "C": { tile: crypt }
       "B": { tile: font }
+      "L": { tile: bookshelf }
+      "X": { tile: chest }
+      "R": { tile: wine_rack }
       "V": { tile: carpet, player: true }
       "h": { tile: floor, spawn: humanoid }
       "b": { tile: carpet, spawn: bat }
@@ -17,9 +20,19 @@ maps:
       - "###\"####\"####\"####\"###"
       - "#..'...#'cccc'c#..'..#"
       - "#..h...#ccC=Ccc#..h..#"
-      - "#......#ccccccc#.....#"
+      - "#......#cccccBc#.....#"
       - "###+####cccVccc####+##"
       - "#......+ccccccc+.....#"
-      - "#..b...#cccBccc#.....#"
+      - "#..b...#ccccccc#.....#"
       - "#..'...#cc=b=cc#...''\""
       - "###\"#######+#######\"##"
+      - "#LLLL.LLL#ccc#RRR.RRR#"
+      - "#cccccccc+ccc+CCCCCCC#"
+      - "#cccXcccc#ccc#CCCCCCC#"
+      - "#cccccccc#ccc#RRR.RRR#"
+      - "######################"
+    # Below the great hall: a library to the west, the wine cellar to the east.
+    rooms:
+      - { rect: [8, 1, 7, 7], tags: [hall] }
+      - { rect: [1, 9, 8, 4], tags: [library] }
+      - { rect: [14, 9, 7, 4], tags: [cellar] }
