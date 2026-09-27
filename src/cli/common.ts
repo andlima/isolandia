@@ -1,4 +1,4 @@
-import { formatError, loadPacks, type Definition } from '../core/index.ts';
+import { formatError, loadPacks, type Definition, type LoadError, type LoadResult } from '../core/index.ts';
 import { readPack } from '../node/read-pack.ts';
 
 export interface CliArgs {
@@ -32,6 +32,16 @@ export function fail(message: string): never {
 
 /** Read and load packs; on errors print every one and exit non-zero. */
 export function loadOrExit(dirs: readonly string[]): Definition {
+  const r = loadOrExitIf(dirs, () => true);
+  if (!r.ok) throw new Error('unreachable');
+  return r.definition;
+}
+
+/**
+ * Like {@link loadOrExit}, but only exits when `fatal(errors)` holds;
+ * otherwise the failed result is returned to the caller.
+ */
+export function loadOrExitIf(dirs: readonly string[], fatal: (errors: readonly LoadError[]) => boolean): LoadResult {
   let sources;
   try {
     sources = dirs.map(readPack);
@@ -40,9 +50,9 @@ export function loadOrExit(dirs: readonly string[]): Definition {
   }
   const r = loadPacks(sources);
   for (const w of r.warnings) console.error(`warning: ${formatError(w)}`);
-  if (!r.ok) {
+  if (!r.ok && fatal(r.errors)) {
     for (const e of r.errors) console.error(formatError(e));
     fail(`\n${r.errors.length} error(s); packs not loaded.`);
   }
-  return r.definition;
+  return r;
 }

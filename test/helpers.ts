@@ -5,6 +5,12 @@ export function pack(label: string, files: Record<string, string>): PackSource {
   return { label, files };
 }
 
+/** Ordered pack directories for each real genre game. */
+export const GAMES = {
+  zombie: ['packs/std', 'packs/std-needs', 'packs/zombie'],
+  vampire: ['packs/std', 'packs/vampire'],
+} as const;
+
 export const MANIFEST_T = 'namespace: t\nname: Test\nversion: 1.0.0\n';
 
 export const TILES_T = `tiles:

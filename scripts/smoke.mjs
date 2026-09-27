@@ -16,8 +16,8 @@ import { build, preview } from 'vite';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = resolve(root, 'docs/screens');
 const combos = [
-  ['base', 'zombie'],
-  ['base', 'vampire'],
+  ['std', 'std-needs', 'zombie'],
+  ['std', 'vampire'],
 ];
 
 await build({ root, logLevel: 'warn' });
@@ -73,7 +73,7 @@ try {
 
   // An unknown pack name shows the error list instead of the game.
   const page = await browser.newPage();
-  await page.goto(`${baseUrl}?packs=base,nosuchpack`);
+  await page.goto(`${baseUrl}?packs=std,nosuchpack`);
   await page.waitForSelector('#errors', { timeout: 15_000 }).catch(() => null);
   const text = (await page.textContent('#errors').catch(() => null)) ?? '';
   if (!text.includes("unknown pack 'nosuchpack'")) failures.push(`[error screen] expected an unknown-pack error, got ${JSON.stringify(text)}`);

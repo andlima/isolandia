@@ -6,7 +6,7 @@
 
 import { nearMiss, type AssetDef, type LoadError, type PackSource } from '../core/index.ts';
 
-/** Glob results keyed by project path, e.g. `/packs/base/tiles.yaml`. */
+/** Glob results keyed by project path, e.g. `/packs/std/tiles.yaml`. */
 export type GlobMap = Readonly<Record<string, string>>;
 
 export interface WebPacks {

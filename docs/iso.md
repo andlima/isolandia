@@ -22,10 +22,10 @@ screen.
 
 | Param            | Default       | Meaning |
 |------------------|---------------|---------|
-| `?packs=a,b,…`   | `base,zombie` | Ordered pack directory names under `packs/` (same order rule as the CLI) |
+| `?packs=a,b,…`   | `std,std-needs,zombie` | Ordered pack directory names under `packs/` (same order rule as the CLI) |
 | `?seed=N`        | `1`           | Integer world seed |
 
-For example `?packs=base,vampire&seed=7`. When loading fails — including an
+For example `?packs=std,vampire&seed=7`. When loading fails — including an
 unknown pack name — the page shows the complete error list, formatted like
 `npm run check`, instead of the game. The default list lives in
 `index.html` (`data-default-packs`) so that `src/` stays genre-agnostic.

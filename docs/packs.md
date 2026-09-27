@@ -5,10 +5,14 @@ engine has no genre knowledge: the zombie and vampire mini-games under
 `packs/` are pure data on top of the same code.
 
 ```sh
-npm run check -- packs/base packs/zombie        # validate only
-npm run play  -- packs/base packs/zombie        # play in the terminal
-npm run play  -- packs/base packs/vampire --seed 7
+npm run check -- packs/std packs/std-needs packs/zombie   # validate only
+npm run play  -- packs/std packs/std-needs packs/zombie   # play in the terminal
+npm run play  -- packs/std packs/vampire --seed 7
 ```
+
+`check` also accepts a *library* stack with no `start` (e.g.
+`npm run check -- packs/std packs/std-needs`): it validates the content and
+reports it as not playable on its own. `play` still requires a `start`.
 
 Packs are loaded in the order given. Keys: arrows / WASD / numpad /
 `hjklyubn` move (8 directions), `q` quits. When the player has an
@@ -27,8 +31,7 @@ alike).
 ```
 packs/zombie/
   pack.yaml            # manifest (required)
-  needs.yaml           # any other *.yaml / *.yml file, at any depth
-  archetypes.yaml
+  archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
   assets/car.svg       # images referenced by the `assets` domain
   maps/town.yaml
@@ -66,7 +69,7 @@ domain. Any other top-level key is a load error.
 namespace: zmb          # required, [a-z][a-z0-9_]*
 name: Zombie Town       # required
 version: 0.1.0          # required
-depends: [base]         # optional; each must be loaded earlier
+depends: [std, std_needs]  # optional; each must be loaded earlier
 ```
 
 ## Domains
@@ -94,7 +97,7 @@ measurement id it means *this entity's value of that measurement*
 measurements:
   - id: blood
     label: Blood
-    max: "max(10, self.base:hp / 2)"
+    max: "max(10, self.std:hp / 2)"
     initial: 50
     rate: -0.8
 ```
@@ -187,7 +190,7 @@ archetypes:
     glyph: Z
     color: "#5fae3e"
     tags: [undead]
-    measurements: [base:hp]
+    measurements: [std:hp]
     initial: { hp: 40 }
   - id: survivor
     # …
@@ -542,7 +545,7 @@ clock:
 **At most one** loaded pack may define `clock`; a second definition is an
 error naming the first pack (override semantics come in M7). If no pack
 defines it, the defaults above apply. Like `start`, it belongs in the game
-pack, not in a shared base pack.
+pack, not in a stdpack.
 
 ### `lighting`
 
@@ -566,14 +569,43 @@ single keyframe gives a constant tint. The scene's ground and objects are
 multiplied by it (`#ffffff` = unchanged). Without `lighting` nothing is
 tinted. Like `clock`, **at most one** loaded pack may define it.
 
+## Standard packs
+
+The **stdpack** is a set of optional packs with generic content that many
+games share. A game lists the ones it wants before its own pack. Following
+VISION decision 8, the stdpack uses nothing a third-party pack could not:
+it is plain YAML on the same loader, and the engine never names its ids.
+
+| Pack (directory) | Namespace   | Depends | Contents |
+|------------------|-------------|---------|----------|
+| `std`            | `std`       | —       | measurement `hp` (Health, 0–100); archetype `humanoid`; tiles `floor`, `wall`, `door` |
+| `std-needs`      | `std_needs` | `std`   | measurements `hunger`, `thirst`, `fatigue`; statuses `hungry`, `thirsty`, `exhausted` (drain `hp`), `burdened` (carrying ≥ 80% of capacity adds fatigue) |
+
+**Opting in to needs.** An entity takes part in `std-needs` by listing the
+measurements in its archetype and carrying the `living` tag, which every
+need status tests in its `for` filter:
+
+```yaml
+archetypes:
+  - id: survivor
+    tags: [humanoid, living]
+    measurements: [hp, hunger, thirst, fatigue]
+```
+
+An entity without the tag or the measurements is unaffected. What the
+needs *do* beyond those statuses (sleeping in a bed, collapsing when
+starved, food items) stays in the genre pack: `zombie` depends on
+`[std, std_needs]` and adds its own systems, while `vampire` depends on
+`[std]` only. More stdpacks are added as genres repeat patterns.
+
 ## Namespaces and references
 
 - Namespaces and local ids match `[a-z][a-z0-9_]*`.
-- **Definitions** may write a short id (`hunger`) — the loader prefixes
-  the pack's namespace (`zmb:hunger`) — or a qualified id, which must use
+- **Definitions** may write a short id (`survivor`) — the loader prefixes
+  the pack's namespace (`zmb:survivor`) — or a qualified id, which must use
   the pack's own namespace.
 - **References** (in fields such as `measurements`, `tile`, `spawn`,
-  `start.map`, and in expressions) may be qualified (`base:hp`) or short.
+  `start.map`, and in expressions) may be qualified (`std:hp`) or short.
   A short reference resolves to the referencing pack's own namespace
   first, else to the **unique** match among the packs it directly
   `depends` on. Ambiguous or missing references are load errors;

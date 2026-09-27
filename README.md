@@ -23,11 +23,11 @@ npm install
 npm run dev          # browser game (Vite) at http://localhost:5173
 ```
 
-The browser loads `base,zombie` by default. Pick packs and a seed with
+The browser loads `std,std-needs,zombie` by default. Pick packs and a seed with
 query parameters:
 
 ```
-http://localhost:5173/?packs=base,vampire&seed=42
+http://localhost:5173/?packs=std,vampire&seed=42
 ```
 
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
@@ -38,7 +38,7 @@ there. Space recenters the camera.
 The same simulation runs headless, rendered as top-down ASCII:
 
 ```bash
-npm run play -- packs/base packs/zombie [--seed N]
+npm run play -- packs/std packs/std-needs packs/zombie [--seed N]
 ```
 
 `q` quits, `g` takes everything nearby, `1`–`9` uses an item, `d 1`–`9`
@@ -47,20 +47,22 @@ drops one.
 ## Packs
 
 A pack is a directory with a `pack.yaml` manifest and any number of
-`*.yaml` files. Every ID is namespaced (`zmb:hunger`, `vamp:blood`), and
+`*.yaml` files. Every ID is namespaced (`std_needs:hunger`, `vamp:blood`), and
 packs are loaded in order on top of each other:
 
 ```
 packs/
-  base/       # shared basics: health, a humanoid archetype, tiles
-  zombie/     # "Zombie Town": needs, loot, a small town map
-  vampire/    # "Vampire Mansion": blood, sunlight, coffins
+  std/        # stdpack: health, a humanoid archetype, basic tiles
+  std-needs/  # stdpack: hunger/thirst/fatigue and their statuses (optional)
+  zombie/     # "Zombie Town": loot, survival systems, a small town map
+              #   (uses std + std-needs)
+  vampire/    # "Vampire Mansion": blood, sunlight, coffins (uses std only)
 ```
 
 Validate a pack stack without running it:
 
 ```bash
-npm run check -- packs/base packs/vampire
+npm run check -- packs/std packs/vampire
 ```
 
 Every milestone is validated with two games of different genres, so genre

@@ -80,7 +80,7 @@ Entity members:
 
 - `self.x`, `self.y` — grid position.
 - `self.<measurement>` — the entity's current value of a measurement, by
-  short (`self.hp`) or qualified (`self.base:hp`) id. An entity that does
+  short (`self.hp`) or qualified (`self.std:hp`) id. An entity that does
   not have the measurement reads `0`.
 - `self.has_tag("tag")` — method form of `has_tag(self, "tag")`.
 - `self.has_status("id")` — method form of `has_status(self, "id")`.
@@ -90,7 +90,7 @@ Entity members:
   the entity's inventory, in normal weight units (`0` without an
   inventory). These names take precedence over measurements.
 
-`tile.id` is the qualified tile id, e.g. `tile.id == "base:floor"`.
+`tile.id` is the qualified tile id, e.g. `tile.id == "std:floor"`.
 `tile.has_tag("water")` (or `has_tag(tile, "water")`) tests the tags of the
 tile under `self` (see [tile tags](packs.md#tiles)). `tile.in_room("kitchen")`
 (or `in_room(tile, "kitchen")`) tests the [room](packs.md#maps) tags of the
@@ -145,7 +145,7 @@ deterministic simulation: same seed + same inputs ⇒ same values.
 
 ## Namespacing
 
-Every definition id is qualified with its pack namespace (`zmb:hunger`).
+Every definition id is qualified with its pack namespace (`std_needs:hunger`).
 Inside expressions a measurement can be written either way:
 
 - **Qualified** — `self.vamp:blood`. `ns:id` with **no whitespace** around
@@ -161,7 +161,7 @@ See [packs.md](packs.md#namespaces-and-references) for the full rules.
 
 Expressions are parsed and compiled **once, at load time**, into closures.
 Member paths are resolved to measurement **indices** during compilation,
-so `self.zmb:hunger` compiles to roughly `(ctx) => ctx.self.m[7]`; the
+so `self.std_needs:hunger` compiles to roughly `(ctx) => ctx.self.m[7]`; the
 runtime never parses or looks names up.
 
 The loader reports, with file, key path and line:
