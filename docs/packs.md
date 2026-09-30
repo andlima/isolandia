@@ -58,6 +58,7 @@ domain. Any other top-level key is a load error.
 | `statuses`     | list of entries |
 | `items`        | list of entries |
 | `loot`         | list of entries |
+| `behaviors`    | list of entries |
 | `distributions`| list (no ids)   |
 | `start`        | one mapping     |
 | `clock`        | one mapping     |
@@ -183,6 +184,7 @@ Templates for entities (the player and everything else).
 | `ticks_per_step` | positive integer      | `2`     | Movement speed (ticks per tile) |
 | `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
 | `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
+| `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
 
 ```yaml
 archetypes:
@@ -336,6 +338,95 @@ statuses:
     for: 'self.has_tag("undead")'
     when: 'can_see(self, player, 8)'
     until: 'not can_see(self, player, 12)'
+```
+
+### `behaviors`
+
+A behavior is a declarative **state machine** that moves NPCs. Each state
+runs one built-in **activity**, and **transitions** are ordinary
+expressions. Archetypes opt in with `behavior: <id>`. Behaviors have their
+own id space.
+
+| Field     | Type                 | Default  | Notes |
+|-----------|----------------------|----------|-------|
+| `id`      | id                   | required | |
+| `initial` | state name           | required | Must be a key of `states` |
+| `states`  | mapping name → state | required | Non-empty; names match `[a-z][a-z0-9_]*` |
+
+A **state**:
+
+| Field     | Type                                  | Default | Notes |
+|-----------|---------------------------------------|---------|-------|
+| `do`      | `idle`, `wander`, `pursue`, `flee` or `home` | required | The activity |
+| `target`  | expression (entity or tile)           | —       | Required for `pursue`/`flee`, a load error elsewhere. Evaluated with `self` = the entity, e.g. `player` |
+| `radius`  | integer ≥ 0                           | none    | `wander` only: maximum Chebyshev distance from home. Omitted = unbounded |
+| `repath`  | sim seconds, whole ticks, > 0         | `1`     | `pursue` only: minimum interval between A* re-plans |
+| `on`      | list of `{ when: expr, to: state }`   | `[]`    | Checked in order; the first truthy `when` wins |
+| `timeout` | `{ after: sim seconds, to: state }`   | none    | Fires once the entity has been in the state for `after` seconds (whole ticks, > 0) |
+| `done`    | state name                            | none    | `home` only: the state to switch to once home, or when the path home fails |
+
+Every `to`, `done` and `initial` must name a state of the same behavior.
+Unknown fields and misplaced `target`/`radius`/`repath`/`done` are load
+errors.
+
+Each entity has a **home**: its spawn cell. Behaviors run in the **think**
+phase (phase 0 of the [tick](#tick-order)), once per behavior-driven entity
+in ascending id order:
+
+1. **Transitions**: the current state's `on` entries in order, then its
+   `timeout`, then `done`. The first that fires switches state, clears the
+   entity's path and pending intent, and restarts the state's timer. **At
+   most one transition per entity per tick**; the new state's activity runs
+   in the same tick.
+2. **Activity**: it may set the entity's pending movement intent, which
+   phase 1 applies like any queued intent (walls, corners,
+   `ticks_per_step`, A*). An activity never moves the entity directly.
+
+Entities on a step cooldown still check transitions. A "ready" entity is
+one whose next step fires in this tick (`moveCooldown ≤ 1`).
+
+| Activity | Semantics |
+|----------|-----------|
+| `idle`   | Does nothing (an existing path or intent is kept). |
+| `wander` | When ready and without a path: one draw from the world RNG picks one of 8 directions or "stay". The step is issued only if it is allowed and ends within `radius` of home; otherwise the entity stays this tick. No draw when not ready. |
+| `pursue` | Evaluates `target` to a cell. If the entity is on it or 8-adjacent, it clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) on entering the state, and later when at least `repath` has passed since its last plan **and** it has no path or the target cell has moved. At most one A* per `repath` window; an unreachable target (`lastGoto.ok == false`) waits for the next window. |
+| `flee`   | When ready: among the allowed neighbour steps, the one that maximizes the squared distance to `target`, only if it **strictly** increases it; ties go to the first in the order N, NE, E, SE, S, SW, W, NW. Nothing when cornered. No RNG, no A*. |
+| `home`   | Once per entry into the state: a `goto` to the home cell (nothing if already there). `done` fires on a later tick once the entity is home, or when that goto failed. Without `done` the entity idles at home. |
+
+- The **player** is never driven by a behavior, even if its archetype has
+  one; it stays under input control.
+- Only `wander` draws from the world RNG, in id order, so runs stay
+  deterministic. Behavior state (`home`, current state and since when, the
+  last planned goto) is part of `snapshot()` and `hash()`.
+- Queued intents on a behavior-driven entity may be overwritten by its
+  activity.
+- Transitions see the statuses computed at the end of the previous tick.
+
+```yaml
+behaviors:
+  - id: shambler
+    initial: wander
+    states:
+      wander:
+        do: wander
+        radius: 6
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+      chase:
+        do: pursue
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: search }
+      search:
+        do: idle
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+        timeout: { after: 5, to: wander }
+
+archetypes:
+  - id: shambler
+    # …
+    behavior: shambler
 ```
 
 ### `items`
@@ -497,13 +588,15 @@ Movement intents (`step` and `goto`) are queued with
 `world.queueIntent(intent, entity?)`; `entity` defaults to the player, and
 an entity of another world throws. Each entity keeps its own pending
 `intent` and `lastGoto` (both in its snapshot); `world.lastGoto` is the
-player's. Entities do not block each other. Only the player is driven by
-the shells for now; NPC intents are groundwork for M4 behaviors.
+player's. Entities do not block each other. The shells drive the player; NPCs
+are driven by their archetype's [behavior](#behaviors).
 
 ### Tick order
 
 `World.step()` runs these phases in order:
 
+0. **think**: [behaviors](#behaviors) switch state (at most once) and
+   issue movement intents, in ascending id order (the player is skipped);
 1. apply **each entity's** movement intent, in ascending id order (the
    player is id 0), then the queued (player) actions, in FIFO order;
 2. measurement drift: `rate` plus the `rates` of the statuses active at the

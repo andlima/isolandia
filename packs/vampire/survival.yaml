@@ -57,3 +57,25 @@ lighting:
     - { at: "07:00", color: "#fff4e0" }
     - { at: "19:00", color: "#ffc8a0" }
     - { at: "21:00", color: "#2a3060" }
+
+# Bats flutter around their roost, scatter from the vampire and fly back
+# once it is out of sight.
+behaviors:
+  - id: bat
+    initial: roost
+    states:
+      roost:
+        do: wander
+        radius: 3
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+      flee:
+        do: flee
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: return }
+      return:
+        do: home
+        done: roost
+        on:
+          - { when: 'self.has_status("alert")', to: flee }

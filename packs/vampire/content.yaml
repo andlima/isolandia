@@ -86,6 +86,7 @@ archetypes:
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }
+    behavior: bat
 
 # The night begins as the game does: it starts at dusk.
 clock:

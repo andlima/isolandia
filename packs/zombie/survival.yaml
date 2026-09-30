@@ -40,3 +40,25 @@ systems:
     when: "self.hunger >= 100 or self.thirst >= 100"
     effects:
       - { type: apply, measurement: hp, delta: -3 }
+
+# The undead shuffle around where they rose, chase a survivor they can see,
+# and linger a while where they lost them before wandering off again.
+behaviors:
+  - id: shambler
+    initial: wander
+    states:
+      wander:
+        do: wander
+        radius: 6
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+      chase:
+        do: pursue
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: search }
+      search:
+        do: idle
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+        timeout: { after: 5, to: wander }

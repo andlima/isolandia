@@ -4,6 +4,7 @@ export {
   compile,
   levenshtein,
   nearMiss,
+  isPointType,
   BUILTIN_NAMES,
   SCOPE_NAMES,
   type Compiled,

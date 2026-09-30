@@ -170,6 +170,43 @@ export interface ArchetypeDef {
   readonly sprite: number | null;
   /** Every entity of this archetype gets an inventory; null for none. */
   readonly inventory: InventorySpec | null;
+  /** Behavior index driving non-player entities of this archetype, or null. */
+  readonly behavior: number | null;
+}
+
+/** Built-in activity of a behavior state. */
+export type ActivityKind = 'idle' | 'wander' | 'pursue' | 'flee' | 'home';
+
+/** `on` entry: switch to state `to` when `when` is truthy. */
+export interface TransitionDef {
+  readonly when: Compiled;
+  readonly to: number;
+}
+
+/** One state of a behavior (indices refer to `BehaviorDef.states`). */
+export interface BehaviorStateDef {
+  readonly name: string;
+  readonly index: number;
+  readonly activity: ActivityKind;
+  /** Point expression (entity or tile) with `self` = the entity; set for `pursue`/`flee` only. */
+  readonly target: Compiled | null;
+  /** `wander`: maximum Chebyshev distance from home; null = unbounded. */
+  readonly radius: number | null;
+  /** `pursue`: minimum ticks between A* re-plans (≥ 1). */
+  readonly repath: number;
+  /** Checked in order; the first truthy `when` wins. */
+  readonly on: readonly TransitionDef[];
+  readonly timeout: { readonly afterTicks: number; readonly to: number } | null;
+  /** `home`: state to switch to once home (or when the home path fails). */
+  readonly done: number | null;
+}
+
+/** A declarative state machine (`behaviors` domain). */
+export interface BehaviorDef {
+  readonly id: string;
+  readonly index: number;
+  readonly initial: number;
+  readonly states: readonly BehaviorStateDef[];
 }
 
 export interface SpawnDef {
@@ -267,6 +304,7 @@ export interface Definition {
   readonly statuses: readonly StatusDef[];
   readonly items: readonly ItemDef[];
   readonly loot: readonly LootTableDef[];
+  readonly behaviors: readonly BehaviorDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -286,5 +324,6 @@ export interface Definition {
     readonly statuses: Readonly<Record<string, number>>;
     readonly items: Readonly<Record<string, number>>;
     readonly loot: Readonly<Record<string, number>>;
+    readonly behaviors: Readonly<Record<string, number>>;
   };
 }

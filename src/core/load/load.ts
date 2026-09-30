@@ -11,6 +11,9 @@ import {
   TICKS_PER_SECOND,
   type ArchetypeDef,
   type AssetDef,
+  type ActivityKind,
+  type BehaviorDef,
+  type BehaviorStateDef,
   type ContainerSpec,
   type DefeatDef,
   type DistributionDef,
@@ -35,8 +38,9 @@ import {
   type SystemDef,
   type TileDef,
   type TintKeyframe,
+  type TransitionDef,
 } from '../definition.ts';
-import { compileSource, nearMiss, type Compiled } from '../expr/index.ts';
+import { compileSource, isPointType, nearMiss, type Compiled, type CompiledExpr } from '../expr/index.ts';
 import { at, ErrorSink, PackLoadError, type LoadError, type Src } from './errors.ts';
 import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
 import { SymbolTable, type Kind, type Scope } from './resolve.ts';
@@ -63,6 +67,7 @@ const KIND_OF: Record<ListDomain, Kind> = {
   statuses: 'status',
   items: 'item',
   loot: 'loot',
+  behaviors: 'behavior',
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
@@ -73,6 +78,8 @@ const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
 const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value' };
 const DEFAULT_USE_LABEL = 'Use';
+const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home'];
+const DEFAULT_REPATH = 1;
 const always = (): boolean => true;
 
 function deepFreeze<T>(o: T): T {
@@ -96,6 +103,7 @@ class Loader {
     statuses: [],
     items: [],
     loot: [],
+    behaviors: [],
   };
   packs: { raw: RawPack; scope: Scope }[] = [];
   /** Every room tag used by a map, in first-seen order (collected before any expression compiles). */
@@ -118,6 +126,7 @@ class Loader {
     const distributions = this.distributions(tiles, loot, items);
     const statuses = this.defined.statuses.map((d) => this.status(d));
     const systems = this.defined.systems.map((d) => this.system(d));
+    const behaviors = this.defined.behaviors.map((d) => this.behavior(d));
     const start = this.start(maps);
     const clock = this.clock();
     const lighting = this.lighting();
@@ -144,6 +153,7 @@ class Loader {
       statuses,
       items,
       loot,
+      behaviors,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -159,6 +169,7 @@ class Loader {
         statuses: ids(statuses),
         items: ids(items),
         loot: ids(loot),
+        behaviors: ids(behaviors),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -207,6 +218,17 @@ class Loader {
    * error. `what` names the expected result in the type error.
    */
   private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number } | null {
+    const expr = this.compile(source, scope, src);
+    if (!expr) return null;
+    if (expr.type !== 'number' && expr.type !== 'boolean' && expr.type !== 'any') {
+      this.sink.add(src, `expression "${source}" must produce ${what}, got ${expr.type}`);
+      return null;
+    }
+    return expr;
+  }
+
+  /** Compile an expression of any type; reports and returns null on error. */
+  private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
     const resolver = (kind: 'measurement' | 'status' | 'item') => (ref: string) => {
       const r = this.symbols.resolve(kind, ref, scope);
       return 'error' in r ? r : { index: r.index };
@@ -219,10 +241,6 @@ class Loader {
     });
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
-      return null;
-    }
-    if (expr.type !== 'number' && expr.type !== 'boolean' && expr.type !== 'any') {
-      this.sink.add(src, `expression "${source}" must produce ${what}, got ${expr.type}`);
       return null;
     }
     return expr;
@@ -413,7 +431,7 @@ class Loader {
       this.sink,
       d.entry.src,
       d.entry.value,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'sprite', 'inventory'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'sprite', 'inventory', 'behavior'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -449,7 +467,8 @@ class Loader {
     }
     const sprite = this.sprite(f, d);
     const inventory = this.inventory(f, d, items);
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, sprite, inventory };
+    const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scope, f.at('behavior'), this.sink)?.index ?? null) : null;
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, sprite, inventory, behavior };
   }
 
   private inventory(f: Fields, d: Defined, items: readonly ItemDef[]): InventorySpec | null {
@@ -797,21 +816,137 @@ class Loader {
   private system(d: Defined): SystemDef {
     const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'every', 'for', 'when', 'effects'], 'system');
     let every = f.number('every', false) ?? DEFAULT_EVERY;
-    const ticks = every * TICKS_PER_SECOND;
-    let period = Math.round(ticks);
-    if (every <= 0) {
-      this.sink.add(f.at('every'), `field 'every' must be a number of sim seconds > 0, got ${every}`);
-      every = DEFAULT_EVERY;
-      period = 1;
-    } else if (Math.abs(ticks - period) > 1e-6 || period < 1) {
-      this.sink.add(f.at('every'), `field 'every' must be a whole number of ticks (a multiple of ${DEFAULT_EVERY} s), got ${every}`);
-      period = Math.max(1, period);
-    }
+    const period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
+    if (every <= 0) every = DEFAULT_EVERY;
     const forFn = this.condition(f, 'for', d.scope) ?? null;
     const whenFn = this.condition(f, 'when', d.scope) ?? null;
 
     const effects = this.effects(f, d.scope);
     return { id: d.id, index: d.index, every, period, forFn, whenFn, effects };
+  }
+
+  /** Sim seconds (> 0, a whole number of ticks) → ticks; reports and returns null otherwise. */
+  private ticks(f: Fields, key: string, seconds: number): number | null {
+    const ticks = seconds * TICKS_PER_SECOND;
+    const n = Math.round(ticks);
+    if (seconds <= 0) {
+      this.sink.add(f.at(key), `field '${key}' must be a number of sim seconds > 0, got ${seconds}`);
+      return null;
+    }
+    if (Math.abs(ticks - n) > 1e-6 || n < 1) {
+      this.sink.add(f.at(key), `field '${key}' must be a whole number of ticks (a multiple of ${DEFAULT_EVERY} s), got ${seconds}`);
+      return null;
+    }
+    return n;
+  }
+
+  // ── Behaviors ───────────────────────────────────────────────────────────
+
+  private behavior(d: Defined): BehaviorDef {
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'initial', 'states'], 'behavior');
+    const raw = f.mapping('states', true);
+    const names = Object.keys(raw ?? {});
+    if (raw && names.length === 0) this.sink.add(f.at('states'), `field 'states' must define at least one state`);
+    for (const name of names) {
+      if (!ID_RE.test(name)) this.sink.add(f.at('states', name), `invalid state name '${name}': state names must match [a-z][a-z0-9_]*`);
+    }
+    const stateRef = (v: Json | undefined, src: Src): number => {
+      if (typeof v !== 'string') {
+        this.sink.add(src, `expected a state name (string), got ${JSON.stringify(v)}`);
+        return 0;
+      }
+      const k = names.indexOf(v);
+      if (k >= 0) return k;
+      const s = nearMiss(v, names);
+      this.sink.add(src, `unknown state '${v}' in behavior '${d.id}'${s ? ` (did you mean '${s}'?)` : ''}`);
+      return 0;
+    };
+    const initial = f.present('initial') ? stateRef(f.raw('initial'), f.at('initial')) : 0;
+    const states = names.map((name, index) => this.behaviorState(f.at('states', name), raw![name], name, index, d.scope, stateRef));
+    return { id: d.id, index: d.index, initial, states };
+  }
+
+  private behaviorState(
+    src: Src,
+    raw: Json | undefined,
+    name: string,
+    index: number,
+    scope: Scope,
+    stateRef: (v: Json | undefined, src: Src) => number,
+  ): BehaviorStateDef {
+    const state: BehaviorStateDef = { name, index, activity: 'idle', target: null, radius: null, repath: DEFAULT_REPATH * TICKS_PER_SECOND, on: [], timeout: null, done: null };
+    if (!isObject(raw)) {
+      this.sink.add(src, `a state must be a mapping like { do: wander, on: [...] }`);
+      return state;
+    }
+    const f = new Fields(this.sink, src, raw, ['do', 'target', 'radius', 'repath', 'on', 'timeout', 'done'], 'state');
+    let activity: ActivityKind = 'idle';
+    const doRaw = f.string('do');
+    if (doRaw !== undefined) {
+      if ((ACTIVITIES as readonly string[]).includes(doRaw)) activity = doRaw as ActivityKind;
+      else {
+        const s = nearMiss(doRaw, ACTIVITIES);
+        this.sink.add(f.at('do'), `unknown activity '${doRaw}'${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${ACTIVITIES.join(', ')}`);
+      }
+    }
+    /** Whether `key` is absent or allowed for this activity; reports a misplaced field. */
+    const onlyFor = (key: string, kinds: readonly ActivityKind[]): boolean => {
+      if (!f.has(key) || kinds.includes(activity)) return true;
+      this.sink.add(f.at(key), `field '${key}' is only allowed on ${kinds.map((k) => `'${k}'`).join('/')} states, not '${activity}'`);
+      return false;
+    };
+
+    let target: Compiled | null = null;
+    const needsTarget = activity === 'pursue' || activity === 'flee';
+    if (onlyFor('target', ['pursue', 'flee'])) {
+      if (needsTarget && !f.has('target')) f.present('target');
+      else if (f.has('target')) {
+        const v = f.string('target');
+        const e = v === undefined ? null : this.compile(v, scope, f.at('target'));
+        if (e && !isPointType(e.type)) this.sink.add(f.at('target'), `target "${v}" must be an entity or a tile, got ${e.type}`);
+        else if (e) target = e.fn;
+      }
+    }
+
+    let radius: number | null = null;
+    if (onlyFor('radius', ['wander']) && f.has('radius')) {
+      const v = f.raw('radius');
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+        this.sink.add(f.at('radius'), `field 'radius' must be an integer ≥ 0, got ${JSON.stringify(v)}`);
+      } else radius = v;
+    }
+
+    let repath = state.repath;
+    if (onlyFor('repath', ['pursue']) && f.has('repath')) {
+      const v = f.number('repath');
+      if (v !== undefined) repath = this.ticks(f, 'repath', v) ?? repath;
+    }
+
+    const on: TransitionDef[] = [];
+    (f.list('on') ?? []).forEach((t, i) => {
+      const tsrc = f.at('on', i);
+      if (!isObject(t)) {
+        this.sink.add(tsrc, `transitions must be mappings like { when: 'self.has_status("alert")', to: chase }`);
+        return;
+      }
+      const tf = new Fields(this.sink, tsrc, t, ['when', 'to'], 'transition');
+      const when = this.condition(tf, 'when', scope, true);
+      const to = tf.present('to') ? stateRef(tf.raw('to'), tf.at('to')) : -1;
+      if (when && to >= 0) on.push({ when, to });
+    });
+
+    let timeout: BehaviorStateDef['timeout'] = null;
+    const traw = f.mapping('timeout');
+    if (traw) {
+      const tf = new Fields(this.sink, f.at('timeout'), traw, ['after', 'to'], 'timeout');
+      const after = tf.number('after');
+      const afterTicks = after === undefined ? null : this.ticks(tf, 'after', after);
+      const to = tf.present('to') ? stateRef(tf.raw('to'), tf.at('to')) : -1;
+      if (afterTicks !== null && to >= 0) timeout = { afterTicks, to };
+    }
+
+    const done = onlyFor('done', ['home']) && f.has('done') ? stateRef(f.raw('done'), f.at('done')) : null;
+    return { name, index, activity, target, radius, repath, on, timeout, done };
   }
 
   /** A required, non-empty `effects` list (`apply`/`set` on `self`). */

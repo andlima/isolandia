@@ -4,9 +4,10 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import type { ArchetypeDef, Definition, MeasurementDef, NumberTerm } from '../definition.ts';
+import type { ArchetypeDef, BehaviorDef, Definition, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
+import { think, type ThinkEnv } from './behavior.ts';
 import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
 import { Grid } from './grid.ts';
 import { lineOfSight } from './sight.ts';
@@ -43,6 +44,19 @@ export interface Entity extends ExprEntity {
   intent: Intent | null;
   /** Result of the entity's most recent goto intent (a new object each time). */
   lastGoto: GotoRecord | null;
+  /** Spawn cell (fixed). */
+  readonly homeX: number;
+  readonly homeY: number;
+  /** Behavior driving the entity (null for the player and archetypes without one). */
+  readonly behavior: BehaviorDef | null;
+  /** Current state index of `behavior`, or -1 without one. */
+  state: number;
+  /** Tick at which the current state was entered. */
+  stateTick: number;
+  /** Cell and tick of the goto the current state last issued (`pursue`/`home`); `planTick` -1 = none yet. */
+  planX: number;
+  planY: number;
+  planTick: number;
 }
 
 /** Recorded when the pack's `start.defeat` condition becomes true. */
@@ -157,6 +171,9 @@ export interface EntitySnapshot {
   statuses: string[];
   intent: Intent | null;
   lastGoto: GotoRecord | null;
+  home: [number, number];
+  /** Current behavior state (name), when it was entered, and its last planned goto. */
+  behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
 }
 
 export interface WorldSnapshot {
@@ -225,6 +242,7 @@ export class World {
   private readonly itemWeights: readonly number[];
   private pathfinder: Pathfinder | null = null;
   private readonly ctx: ExprContext;
+  private readonly thinkEnv: ThinkEnv;
   private readonly tagSets: ReadonlySet<string>[];
   private readonly tileTagSets: ReadonlySet<string>[];
   /** Per archetype index: 1 at each measurement index the archetype has. */
@@ -272,7 +290,7 @@ export class World {
       this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, tile: tile.index }));
     }
     const start = map.playerStart!;
-    this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y);
+    this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, false);
     for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y);
     this.rollLoot(seed);
 
@@ -290,6 +308,7 @@ export class World {
       los: (x0, y0, x1, y1) => lineOfSight(world.grid, x0, y0, x1, y1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
+    this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
   }
@@ -312,7 +331,8 @@ export class World {
     return clockAt(this.def.clock, this.tick, this.def.ticksPerSecond);
   }
 
-  private spawn(archetype: ArchetypeDef, x: number, y: number): Entity {
+  /** Add an entity; `driven` = run its archetype's behavior (false for the player). */
+  private spawn(archetype: ArchetypeDef, x: number, y: number, driven = true): Entity {
     const id = this.entities.length;
     let inv: Container | null = null;
     if (archetype.inventory) {
@@ -323,6 +343,7 @@ export class World {
     const m = new Float64Array(this.def.measurements.length);
     archetype.measurements.forEach((idx, k) => (m[idx] = archetype.initial[k]!));
     const max = new Float64Array(this.def.measurements.length).fill(Infinity);
+    const behavior = driven && archetype.behavior !== null ? this.def.behaviors[archetype.behavior]! : null;
     const e: Entity = {
       id,
       archetype,
@@ -341,6 +362,14 @@ export class World {
       inv,
       intent: null,
       lastGoto: null,
+      homeX: x,
+      homeY: y,
+      behavior,
+      state: behavior ? behavior.initial : -1,
+      stateTick: 0,
+      planX: 0,
+      planY: 0,
+      planTick: -1,
     };
     this.entities.push(e);
     return e;
@@ -462,14 +491,15 @@ export class World {
   }
 
   /**
-   * Advance exactly one tick (1 / ticksPerSecond seconds): every entity's
-   * movement intent (id order), player actions, drift,
+   * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
+   * (id order), every entity's movement intent (id order), player actions, drift,
    * due systems, clamp, status update, defeat check, `tick++`. A no-op once
    * defeated.
    */
   step(): void {
     if (this.defeat) return;
     this.ctx.tick = this.tick;
+    this.think();
     for (const e of this.entities) {
       if (e.intent || e.path) this.applyIntent(e);
       else if (e.moveCooldown > 0) e.moveCooldown--;
@@ -481,6 +511,12 @@ export class World {
     this.updateStatuses();
     this.checkDefeat();
     this.tick++;
+  }
+
+  /** Phase 0: each behavior-driven entity switches state at most once, then issues its activity's intent. */
+  private think(): void {
+    const env = this.thinkEnv;
+    for (const e of this.entities) if (e.state >= 0) think(e, env);
   }
 
   /** Measurement drift: `rate` plus the `rates` of the statuses active now. */
@@ -733,6 +769,10 @@ export class World {
         statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),
         intent: e.intent,
         lastGoto: e.lastGoto,
+        home: [e.homeX, e.homeY],
+        behavior: e.behavior
+          ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
+          : null,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
