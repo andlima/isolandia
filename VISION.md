@@ -191,7 +191,19 @@ only confirmed after that.
   keys** (`measurements`, `tiles`, `archetypes`, `maps`, `start`…) and the
   content is **merged per domain** within the pack. Unknown keys are a
   load error. See `docs/packs.md`.
-- State machine vs utility AI for `behaviors` — or both?
+- ~~State machine vs utility AI for `behaviors` — or both?~~ **Decided
+  (task `npc-behaviors`, M4 core):** **state machines, for now.** A
+  pack-defined **`behaviors`** domain declares **declarative state
+  machines**: each state runs one **built-in activity** (`idle`, `wander`,
+  `pursue`, `flee`, `home`) and **transitions** are ordinary expressions
+  (`on` in order, then `timeout`, then `home`'s `done`; at most one per
+  tick). Archetypes opt in with `behavior: <id>`; the player is never
+  driven. Behaviors tick in a new **think** phase (phase 0, before
+  intents) that **only issues movement intents**, so walls, cooldowns and
+  A* behave exactly as for input. Only `wander` draws RNG, in id order, so
+  runs stay deterministic. **Utility AI is deferred**; it could come later
+  as another activity or state selector. No nested states or enter/exit
+  effects yet. See `docs/packs.md`.
 - Override semantics between packs: full replacement by ID, deep merge,
   or explicit patch operations?
 - Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
@@ -299,12 +311,15 @@ author, via `spec-orchestrator`, the **M4 spec**: perception
 (sight/noise) and declarative `behaviors` — the horde that hears the
 window breaking.
 
-M4 groundwork already delivered: **sight** (`opaque` tiles, `can_see`), with
-an `alert` status on the NPCs of both genres. Noise and `behaviors` stay
-open.
+M4 delivered so far: **sight** (`opaque` tiles, `can_see`), with an
+`alert` status on the NPCs of both genres, and **behaviors** (declarative
+state machines): zombies wander, chase an `alert`-triggering survivor and
+give up after losing sight; bats roost, flee the vampire and fly home.
+**Noise** (the horde that hears the window breaking), NPC actions and
+combat remain open, so M4 is not yet complete.
 
 M4 design questions still open (to be decided in the spec, not here):
-state machine vs utility AI (or both), how senses and noise are
-represented without a per-tick cost proportional to the map, how NPCs use
-containers and items (today only the player acts), and whether `systems`
-effects start creating or consuming items.
+how noise is represented without a per-tick cost proportional to the map
+(and whether NPCs remember a last known position), how NPCs use
+containers and items (today only the player acts), combat, and whether
+`systems` effects start creating or consuming items.

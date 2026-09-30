@@ -95,7 +95,8 @@ interface Builtin {
 
 type Point = { x: number; y: number };
 
-function isPointType(t: ValueType): boolean {
+/** Whether a value of this type has a position (`x`, `y`). */
+export function isPointType(t: ValueType): boolean {
   return t === 'entity' || t === 'tile' || t === 'any';
 }
 
