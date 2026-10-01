@@ -22,7 +22,7 @@ const symbols: CompileSymbols = {
 };
 
 function entity(x: number, y: number, m: number[], tags: string[] = [], statuses: number[] = []): ExprEntity {
-  return { x, y, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses), inv: null };
+  return { x, y, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses), inv: null, heardTick: -1 };
 }
 
 function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings: string[] } {

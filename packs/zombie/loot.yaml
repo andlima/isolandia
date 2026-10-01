@@ -29,6 +29,7 @@ loot:
       - { item: coffee, weight: 2 }
       - { item: bandage, weight: 1 }
       - { item: crackers, weight: 1 }
+      - { item: alarm_clock, weight: 1 }
       - { nothing: true, weight: 2 }
   - id: glovebox
     rolls: [0, 2]

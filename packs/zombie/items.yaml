@@ -63,6 +63,17 @@ items:
       when: "self.hp < 100"
       effects:
         - { type: apply, measurement: hp, delta: 20 }
+  # Rings loud enough to draw every shambler in the block.
+  - id: alarm_clock
+    label: Alarm clock
+    glyph: "o"
+    color: "#d8c040"
+    weight: 0.5
+    use:
+      label: Wind up
+      consume: 0                    # reusable
+      effects:
+        - { type: noise, radius: 20 }
   # Heavy junk: worth nothing, weighs a lot.
   - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3, tags: [junk] }
   - { id: lamp, label: Desk lamp, glyph: "]", color: "#d8d070", weight: 2.5, tags: [junk] }

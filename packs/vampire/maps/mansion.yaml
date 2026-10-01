@@ -5,6 +5,7 @@ maps:
       "+": { tile: door }
       ".": { tile: floor }
       "c": { tile: carpet }
+      ",": { tile: creaky }
       "=": { tile: coffin }
       "\"": { tile: window }
       "'": { tile: sunbeam }
@@ -22,11 +23,11 @@ maps:
       - "#..h...#ccC=Ccc#..h..#"
       - "#......#cccccBc#.....#"
       - "###+####cccVccc####+##"
-      - "#......+ccccccc+.....#"
+      - "#......+,ccccc,+.....#"
       - "#..b...#ccccccc#.....#"
       - "#..'...#cc=b=cc#...''\""
       - "###\"#######+#######\"##"
-      - "#LLLL.LLL#ccc#RRR.RRR#"
+      - "#LLLL.LLL#c,c#RRR.RRR#"
       - "#cccccccc+ccc+CCCCCCC#"
       - "#cccXcccc#ccc#CCCCCCC#"
       - "#cccccccc#ccc#RRR.RRR#"

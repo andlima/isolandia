@@ -153,7 +153,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M1 | Isometric renderer: tiles, depth sort, camera, click-to-move (A*), assets manifest | The same game, in iso | ✅ done |
 | M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
-| M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking |  |
+| M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
 | M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading |  |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
@@ -300,26 +300,43 @@ only confirmed after that.
   data uses it through the **`can_see(a, b[, range])`** expression
   built-in (euclidean range, inclusive, checked first). No field of view,
   fog of war, light or facing yet. See `docs/expressions.md`.
+- ~~How is noise represented without a per-tick cost proportional to the
+  map?~~ **Decided (task `noise-hearing`, M4 completion):** noise is
+  **events**, not a field over the grid. A **`noise` effect** (in
+  `systems` and item `use`) emits a noise at **`self`'s cell** with a
+  radius. A **hear** phase right after systems checks each (noise,
+  entity) pair: hearing is **euclidean and inclusive**, and **ignores
+  walls for now** (no muffling, flood fill or attenuation). Each entity
+  remembers only its **last heard noise** (the nearest of its tick), with
+  the cell and tick. Expressions test it with **`heard(entity, seconds)`**,
+  and the **`investigate`** behavior activity walks to it (`done` once
+  adjacent, when the path fails, or when nothing was heard). The cost is
+  O(noises × entities) on noisy ticks only, with no allocation and
+  nothing on silent ticks. Zombies investigate broken glass and alarm
+  clocks; bats investigate creaky floorboards. There is no "last known
+  position" for `pursue`, no memory of more than one noise, and no
+  per-archetype hearing range yet. See `docs/packs.md`.
 
 ## 8. Next step
 
-S0, M0, M1, M2 and M3 are delivered: zombie and vampire have a survival
-and looting loop (houses and a mansion with rooms, containers with
-per-room loot, weighted inventory, eating/drinking/healing with items),
-all in YAML, playable in the terminal and in iso. The next step is to
-author, via `spec-orchestrator`, the **M4 spec**: perception
-(sight/noise) and declarative `behaviors` — the horde that hears the
-window breaking.
+S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
+survival and looting loop (houses and a mansion with rooms, containers
+with per-room loot, weighted inventory, eating/drinking/healing with
+items) and NPCs that see, hear and react, all in YAML, playable in the
+terminal and in iso. The next step is to author, via `spec-orchestrator`,
+the **M5 spec**: actions with duration, the context menu and recipes.
 
-M4 delivered so far: **sight** (`opaque` tiles, `can_see`), with an
-`alert` status on the NPCs of both genres, and **behaviors** (declarative
-state machines): zombies wander, chase an `alert`-triggering survivor and
-give up after losing sight; bats roost, flee the vampire and fly home.
-**Noise** (the horde that hears the window breaking), NPC actions and
-combat remain open, so M4 is not yet complete.
+M4 is delivered: **sight** (`opaque` tiles, `can_see`), with an `alert`
+status on the NPCs of both genres; **behaviors** (declarative state
+machines): zombies wander, chase an `alert`-triggering survivor and give
+up after losing sight, while bats roost, flee the vampire and fly home;
+and **noise** (`noise` effect, hearing, `heard()`, `investigate`). A
+survivor crunching over broken glass or winding up an alarm clock draws
+the nearby horde to the spot, and creaky floorboards bring bats over to
+look.
 
-M4 design questions still open (to be decided in the spec, not here):
-how noise is represented without a per-tick cost proportional to the map
-(and whether NPCs remember a last known position), how NPCs use
-containers and items (today only the player acts), combat, and whether
-`systems` effects start creating or consuming items.
+Questions moved to later milestones (to be decided in their specs, not
+here): how NPCs use containers and items and act beyond movement (today
+only the player acts; M5 actions), combat, whether NPCs remember a last
+known position, and whether `systems` effects start creating or consuming
+items.

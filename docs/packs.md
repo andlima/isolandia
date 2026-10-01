@@ -270,12 +270,27 @@ entries within the pack. A system that is not due costs nothing.
 |---------------------------------------------------------|---------|
 | `{ type: apply, measurement: <id>, delta: <n or expr> }` | Add `delta` to the measurement |
 | `{ type: set, measurement: <id>, value: <n or expr> }`   | Replace the measurement's value |
+| `{ type: noise, radius: <n or expr> }`                   | Emit a noise at `self`'s cell (see below) |
 
 - An effect on a measurement the entity does not have is skipped.
 - Each effect sees the values left by the effects before it, and by the
   systems before it on the same tick.
 - Values are clamped once, at the clamp phase of the tick, not after each
   effect.
+
+**Noise.** A `noise` effect emits one noise at `self`'s current cell, with
+`self` as its source and `radius` (tiles, evaluated at emission time) as its
+hearing radius. It takes no `measurement` and works on any entity. A radius
+`<= 0` emits nothing. Noises are **events**, not a field over the map: in
+the [hear phase](#tick-order) of the same tick, every entity other than the
+source within `dx² + dy² <= radius²` hears it. **Walls are ignored.** Each
+entity remembers only its **last heard noise**: the nearest of the tick
+(ties go to the earlier emission), with the cell and the tick. Entities that
+hear nothing keep their previous memory. Everyone hears, including the
+player and entities without a behavior. Packs decide who reacts, with
+[`heard(entity, seconds)`](expressions.md) in statuses and transitions and
+the `investigate` [behavior](#behaviors) activity. Hearing costs
+O(noises × entities) on ticks with noise and nothing on silent ticks.
 
 ```yaml
 systems:
@@ -290,6 +305,12 @@ systems:
     when: "self.hunger >= 100"
     effects:
       - { type: apply, measurement: hp, delta: -3 }
+  - id: crunch                     # broken glass is loud underfoot
+    every: 0.2
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("glass")'
+    effects:
+      - { type: noise, radius: 12 }
 ```
 
 ### `statuses`
@@ -357,13 +378,13 @@ A **state**:
 
 | Field     | Type                                  | Default | Notes |
 |-----------|---------------------------------------|---------|-------|
-| `do`      | `idle`, `wander`, `pursue`, `flee` or `home` | required | The activity |
+| `do`      | `idle`, `wander`, `pursue`, `flee`, `home` or `investigate` | required | The activity |
 | `target`  | expression (entity or tile)           | —       | Required for `pursue`/`flee`, a load error elsewhere. Evaluated with `self` = the entity, e.g. `player` |
 | `radius`  | integer ≥ 0                           | none    | `wander` only: maximum Chebyshev distance from home. Omitted = unbounded |
-| `repath`  | sim seconds, whole ticks, > 0         | `1`     | `pursue` only: minimum interval between A* re-plans |
+| `repath`  | sim seconds, whole ticks, > 0         | `1`     | `pursue`/`investigate` only: minimum interval between A* re-plans |
 | `on`      | list of `{ when: expr, to: state }`   | `[]`    | Checked in order; the first truthy `when` wins |
 | `timeout` | `{ after: sim seconds, to: state }`   | none    | Fires once the entity has been in the state for `after` seconds (whole ticks, > 0) |
-| `done`    | state name                            | none    | `home` only: the state to switch to once home, or when the path home fails |
+| `done`    | state name                            | none    | `home`/`investigate` only: the state to switch to once arrived, or when the path fails |
 
 Every `to`, `done` and `initial` must name a state of the same behavior.
 Unknown fields and misplaced `target`/`radius`/`repath`/`done` are load
@@ -392,6 +413,7 @@ one whose next step fires in this tick (`moveCooldown ≤ 1`).
 | `pursue` | Evaluates `target` to a cell. If the entity is on it or 8-adjacent, it clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) on entering the state, and later when at least `repath` has passed since its last plan **and** it has no path or the target cell has moved. At most one A* per `repath` window; an unreachable target (`lastGoto.ok == false`) waits for the next window. |
 | `flee`   | When ready: among the allowed neighbour steps, the one that maximizes the squared distance to `target`, only if it **strictly** increases it; ties go to the first in the order N, NE, E, SE, S, SW, W, NW. Nothing when cornered. No RNG, no A*. |
 | `home`   | Once per entry into the state: a `goto` to the home cell (nothing if already there). `done` fires on a later tick once the entity is home, or when that goto failed. Without `done` the entity idles at home. |
+| `investigate` | Walks to the entity's last heard [noise](#systems) cell; takes no `target`. Never heard anything: does nothing. On or 8-adjacent to the heard cell: clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) when it has not issued one yet in this state, or when the heard cell changed since its last plan and at least `repath` has passed, so a newer noise retargets the walk without a self-transition. `done` fires on a later tick than the plan once the entity is on or adjacent to the heard cell, when the last goto failed, or when it has never heard a noise. |
 
 - The **player** is never driven by a behavior, even if its archetype has
   one; it stays under input control.
@@ -421,7 +443,13 @@ behaviors:
         do: idle
         on:
           - { when: 'self.has_status("alert")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
         timeout: { after: 5, to: wander }
+      investigate:                 # sight beats sound: `alert` is checked first
+        do: investigate
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+        done: search
 
 archetypes:
   - id: shambler
@@ -449,9 +477,11 @@ container holds stacks `{ item, count }`.
 - `label` — the verb shown in the UI, `"Use"` by default;
 - `when` — an optional condition with `self` = the user; when falsy the
   use fails with `cannot_use`;
-- `effects` — a non-empty list of `apply`/`set` effects on `self`, exactly
-  as in [`systems`](#systems). They run immediately, in order, and see each
-  other's results; values are clamped at the next clamp phase;
+- `effects` — a non-empty list of `apply`/`set`/`noise` effects on `self`,
+  exactly as in [`systems`](#systems). They run immediately, in order, and
+  see each other's results; values are clamped at the next clamp phase. A
+  `noise` effect is emitted only when the use succeeds (e.g. an alarm clock
+  with `consume: 0`);
 - `consume` — units removed per use, a non-negative integer (default `1`;
   `0` makes the item reusable).
 
@@ -602,15 +632,21 @@ are driven by their archetype's [behavior](#behaviors).
 2. measurement drift: `rate` plus the `rates` of the statuses active at the
    **start** of the tick;
 3. systems that are due, in definition order;
-4. clamp every measurement to `[min, max]`;
-5. status update: every `for`/`when`/`until` sees the statuses as they were
+4. **hear**: skipped when no noise was emitted this tick; otherwise each
+   entity records the nearest noise it heard (see [noise](#systems)).
+   Noises are emitted in order: player actions (phase 1), then systems
+   (definition order, entity order). `world.noises` lists this tick's
+   noises until the next tick starts;
+5. clamp every measurement to `[min, max]`;
+6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
-6. defeat check (see `start.defeat`);
-7. `tick++`.
+7. defeat check (see `start.defeat`);
+8. `tick++`.
 
 Statuses are also evaluated once when the world is created, after the
 initial clamp. So a status entered on tick *t* first changes drift on tick
-*t + 1*.
+*t + 1*. Likewise, statuses see a noise in the tick it is emitted, and
+behavior transitions see it in the next tick's think phase.
 
 ### `start`
 
@@ -763,7 +799,10 @@ room tags; loot entries that are not exactly one of `item`/`table`/
 `nothing`, non-positive or non-integer entry weights, bad `rolls`/`count`
 ranges, `count` on a non-item entry, and table cycles; `distributions`
 whose `container` tile has no `container`; and non-literal ids in
-`count_item`/`has_item`/`in_room`. Warnings (e.g. a loot table that can
+`count_item`/`has_item`/`in_room`. For M4 content: `noise` effects without
+`radius`, with a `measurement` or another unknown field, or with a
+non-numeric `radius`; `target` on `investigate`; and `done` outside
+`home`/`investigate`. Warnings (e.g. a loot table that can
 exceed a container's capacity) are printed but do not fail the load.
 A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).

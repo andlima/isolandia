@@ -116,6 +116,7 @@ sets.
 | `has_item(entity, "id")`                 | `count_item(entity, "id") > 0`                           |
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
 | `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
+| `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 
@@ -163,6 +164,21 @@ The result is a boolean, so it works in arithmetic (`1 + can_see(self, player)`)
 ```yaml
 when: 'can_see(self, player, 8)'
 until: 'not can_see(self, player, 12)'
+```
+
+`heard(entity, seconds)` is true when the entity has heard a noise and
+`world.tick - heardTick < seconds × ticksPerSecond`. A `seconds` value
+`<= 0` is always false. The first argument must be an entity, and the
+argument count and types are checked at load time. It also has a method
+form: `self.heard(2)`. Hearing happens after systems, so with
+`seconds = 1` (10 ticks/s), a noise heard on tick *t* makes `heard` true
+from the status update of tick *t* through tick *t + 9*. The next think
+phase (tick *t + 1*) sees it.
+
+```yaml
+on:
+  - { when: 'self.has_status("alert")', to: chase }   # sight beats sound
+  - { when: 'heard(self, 1)', to: investigate }
 ```
 
 `random` and `roll` draw from the world RNG, so results are part of the

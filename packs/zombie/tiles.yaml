@@ -17,6 +17,14 @@ tiles:
     walkable: false
     sprite: car_img
     container: { capacity: 6 }      # the glovebox
+  # Crunches underfoot: a `crunch` system makes noise (survival.yaml).
+  - id: glass
+    label: Broken glass
+    glyph: "*"
+    color: "#a8d8e8"
+    walkable: true
+    opaque: false
+    tags: [glass]
   - id: bed
     label: Bed
     glyph: "="

@@ -76,9 +76,9 @@ const ASSET_EXT_RE = /\.(svg|png)$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
-const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value' };
+const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius' };
 const DEFAULT_USE_LABEL = 'Use';
-const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home'];
+const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home', 'investigate'];
 const DEFAULT_REPATH = 1;
 const always = (): boolean => true;
 
@@ -917,7 +917,7 @@ class Loader {
     }
 
     let repath = state.repath;
-    if (onlyFor('repath', ['pursue']) && f.has('repath')) {
+    if (onlyFor('repath', ['pursue', 'investigate']) && f.has('repath')) {
       const v = f.number('repath');
       if (v !== undefined) repath = this.ticks(f, 'repath', v) ?? repath;
     }
@@ -945,11 +945,11 @@ class Loader {
       if (afterTicks !== null && to >= 0) timeout = { afterTicks, to };
     }
 
-    const done = onlyFor('done', ['home']) && f.has('done') ? stateRef(f.raw('done'), f.at('done')) : null;
+    const done = onlyFor('done', ['home', 'investigate']) && f.has('done') ? stateRef(f.raw('done'), f.at('done')) : null;
     return { name, index, activity, target, radius, repath, on, timeout, done };
   }
 
-  /** A required, non-empty `effects` list (`apply`/`set` on `self`). */
+  /** A required, non-empty `effects` list (`apply`/`set`/`noise` on `self`). */
   private effects(f: Fields, scope: Scope): EffectDef[] {
     const effects: EffectDef[] = [];
     const list = f.list('effects');
@@ -978,6 +978,12 @@ class Loader {
       }
       const t = type as EffectDef['type'];
       const valueKey = EFFECT_FIELDS[t];
+      if (t === 'noise') {
+        const nf = new Fields(this.sink, src, raw, ['type', valueKey], `'noise' effect`);
+        const term = nf.present(valueKey) ? this.numberTerm(nf.raw(valueKey), valueKey, scope, nf.at(valueKey)) : null;
+        if (term) effects.push({ type: t, ...term });
+        return;
+      }
       const ef = new Fields(this.sink, src, raw, ['type', 'measurement', valueKey], `'${t}' effect`);
       const m = ef.present('measurement') ? this.symbols.ref('measurement', ef.raw('measurement'), scope, ef.at('measurement'), this.sink) : null;
       const term = ef.present(valueKey) ? this.numberTerm(ef.raw(valueKey), valueKey, scope, ef.at(valueKey)) : null;
