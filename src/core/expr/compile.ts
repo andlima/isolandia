@@ -19,6 +19,8 @@ export interface ExprEntity {
   readonly st: Uint8Array;
   /** The entity's inventory, or null. */
   readonly inv: Container | null;
+  /** Tick at which the entity last heard a noise; -1 = never. */
+  readonly heardTick: number;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -206,10 +208,10 @@ const BUILTINS: Record<string, Builtin> = {
 };
 
 /** Built-ins compiled specially (their id argument is resolved at load time). */
-const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see'];
+const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see', 'heard'];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
@@ -341,6 +343,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
     if (name === 'in_room') return inRoom(argNodes, node.pos);
     if (name === 'can_see') return canSee(argNodes, node.pos);
+    if (name === 'heard') return heard(argNodes, node.pos);
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
       if (fast) return fast;
@@ -405,13 +408,13 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
   }
 
   /** Entity argument of a special built-in: `self`/`player` without a closure call, else any entity expression. */
-  function entityArg(name: string, target: Ast, pos: number): ((c: ExprContext) => ExprEntity) | null {
+  function entityArg(name: string, target: Ast, pos: number, sig = 'entity, id'): ((c: ExprContext) => ExprEntity) | null {
     if (target.kind === 'ident' && target.name === 'self') return (c) => c.self;
     if (target.kind === 'ident' && target.name === 'player') return (c) => c.player;
     const t = walk(target);
     if (t === fail) return null;
     if (t.type !== 'entity' && t.type !== 'any') {
-      err(`${name}(entity, id) expects an entity, got ${t.type}`, pos);
+      err(`${name}(${sig}) expects an entity, got ${t.type}`, pos);
       return null;
     }
     return t.fn as (c: ExprContext) => ExprEntity;
@@ -499,6 +502,24 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         const dy = q.y - p.y;
         if (Math.sqrt(dx * dx + dy * dy) > Number(R(c))) return false;
         return c.los(p.x, p.y, q.x, q.y);
+      },
+    };
+  }
+
+  /** `heard(entity, seconds)`: the entity heard a noise less than `seconds` ago; no argument array. */
+  function heard(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`heard() takes 2 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const target = entityArg('heard', argNodes[0]!, pos, 'entity, seconds');
+    const s = walk(argNodes[1]!);
+    if (errors.length > before || !target) return fail;
+    if (!isNumericType(s.type)) return err('heard(entity, seconds) expects numeric seconds', pos);
+    const S = s.fn as (c: ExprContext) => number;
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const t = target(c).heardTick;
+        return t >= 0 && c.tick - t < Number(S(c)) * c.ticksPerSecond;
       },
     };
   }

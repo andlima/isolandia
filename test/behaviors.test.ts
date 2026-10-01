@@ -195,7 +195,7 @@ test('loader: behaviors reports every error class with its path', () => {
   expectError(errors, `${B}.states.a`, /missing required field 'target'/);
   expectError(errors, `${B}.states.b.target`, /'target' is only allowed on 'pursue'\/'flee' states, not 'wander'/);
   expectError(errors, `${B}.states.b.radius`, /'radius' must be an integer ≥ 0, got -1/);
-  expectError(errors, `${B}.states.b.done`, /'done' is only allowed on 'home' states/);
+  expectError(errors, `${B}.states.b.done`, /'done' is only allowed on 'home'\/'investigate' states/);
   expectError(errors, `${B}.states.c.target`, /must be an entity or a tile, got number/);
   expectError(errors, `${B}.states.d.do`, /unknown activity 'sprint'.*expected one of idle, wander, pursue, flee, home/);
   expectError(errors, `${B}.states.e.repath`, /'repath' must be a whole number of ticks/);
@@ -204,7 +204,7 @@ test('loader: behaviors reports every error class with its path', () => {
   expectError(errors, `${B}.states.f.on[0].to`, /unknown state 'zz'/);
   expectError(errors, `${B}.states.f.on[1]`, /missing required field 'when'/);
   expectError(errors, `${B}.states.g.radius`, /'radius' must be an integer ≥ 0, got 1.5/);
-  expectError(errors, `${B}.states.g.repath`, /'repath' is only allowed on 'pursue' states/);
+  expectError(errors, `${B}.states.g.repath`, /'repath' is only allowed on 'pursue'\/'investigate' states/);
   expectError(errors, `${B}.states["Bad-Name"]`, /invalid state name 'Bad-Name'/);
   expectError(errors, 'behaviors[1].states', /at least one state/);
   expectError(errors, 'behaviors[2]', /missing required field 'initial'/);

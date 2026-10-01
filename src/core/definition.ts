@@ -175,7 +175,7 @@ export interface ArchetypeDef {
 }
 
 /** Built-in activity of a behavior state. */
-export type ActivityKind = 'idle' | 'wander' | 'pursue' | 'flee' | 'home';
+export type ActivityKind = 'idle' | 'wander' | 'pursue' | 'flee' | 'home' | 'investigate';
 
 /** `on` entry: switch to state `to` when `when` is truthy. */
 export interface TransitionDef {
@@ -192,12 +192,12 @@ export interface BehaviorStateDef {
   readonly target: Compiled | null;
   /** `wander`: maximum Chebyshev distance from home; null = unbounded. */
   readonly radius: number | null;
-  /** `pursue`: minimum ticks between A* re-plans (≥ 1). */
+  /** `pursue`/`investigate`: minimum ticks between A* re-plans (≥ 1). */
   readonly repath: number;
   /** Checked in order; the first truthy `when` wins. */
   readonly on: readonly TransitionDef[];
   readonly timeout: { readonly afterTicks: number; readonly to: number } | null;
-  /** `home`: state to switch to once home (or when the home path fails). */
+  /** `home`/`investigate`: state to switch to once arrived (or when the path fails). */
   readonly done: number | null;
 }
 
@@ -233,12 +233,20 @@ export interface NumberTerm {
   readonly fn: Compiled | null;
 }
 
-/** One effect of a system; always acts on `self`. */
-export interface EffectDef extends NumberTerm {
+/** A measurement effect; always acts on `self`. */
+export interface MeasurementEffectDef extends NumberTerm {
   /** `apply` adds the value, `set` replaces the measurement's value. */
   readonly type: 'apply' | 'set';
   readonly measurement: number;
 }
+
+/** Emits a noise at `self`'s cell; the term is the hearing radius in tiles. */
+export interface NoiseEffectDef extends NumberTerm {
+  readonly type: 'noise';
+}
+
+/** One effect of a system or item use. */
+export type EffectDef = MeasurementEffectDef | NoiseEffectDef;
 
 /** A periodic rule (`systems` domain), run once per matching entity. */
 export interface SystemDef {

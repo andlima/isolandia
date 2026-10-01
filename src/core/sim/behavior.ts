@@ -62,11 +62,17 @@ function transition(e: Entity, s: BehaviorStateDef, env: ThinkEnv): number {
   for (const t of s.on) if (t.when(env.ctx)) return t.to;
   if (s.timeout && env.ctx.tick - e.stateTick >= s.timeout.afterTicks) return s.timeout.to;
   if (s.done !== null && e.planTick >= 0 && e.planTick < env.ctx.tick) {
-    if (e.x === e.homeX && e.y === e.homeY) return s.done;
+    if (arrived(e, s)) return s.done;
     const g = e.lastGoto;
     if (g && g.tick === e.planTick && !g.ok) return s.done;
   }
   return -1;
+}
+
+/** `done` arrival test: on the home cell (`home`); adjacent to or on the heard cell, or never heard (`investigate`). */
+function arrived(e: Entity, s: BehaviorStateDef): boolean {
+  if (s.activity === 'investigate') return e.heardTick < 0 || chebyshev(e.x, e.y, e.heardX, e.heardY) <= 1;
+  return e.x === e.homeX && e.y === e.homeY;
 }
 
 function activity(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
@@ -81,6 +87,8 @@ function activity(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
       return flee(e, s, env);
     case 'home':
       return home(e, env);
+    case 'investigate':
+      return investigate(e, s, env);
   }
 }
 
@@ -140,4 +148,31 @@ function home(e: Entity, env: ThinkEnv): void {
   e.intent = { kind: 'goto', x: e.homeX, y: e.homeY };
   e.planX = e.homeX;
   e.planY = e.homeY;
+}
+
+/**
+ * Walk up to the last heard noise. The first goto in a state is issued at
+ * once; a newer noise re-plans at most once per `repath` window. When no goto
+ * is needed, `planTick` still marks the state as planned (with `planX` -1), so
+ * `done` can fire on the next tick.
+ */
+function investigate(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
+  const tick = env.ctx.tick;
+  const hx = e.heardX;
+  const hy = e.heardY;
+  if (e.heardTick < 0 || chebyshev(e.x, e.y, hx, hy) <= 1) {
+    if (e.heardTick >= 0) e.path = null;
+    if (e.planTick < 0) {
+      e.planTick = tick;
+      e.planX = -1;
+      e.planY = -1;
+    }
+    return;
+  }
+  const due = e.planTick < 0 || e.planX < 0 || (tick - e.planTick >= s.repath && (hx !== e.planX || hy !== e.planY));
+  if (!due) return;
+  e.intent = { kind: 'goto', x: hx, y: hy, adjacent: true };
+  e.planX = hx;
+  e.planY = hy;
+  e.planTick = tick;
 }

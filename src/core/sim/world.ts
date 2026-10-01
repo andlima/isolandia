@@ -4,7 +4,7 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import type { ArchetypeDef, BehaviorDef, Definition, MeasurementDef, NumberTerm } from '../definition.ts';
+import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
@@ -57,6 +57,19 @@ export interface Entity extends ExprEntity {
   planX: number;
   planY: number;
   planTick: number;
+  /** Cell and tick of the last heard noise (nearest within its tick); `heardTick` -1 = never. */
+  heardX: number;
+  heardY: number;
+  heardTick: number;
+}
+
+/** A noise emitted this tick by a `noise` effect. */
+export interface Noise {
+  x: number;
+  y: number;
+  radius: number;
+  /** Id of the emitting entity (it does not hear its own noise). */
+  source: number;
 }
 
 /** Recorded when the pack's `start.defeat` condition becomes true. */
@@ -174,6 +187,8 @@ export interface EntitySnapshot {
   home: [number, number];
   /** Current behavior state (name), when it was entered, and its last planned goto. */
   behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
+  /** Last heard noise, or null if never. */
+  heard: { x: number; y: number; tick: number } | null;
 }
 
 export interface WorldSnapshot {
@@ -241,6 +256,10 @@ export class World {
   private readonly roomHas: Uint8Array;
   private readonly itemWeights: readonly number[];
   private pathfinder: Pathfinder | null = null;
+  /** Noises emitted this tick, in emission order; reused (cleared, not reallocated). */
+  private readonly pending: Noise[] = [];
+  /** Number of valid entries of `pending`. */
+  private pendingCount = 0;
   private readonly ctx: ExprContext;
   private readonly thinkEnv: ThinkEnv;
   private readonly tagSets: ReadonlySet<string>[];
@@ -370,6 +389,9 @@ export class World {
       planX: 0,
       planY: 0,
       planTick: -1,
+      heardX: 0,
+      heardY: 0,
+      heardTick: -1,
     };
     this.entities.push(e);
     return e;
@@ -490,15 +512,21 @@ export class World {
     return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
+  /** This tick's noises (after `step`, the last stepped tick's), in emission order. */
+  get noises(): readonly Readonly<Noise>[] {
+    return this.pending.slice(0, this.pendingCount);
+  }
+
   /**
    * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
    * (id order), every entity's movement intent (id order), player actions, drift,
-   * due systems, clamp, status update, defeat check, `tick++`. A no-op once
-   * defeated.
+   * due systems, hearing, clamp, status update, defeat check, `tick++`. A no-op
+   * once defeated.
    */
   step(): void {
     if (this.defeat) return;
     this.ctx.tick = this.tick;
+    this.pendingCount = 0;
     this.think();
     for (const e of this.entities) {
       if (e.intent || e.path) this.applyIntent(e);
@@ -507,6 +535,7 @@ export class World {
     if (this.actions.length > 0) this.applyActions();
     this.drift();
     this.runSystems();
+    if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
     this.checkDefeat();
@@ -555,14 +584,67 @@ export class World {
         ctx.self = e;
         if (sys.forFn && !sys.forFn(ctx)) continue;
         if (sys.whenFn && !sys.whenFn(ctx)) continue;
-        const has = this.hasM[e.archetype.index]!;
-        for (const eff of sys.effects) {
-          const idx = eff.measurement;
-          if (has[idx] !== 1) continue;
-          const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
-          e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+        this.runEffects(e, sys.effects);
+      }
+    }
+  }
+
+  /** Run effects on `e` (= `ctx.self`), in order; measurement effects skip measurements it lacks. */
+  private runEffects(e: Entity, effects: readonly EffectDef[]): void {
+    const ctx = this.ctx;
+    const has = this.hasM[e.archetype.index]!;
+    for (const eff of effects) {
+      if (eff.type === 'noise') {
+        this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+        continue;
+      }
+      const idx = eff.measurement;
+      if (has[idx] !== 1) continue;
+      const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
+      e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+    }
+  }
+
+  /** Queue a noise at the source's cell; a radius ≤ 0 (or NaN) emits nothing. */
+  private emitNoise(source: Entity, radius: number): void {
+    if (!(radius > 0)) return;
+    const n = this.pendingCount++;
+    const slot = this.pending[n];
+    if (slot) {
+      slot.x = source.x;
+      slot.y = source.y;
+      slot.radius = radius;
+      slot.source = source.id;
+    } else this.pending.push({ x: source.x, y: source.y, radius, source: source.id });
+  }
+
+  /**
+   * Phase 4: every entity except the source hears a noise within its radius
+   * (euclidean, inclusive, walls ignored) and keeps this tick's nearest one
+   * (ties: the earlier emission). O(noises × entities), no allocation.
+   */
+  private hear(): void {
+    const k = this.pendingCount;
+    const noises = this.pending;
+    for (const e of this.entities) {
+      let best = Infinity;
+      let pick = -1;
+      for (let i = 0; i < k; i++) {
+        const n = noises[i]!;
+        if (n.source === e.id) continue;
+        const dx = n.x - e.x;
+        const dy = n.y - e.y;
+        const d = dx * dx + dy * dy;
+        if (d <= n.radius * n.radius && d < best) {
+          best = d;
+          pick = i;
         }
       }
+      if (pick < 0) continue;
+      const n = noises[pick]!;
+      e.heardX = n.x;
+      e.heardY = n.y;
+      e.heardTick = this.tick;
     }
   }
 
@@ -668,12 +750,7 @@ export class World {
       ctx.self = p;
       ctx.tick = tick;
       if (!use || (use.whenFn && !use.whenFn(ctx))) return fail('cannot_use');
-      const has = this.hasM[p.archetype.index]!;
-      for (const eff of use.effects) {
-        if (has[eff.measurement] !== 1) continue;
-        const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
-        p.m[eff.measurement] = eff.type === 'apply' ? p.m[eff.measurement]! + v : v;
-      }
+      this.runEffects(p, use.effects);
       return done(remove(inv, item, use.consume, weight));
     }
 
@@ -773,6 +850,7 @@ export class World {
         behavior: e.behavior
           ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
           : null,
+        heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };

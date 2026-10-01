@@ -49,6 +49,13 @@ systems:
     when: "self.blood >= 30 and not self.has_status(\"starving\")"
     effects:
       - { type: apply, measurement: hp, delta: 1 }
+  # Noise: old floorboards creak underfoot; bats hear it (behaviors).
+  - id: creak
+    every: 0.1
+    for: 'self.has_tag("undead")'
+    when: 'tile.has_tag("creaky")'
+    effects:
+      - { type: noise, radius: 8 }
 
 # Day/night tint of the iso view (visual only): cold nights, harsh days.
 lighting:
@@ -58,8 +65,8 @@ lighting:
     - { at: "19:00", color: "#ffc8a0" }
     - { at: "21:00", color: "#2a3060" }
 
-# Bats flutter around their roost, scatter from the vampire and fly back
-# once it is out of sight.
+# Bats flutter around their roost, flit over to look at a creak, scatter
+# from the vampire and fly back once it is out of sight.
 behaviors:
   - id: bat
     initial: roost
@@ -69,6 +76,12 @@ behaviors:
         radius: 3
         on:
           - { when: 'self.has_status("alert")', to: flee }
+          - { when: 'heard(self, 1)', to: investigate }
+      investigate:
+        do: investigate
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+        done: return
       flee:
         do: flee
         target: player
