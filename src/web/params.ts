@@ -1,4 +1,4 @@
-/** Query parameters: `?packs=base,<game>` (ordered pack directory names) and `?seed=N`. */
+/** Query parameters: `?packs=std,std-needs,<game>` (ordered pack directory names) and `?seed=N`. */
 
 export interface Params {
   readonly packs: string[];

@@ -17,9 +17,9 @@ export interface PackSource {
   readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
-export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'start', 'clock', 'lighting'];
+export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting'];
 
 export const ID_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -45,6 +45,8 @@ export interface RawPack {
   /** Non-YAML files shipped with the pack. */
   readonly otherFiles: ReadonlySet<string>;
   readonly entries: Record<ListDomain, RawEntry[]>;
+  /** `distributions` entries (a list without ids). */
+  readonly distributions: RawEntry[];
   readonly starts: RawEntry[];
   readonly clocks: RawEntry[];
   readonly lightings: RawEntry[];
@@ -128,7 +130,8 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     depends,
     manifest,
     otherFiles: new Set(source.otherFiles ?? []),
-    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [] },
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [] },
+    distributions: [],
     starts: [],
     clocks: [],
     lightings: [],
@@ -171,7 +174,8 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
         else pack.lightings.push({ src: ksrc, value });
         continue;
       }
-      if (!(LIST_DOMAINS as readonly string[]).includes(key)) {
+      const list = key === 'distributions' ? pack.distributions : (LIST_DOMAINS as readonly string[]).includes(key) ? pack.entries[key as ListDomain] : null;
+      if (!list) {
         const s = nearMiss(key, DOMAIN_KEYS);
         sink.add(ksrc, `unknown top-level key '${key}'${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${DOMAIN_KEYS.join(', ')}`);
         continue;
@@ -183,7 +187,7 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
       }
       value.forEach((v, i) => {
         if (!isObject(v)) sink.add(at(ksrc, i), `each entry in '${key}' must be a mapping`);
-        else pack.entries[key as ListDomain].push({ src: at(ksrc, i), value: v });
+        else list.push({ src: at(ksrc, i), value: v });
       });
     }
   }

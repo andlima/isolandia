@@ -1,42 +1,24 @@
-# Survival loop: needs turn into statuses that drain health; standing on
-# pantry, tap and bed tiles restores them.
+# Survival loop: the needs and the statuses that drain health come from
+# std-needs (hunger, hungry, …, referenced here by short name). Food, water,
+# coffee and bandages are looted items used from the inventory (items.yaml);
+# lying on a bed still restores fatigue.
 
 statuses:
-  - id: hungry
-    label: Hungry
+  - id: stocked
+    label: Stocked
     for: 'self.has_tag("living")'
-    when: "self.hunger >= 70"
-    until: "self.hunger < 40"      # hysteresis: eat well before it clears
-    rates: { hp: -0.2 }
-  - id: thirsty
-    label: Thirsty
-    for: 'self.has_tag("living")'
-    when: "self.thirst >= 70"
-    until: "self.thirst < 40"
-    rates: { hp: -0.3 }
-  - id: exhausted
-    label: Exhausted
-    for: 'self.has_tag("living")'
-    when: "self.fatigue >= 80"
-    until: "self.fatigue < 30"
-    rates:
-      hp: -0.1
-      thirst: 0.05                 # everything is harder when exhausted
+    when: 'self.count_item("canned_beans") + self.count_item("water_bottle") >= 4'
+    rates: { fatigue: -0.01 }       # peace of mind
+  # The undead notice a survivor in plain sight and lose track of them only
+  # once they are well out of view.
+  - id: alert
+    label: Alert
+    for: 'self.has_tag("undead")'
+    when: 'can_see(self, player, 8)'
+    until: 'not can_see(self, player, 12)'
 
 systems:
-  # Restoring: stand on the right tile.
-  - id: eat
-    every: 1
-    for: 'self.has_tag("living")'
-    when: 'tile.has_tag("food")'
-    effects:
-      - { type: apply, measurement: hunger, delta: -5 }
-  - id: drink
-    every: 1
-    for: 'self.has_tag("living")'
-    when: 'tile.has_tag("water")'
-    effects:
-      - { type: apply, measurement: thirst, delta: -8 }
+  # Restoring: lie on a bed.
   - id: sleep
     every: 1
     for: 'self.has_tag("living")'
@@ -44,6 +26,13 @@ systems:
     effects:
       - { type: apply, measurement: fatigue, delta: -3 }
       - { type: apply, measurement: hp, delta: "1 - 0.5 * self.has_status(\"hungry\")" }
+  # Wounds hurt more without a bandage in your pocket (morale).
+  - id: bleed
+    every: 10
+    for: 'self.has_tag("living")'
+    when: 'self.hp < 50 and not self.has_item("bandage")'
+    effects:
+      - { type: apply, measurement: hp, delta: -1 }
   # Hurting: completely starved or parched survivors weaken quickly.
   - id: collapse
     every: 5
@@ -51,3 +40,41 @@ systems:
     when: "self.hunger >= 100 or self.thirst >= 100"
     effects:
       - { type: apply, measurement: hp, delta: -3 }
+  # Noise: broken glass crunches underfoot (every step at a walk); the
+  # undead hear it (behaviors).
+  - id: crunch
+    every: 0.2
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("glass")'
+    effects:
+      - { type: noise, radius: 12 }
+
+# The undead shuffle around where they rose, chase a survivor they can see,
+# shuffle over to any noise they hear, and linger a while where they lost
+# track before wandering off again. Sight beats sound.
+behaviors:
+  - id: shambler
+    initial: wander
+    states:
+      wander:
+        do: wander
+        radius: 6
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
+      investigate:
+        do: investigate
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+        done: search
+      chase:
+        do: pursue
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: search }
+      search:
+        do: idle
+        on:
+          - { when: 'self.has_status("alert")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
+        timeout: { after: 5, to: wander }

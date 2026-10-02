@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { frameToText, renderAscii } from '../src/ascii/render.ts';
 import { formatError, hudModel, loadPacks, tintAt, World, type LightingDef, type LoadError, type PackSource } from '../src/core/index.ts';
 import { sceneTint } from '../src/iso/tint.ts';
-import { readPack } from '../src/node/read-pack.ts';
 import { fixture, loadFixture } from './helpers.ts';
 
 // Extra measurements for the fixture: `p` and `q` never drift on their own.
@@ -277,7 +276,7 @@ test('defeat: freezes the world and ignores intents; default message', () => {
   w.queueIntent({ kind: 'step', dx: 1, dy: 1 });
   w.step();
   assert.equal(w.hash(), before);
-  assert.equal(w.snapshot().intent, null);
+  assert.equal(w.snapshot().entities[0]!.intent, null);
   assert.deepEqual(w.snapshot().defeat, { tick: 2, message: 'Game over' });
 });
 
@@ -506,97 +505,6 @@ test('error: lighting — empty tint, malformed time or colour, duplicate at, se
   const r = loadPacks([fixture({ 'l.yaml': 'lighting:\n  tint: [{ at: "07:00", color: "#ffffff" }]\n' }), other]);
   assert.ok(!r.ok);
   assert.ok(r.errors.some((e) => e.pack === 'u' && e.path === 'lighting' && /duplicate 'lighting': already defined in pack 't'/.test(e.message)));
-});
-
-// ── Two genres (AC 12) ──────────────────────────────────────────────────────
-
-const DAY_TICKS = 14400; // default day length: 1440 s × 10 ticks/s
-
-function genre(name: string): World['def'] {
-  const r = loadPacks([readPack('packs/base'), readPack(`packs/${name}`)]);
-  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
-  return r.definition;
-}
-
-function tileWith(w: World, tag: string): { x: number; y: number } {
-  for (let y = 0; y < w.grid.height; y++) for (let x = 0; x < w.grid.width; x++) if (w.grid.tileAt(x, y)!.tags.includes(tag)) return { x, y };
-  throw new Error(`no tile tagged ${tag}`);
-}
-
-/** A need: when `measurement` crosses `start`, walk to a `tag` tile and stay until it crosses `stop`. */
-interface Need {
-  readonly measurement: string;
-  readonly tag: string;
-  readonly start: number;
-  readonly stop: number;
-}
-
-function crossed(v: number, from: number, to: number): boolean {
-  return from < to ? v >= to : v <= to;
-}
-
-/** Run up to two days; a scripted player tends its needs with goto intents. */
-function play(def: World['def'], seed: number, needs: readonly Need[] = []): { w: World; firstStatus: number } {
-  const w = World.create(def, seed);
-  let current: Need | null = null;
-  let firstStatus = -1;
-  while (!w.defeat && w.tick < 2 * DAY_TICKS) {
-    if (needs.length && w.tick % 10 === 0) {
-      const v = (n: Need) => w.value(w.player, n.measurement)!;
-      if (current && crossed(v(current), current.start, current.stop)) current = null;
-      if (!current) {
-        current = needs.find((n) => crossed(v(n), n.stop, n.start)) ?? null;
-        if (current) w.queueIntent({ kind: 'goto', ...tileWith(w, current.tag) });
-      }
-    }
-    w.step();
-    if (firstStatus < 0 && w.player.st.includes(1)) firstStatus = w.tick;
-  }
-  return { w, firstStatus };
-}
-
-const SCRIPTS: Record<string, readonly Need[]> = {
-  zombie: [
-    { measurement: 'zmb:thirst', tag: 'water', start: 45, stop: 5 },
-    { measurement: 'zmb:hunger', tag: 'food', start: 45, stop: 5 },
-    { measurement: 'zmb:fatigue', tag: 'bed', start: 50, stop: 5 },
-  ],
-  vampire: [
-    { measurement: 'vamp:blood', tag: 'blood', start: 30, stop: 48 },
-    { measurement: 'vamp:blood', tag: 'crypt', start: 48, stop: 30 },
-  ],
-};
-
-for (const name of ['zombie', 'vampire']) {
-  test(`scenario (${name}): an idle player gains a status on day 1 and is defeated within 2 days`, () => {
-    const def = genre(name);
-    for (const seed of [1, 2, 3]) {
-      const { w, firstStatus } = play(def, seed);
-      assert.ok(firstStatus >= 0 && firstStatus <= DAY_TICKS, `seed ${seed}: first status at tick ${firstStatus}`);
-      assert.ok(w.defeat && w.defeat.tick < 2 * DAY_TICKS, `seed ${seed}: not defeated`);
-    }
-  });
-
-  test(`scenario (${name}): a player using the restoring tiles survives 2 days`, () => {
-    const def = genre(name);
-    for (const seed of [1, 2, 3]) {
-      const { w } = play(def, seed, SCRIPTS[name]);
-      assert.equal(w.defeat, null, `seed ${seed}: defeated at tick ${w.defeat?.tick}`);
-      assert.equal(w.tick, 2 * DAY_TICKS);
-      assert.ok(w.value(w.player, 'base:hp')! > 0);
-    }
-  });
-}
-
-test('genre packs use every M2 primitive', () => {
-  for (const name of ['zombie', 'vampire']) {
-    const def = genre(name);
-    assert.ok(def.tiles.some((t) => t.tags.length > 0), `${name}: tile tags`);
-    assert.ok(def.statuses.some((s) => s.rates.length > 0), `${name}: status rates`);
-    assert.ok(def.systems.length >= 2, `${name}: systems`);
-    assert.ok(def.start.defeat, `${name}: defeat`);
-    assert.ok(def.lighting, `${name}: lighting`);
-  }
 });
 
 function loadFixtureMap(): string {

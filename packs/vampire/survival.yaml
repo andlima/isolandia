@@ -1,11 +1,13 @@
 # Survival loop: the sun burns, hunger for blood weakens. Carpet, crypt and
-# font tiles are shaded; sunbeams under the windows are not.
+# font tiles are shaded; sunbeams under the windows are not. Blood vials from
+# the cellar's wine racks (items.yaml) restore blood anywhere.
 
 statuses:
   - id: sunburnt
     label: Sunburnt
     for: 'self.has_tag("undead")'
-    when: 'world.is_day and tile.has_tag("sunlit")'
+    # A heavy cloak in the inventory keeps the sun off.
+    when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
     until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
     rates: { hp: -4 }
   - id: starving
@@ -14,6 +16,12 @@ statuses:
     when: "self.blood <= 10"
     until: "self.blood >= 25"
     rates: { hp: -0.25 }
+  # Bats notice the vampire (through windows too) and lose interest slowly.
+  - id: alert
+    label: Alert
+    for: 'self.has_tag("beast")'
+    when: 'can_see(self, player, 6)'
+    until: 'not can_see(self, player, 10)'
 
 systems:
   # Hurting.
@@ -41,6 +49,13 @@ systems:
     when: "self.blood >= 30 and not self.has_status(\"starving\")"
     effects:
       - { type: apply, measurement: hp, delta: 1 }
+  # Noise: old floorboards creak underfoot; bats hear it (behaviors).
+  - id: creak
+    every: 0.1
+    for: 'self.has_tag("undead")'
+    when: 'tile.has_tag("creaky")'
+    effects:
+      - { type: noise, radius: 8 }
 
 # Day/night tint of the iso view (visual only): cold nights, harsh days.
 lighting:
@@ -49,3 +64,31 @@ lighting:
     - { at: "07:00", color: "#fff4e0" }
     - { at: "19:00", color: "#ffc8a0" }
     - { at: "21:00", color: "#2a3060" }
+
+# Bats flutter around their roost, flit over to look at a creak, scatter
+# from the vampire and fly back once it is out of sight.
+behaviors:
+  - id: bat
+    initial: roost
+    states:
+      roost:
+        do: wander
+        radius: 3
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+          - { when: 'heard(self, 1)', to: investigate }
+      investigate:
+        do: investigate
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+        done: return
+      flee:
+        do: flee
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: return }
+      return:
+        do: home
+        done: roost
+        on:
+          - { when: 'self.has_status("alert")', to: flee }

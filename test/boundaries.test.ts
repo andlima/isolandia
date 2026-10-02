@@ -52,14 +52,15 @@ test('nothing in src/ imports spike code', () => {
   }
 });
 
-test('no genre words in src/ (the engine is genre-agnostic)', () => {
+test('no stdpack or genre words in src/ (engine code must not name stdpack or genre content)', () => {
   const genre = /\b(zombie|zmb|vampire|vamp|blood|hunger|thirst|survivor|shambler|mansion|undead)\b/i;
+  const stdpack = /\b(hp|health|fatigue|hungry|thirsty|humanoid)\b/i;
   const bad: string[] = [];
   for (const f of files('src')) {
     readFileSync(f, 'utf8')
       .split('\n')
       .forEach((line, i) => {
-        if (genre.test(line)) bad.push(`${f}:${i + 1}: ${line.trim()}`);
+        if (genre.test(line) || stdpack.test(line)) bad.push(`${f}:${i + 1}: ${line.trim()}`);
       });
   }
   assert.deepEqual(bad, []);

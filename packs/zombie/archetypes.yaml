@@ -6,14 +6,18 @@ archetypes:
     tags: [humanoid, living]
     measurements: [hp, hunger, thirst, fatigue]
     initial: { hunger: 20 }
+    inventory:
+      capacity: 15
+      items: { water_bottle: 1, crackers: 1 }
   - id: shambler
     label: Shambler
     glyph: Z
     color: "#5fae3e"
     sprite: shambler_img
     tags: [undead]
-    measurements: [base:hp]
+    measurements: [std:hp]
     initial: { hp: 40 }
+    behavior: shambler
   - id: crawler
     label: Crawler
     glyph: z
@@ -21,4 +25,5 @@ archetypes:
     tags: [undead]
     measurements: [hp]
     initial: { hp: 20 }
-    ticks_per_step: 6
+    ticks_per_step: 6               # the only difference from a shambler
+    behavior: shambler

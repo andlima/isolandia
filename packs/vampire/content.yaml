@@ -3,7 +3,7 @@ measurements:
     label: Blood
     min: 0
     # Blood capacity is tied to health: half of current hp, at least 10.
-    max: "max(10, self.base:hp / 2)"
+    max: "max(10, self.std:hp / 2)"
     initial: 50
     # Drains 0.05 per second at night, 0.1 in daylight.
     rate: "-0.05 - 0.05 * world.is_day"
@@ -16,6 +16,14 @@ tiles:
     walkable: true
     sprite: carpet_img
     tags: [shade]
+  # Creaks under the undead's weight: a `creak` system makes noise
+  # (survival.yaml). Only laid in shaded rooms, so it is shaded too.
+  - id: creaky
+    label: Creaky floorboards
+    glyph: ","
+    color: "#6b2a30"
+    walkable: true
+    tags: [creaky, shade]
   - id: sunbeam
     label: Sunlit floor
     glyph: "'"
@@ -39,12 +47,33 @@ tiles:
     glyph: "="
     color: "#4a3426"
     walkable: false
+    opaque: false                   # low: blocks the way, not the view
     sprite: coffin_img
   - id: window
     label: Window
     glyph: "\""
     color: "#6fa8dc"
     walkable: false
+    opaque: false                   # you can see through it, not walk through it
+  - id: bookshelf
+    label: Bookshelf
+    glyph: "L"
+    color: "#6a4a2a"
+    walkable: false
+    container: { capacity: 20 }
+  - id: chest
+    label: Oak chest
+    glyph: "X"
+    color: "#8a6a3a"
+    walkable: false
+    opaque: false                   # low: blocks the way, not the view
+    container: { capacity: 30 }
+  - id: wine_rack
+    label: Wine rack
+    glyph: "R"
+    color: "#5a1a2a"
+    walkable: false
+    container: { capacity: 8 }
 
 archetypes:
   - id: vampire
@@ -55,6 +84,9 @@ archetypes:
     tags: [humanoid, undead]
     measurements: [hp, blood]
     ticks_per_step: 1
+    inventory:
+      capacity: 8
+      items: { blood_vial: 1 }
   - id: bat
     label: Bat
     glyph: b
@@ -62,6 +94,7 @@ archetypes:
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }
+    behavior: bat
 
 # The night begins as the game does: it starts at dusk.
 clock:

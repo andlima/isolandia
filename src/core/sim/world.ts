@@ -4,10 +4,13 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import type { ArchetypeDef, Definition, MeasurementDef, NumberTerm } from '../definition.ts';
+import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { Pathfinder } from './astar.ts';
+import { think, type ThinkEnv } from './behavior.ts';
+import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
 import { Grid } from './grid.ts';
+import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
 
 export interface Entity extends ExprEntity {
@@ -35,6 +38,38 @@ export interface Entity extends ExprEntity {
   pathPos: number;
   /** Active statuses, indexed by status index (1 = active). */
   readonly st: Uint8Array;
+  /** The entity's inventory (from its archetype's `inventory`), or null. */
+  readonly inv: Container | null;
+  /** Pending movement intent, applied at the start of the next tick. */
+  intent: Intent | null;
+  /** Result of the entity's most recent goto intent (a new object each time). */
+  lastGoto: GotoRecord | null;
+  /** Spawn cell (fixed). */
+  readonly homeX: number;
+  readonly homeY: number;
+  /** Behavior driving the entity (null for the player and archetypes without one). */
+  readonly behavior: BehaviorDef | null;
+  /** Current state index of `behavior`, or -1 without one. */
+  state: number;
+  /** Tick at which the current state was entered. */
+  stateTick: number;
+  /** Cell and tick of the goto the current state last issued (`pursue`/`home`); `planTick` -1 = none yet. */
+  planX: number;
+  planY: number;
+  planTick: number;
+  /** Cell and tick of the last heard noise (nearest within its tick); `heardTick` -1 = never. */
+  heardX: number;
+  heardY: number;
+  heardTick: number;
+}
+
+/** A noise emitted this tick by a `noise` effect. */
+export interface Noise {
+  x: number;
+  y: number;
+  radius: number;
+  /** Id of the emitting entity (it does not hear its own noise). */
+  source: number;
 }
 
 /** Recorded when the pack's `start.defeat` condition becomes true. */
@@ -55,6 +90,11 @@ export interface GotoIntent {
   readonly kind: 'goto';
   readonly x: number;
   readonly y: number;
+  /**
+   * End on the walkable tile 8-adjacent to the goal (or the goal itself, if
+   * walkable) with the shortest path, e.g. to walk up to a fridge.
+   */
+  readonly adjacent?: boolean;
 }
 
 export type Intent = StepIntent | GotoIntent;
@@ -67,6 +107,65 @@ export interface GotoRecord {
   readonly ok: boolean;
   /** Tick at which the goto was resolved. */
   readonly tick: number;
+}
+
+/** Container → player inventory. `count` defaults to the whole stack. */
+export interface TakeAction {
+  readonly kind: 'take';
+  /** Container id (see `containersAt` / `reachableContainers`). */
+  readonly container: number;
+  /** Qualified item id. */
+  readonly item: string;
+  readonly count?: number;
+}
+
+/** Player inventory → container. */
+export interface PutAction {
+  readonly kind: 'put';
+  readonly container: number;
+  readonly item: string;
+  readonly count?: number;
+}
+
+/** Player inventory → the ground pile on the player's cell (created if missing). */
+export interface DropAction {
+  readonly kind: 'drop';
+  readonly item: string;
+  readonly count?: number;
+}
+
+/** Run the item's `use` on the player, then remove `consume` units. */
+export interface UseAction {
+  readonly kind: 'use';
+  readonly item: string;
+}
+
+/** An instant player action, queued with `queueAction` and applied after the movement intent. */
+export type Action = TakeAction | PutAction | DropAction | UseAction;
+
+export type ActionFailure = 'out_of_reach' | 'too_heavy' | 'missing' | 'cannot_use' | 'no_inventory' | 'unknown_container';
+
+/** Outcome of the latest action, for shell feedback. */
+export interface ActionRecord {
+  readonly kind: Action['kind'];
+  readonly item: string;
+  /** Units moved (take/put/drop) or consumed (use). */
+  readonly moved: number;
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  /** Tick at which the action was applied. */
+  readonly tick: number;
+}
+
+export interface ContainerSnapshot {
+  id: number;
+  kind: ContainerKind;
+  /** Cell of a tile container or ground pile. */
+  cell?: [number, number];
+  /** Owner entity id of an inventory. */
+  owner?: number;
+  /** Stacks as [qualified item id, count], in order. */
+  stacks: [string, number][];
 }
 
 export interface EntitySnapshot {
@@ -83,16 +182,26 @@ export interface EntitySnapshot {
   measurements: Record<string, number>;
   /** Active status ids, in definition order. */
   statuses: string[];
+  intent: Intent | null;
+  lastGoto: GotoRecord | null;
+  home: [number, number];
+  /** Current behavior state (name), when it was entered, and its last planned goto. */
+  behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
+  /** Last heard noise, or null if never. */
+  heard: { x: number; y: number; tick: number } | null;
 }
 
 export interface WorldSnapshot {
   tick: number;
   rng: number;
   player: number;
-  intent: Intent | null;
-  lastGoto: GotoRecord | null;
+  /** Pending actions, in queue order. */
+  actions: Action[];
+  lastAction: ActionRecord | null;
   defeat: DefeatRecord | null;
   entities: EntitySnapshot[];
+  /** Every container, in id order. */
+  containers: ContainerSnapshot[];
 }
 
 /** FNV-1a 32-bit over a string, as 8 hex chars. */
@@ -107,6 +216,18 @@ function fnv1a(s: string): string {
 
 const NO_TAGS: ReadonlySet<string> = new Set();
 
+/** Seed of the loot RNG: derived from the world seed, independent of `world.rng`. */
+const LOOT_SALT = 0x6c6f6f74;
+
+/** 32-bit integer hash of two values (murmur3 finalizer). */
+function mix(a: number, b: number): number {
+  let h = Math.imul((a ^ b) >>> 0, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 export class World {
   readonly grid: Grid;
   readonly entities: Entity[] = [];
@@ -116,14 +237,31 @@ export class World {
   /** Expression warnings (e.g. division by zero) with occurrence counts. */
   readonly warnings = new Map<string, number>();
 
-  /** Result of the most recent goto intent (a new object each time). */
-  lastGoto: GotoRecord | null = null;
   /** Set once the defeat condition holds; the world is frozen from then on. */
   defeat: DefeatRecord | null = null;
+  /** Result of the most recent action (a new object each time). */
+  lastAction: ActionRecord | null = null;
+  /** Every container by id (tile containers, inventories, ground piles), in id order. */
+  readonly containers = new Map<number, Container>();
+  /** Bumped whenever any container's contents change or a pile appears/disappears (for renderers). */
+  containerVersion = 0;
 
-  private intent: Intent | null = null;
+  private actions: Action[] = [];
+  private nextContainerId = 0;
+  /** Cell index → ids of the tile containers and ground piles on it, ascending. */
+  private readonly cellContainers = new Map<number, number[]>();
+  /** Room-set index per cell. */
+  private readonly roomCell: Uint16Array;
+  /** 1 at `set * roomTags.length + tag` when the room set has the tag. */
+  private readonly roomHas: Uint8Array;
+  private readonly itemWeights: readonly number[];
   private pathfinder: Pathfinder | null = null;
+  /** Noises emitted this tick, in emission order; reused (cleared, not reallocated). */
+  private readonly pending: Noise[] = [];
+  /** Number of valid entries of `pending`. */
+  private pendingCount = 0;
   private readonly ctx: ExprContext;
+  private readonly thinkEnv: ThinkEnv;
   private readonly tagSets: ReadonlySet<string>[];
   private readonly tileTagSets: ReadonlySet<string>[];
   /** Per archetype index: 1 at each measurement index the archetype has. */
@@ -154,9 +292,26 @@ export class World {
       return by;
     });
 
+    const nt = def.roomTags.length;
+    this.roomCell = Uint16Array.from(map.rooms.cellSet);
+    this.roomHas = new Uint8Array(map.rooms.sets.length * nt);
+    map.rooms.sets.forEach((set, k) => {
+      for (const t of set) this.roomHas[k * nt + t] = 1;
+    });
+    this.itemWeights = def.items.map((i) => i.weight);
+
+    // Container ids: tile containers in row-major order, then inventories in entity order.
+    for (let i = 0; i < map.cells.length; i++) {
+      const tile = def.tiles[map.cells[i]!]!;
+      if (!tile.container) continue;
+      const x = i % map.width;
+      const y = (i - x) / map.width;
+      this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, tile: tile.index }));
+    }
     const start = map.playerStart!;
-    this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y);
+    this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, false);
     for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y);
+    this.rollLoot(seed);
 
     const world = this;
     this.ctx = {
@@ -168,14 +323,22 @@ export class World {
       random: () => world.rng.next(),
       tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
       tileTagsAt: (x, y) => (world.grid.inBounds(x, y) ? world.tileTagSets[world.grid.cells[y * world.grid.width + x]!]! : NO_TAGS),
+      inRoom: (x, y, tag) => world.grid.inBounds(x, y) && world.roomHas[world.roomCell[y * world.grid.width + x]! * nt + tag] === 1,
+      los: (x0, y0, x1, y1) => lineOfSight(world.grid, x0, y0, x1, y1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
+    this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
   }
 
   static create(def: Definition, seed: number): World {
     return new World(def, seed);
+  }
+
+  /** Result of the player's most recent goto intent (a new object each time). */
+  get lastGoto(): GotoRecord | null {
+    return this.player.lastGoto;
   }
 
   get seconds(): number {
@@ -187,12 +350,21 @@ export class World {
     return clockAt(this.def.clock, this.tick, this.def.ticksPerSecond);
   }
 
-  private spawn(archetype: ArchetypeDef, x: number, y: number): Entity {
+  /** Add an entity; `driven` = run its archetype's behavior (false for the player). */
+  private spawn(archetype: ArchetypeDef, x: number, y: number, driven = true): Entity {
+    const id = this.entities.length;
+    let inv: Container | null = null;
+    if (archetype.inventory) {
+      inv = createContainer(this.nextContainerId++, 'inventory', archetype.inventory.capacity, { owner: id });
+      for (const s of archetype.inventory.items) add(inv, s.item, s.count, this.itemWeights[s.item]!);
+      this.containers.set(inv.id, inv);
+    }
     const m = new Float64Array(this.def.measurements.length);
     archetype.measurements.forEach((idx, k) => (m[idx] = archetype.initial[k]!));
     const max = new Float64Array(this.def.measurements.length).fill(Infinity);
+    const behavior = driven && archetype.behavior !== null ? this.def.behaviors[archetype.behavior]! : null;
     const e: Entity = {
-      id: this.entities.length,
+      id,
       archetype,
       x,
       y,
@@ -206,16 +378,131 @@ export class World {
       path: null,
       pathPos: 0,
       st: new Uint8Array(this.def.statuses.length),
+      inv,
+      intent: null,
+      lastGoto: null,
+      homeX: x,
+      homeY: y,
+      behavior,
+      state: behavior ? behavior.initial : -1,
+      stateTick: 0,
+      planX: 0,
+      planY: 0,
+      planTick: -1,
+      heardX: 0,
+      heardY: 0,
+      heardTick: -1,
     };
     this.entities.push(e);
     return e;
   }
 
-  /** Queue the player's next move; the latest intent wins until it is applied. */
-  queueIntent(intent: Intent): void {
+  // ── Containers ──────────────────────────────────────────────────────────
+
+  private addContainer(c: Container): void {
+    this.containers.set(c.id, c);
+    const cell = c.y * this.grid.width + c.x;
+    const ids = this.cellContainers.get(cell);
+    if (ids) ids.push(c.id);
+    else this.cellContainers.set(cell, [c.id]);
+  }
+
+  /** Remove a ground pile once it is empty. */
+  private pruneGround(c: Container): void {
+    if (c.kind !== 'ground' || c.stacks.length > 0) return;
+    this.containers.delete(c.id);
+    const cell = c.y * this.grid.width + c.x;
+    const ids = this.cellContainers.get(cell)!;
+    ids.splice(ids.indexOf(c.id), 1);
+    if (ids.length === 0) this.cellContainers.delete(cell);
+  }
+
+  /** Tile containers and ground piles on a cell, in id order. */
+  containersAt(x: number, y: number): Container[] {
+    if (!this.grid.inBounds(x, y)) return [];
+    const ids = this.cellContainers.get(y * this.grid.width + x);
+    return ids ? ids.map((id) => this.containers.get(id)!) : [];
+  }
+
+  /** Every container the player can reach now (its cell or the 8 around it), in id order. */
+  reachableContainers(): Container[] {
+    const { x, y } = this.player;
+    const out: Container[] = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.push(...this.containersAt(x + dx, y + dy));
+    return out.sort((a, b) => a.id - b.id);
+  }
+
+  /** Room tag indices of a cell (empty outside rooms or out of bounds). */
+  roomTagsAt(x: number, y: number): readonly number[] {
+    if (!this.grid.inBounds(x, y)) return [];
+    return this.def.maps[this.def.start.map]!.rooms.sets[this.roomCell[y * this.grid.width + x]!]!;
+  }
+
+  /** Fill tile containers from their distributions, with a dedicated RNG (never `this.rng`). */
+  private rollLoot(seed: number): void {
+    const def = this.def;
+    if (def.distributions.length === 0) return;
+    const rng = new Rng(mix(seed, LOOT_SALT));
+    const w = this.grid.width;
+    const chosen = new Map<number, number>(); // tile * sets + roomSet → table (-1 = none)
+    const nsets = def.maps[def.start.map]!.rooms.sets.length;
+    for (const c of this.containers.values()) {
+      if (c.kind !== 'tile') break; // tile containers come first
+      const set = this.roomCell[c.y * w + c.x]!;
+      const key = c.tile * nsets + set;
+      let table = chosen.get(key);
+      if (table === undefined) {
+        table = this.distributionFor(c.tile, set);
+        chosen.set(key, table);
+      }
+      if (table >= 0) this.rollTable(table, c, rng);
+    }
+  }
+
+  /** First most specific distribution: a matching `room` beats no `room`; ties go to the first. */
+  private distributionFor(tile: number, set: number): number {
+    const nt = this.def.roomTags.length;
+    let fallback = -1;
+    for (const d of this.def.distributions) {
+      if (d.container !== tile) continue;
+      if (d.room === null) {
+        if (fallback < 0) fallback = d.table;
+      } else if (this.roomHas[set * nt + d.room] === 1) return d.table;
+    }
+    return fallback;
+  }
+
+  private rollTable(t: number, c: Container, rng: Rng): void {
+    const table = this.def.loot[t]!;
+    const between = (lo: number, hi: number) => (lo === hi ? lo : lo + Math.floor(rng.next() * (hi - lo + 1)));
+    const rolls = between(table.rollsMin, table.rollsMax);
+    for (let r = 0; r < rolls; r++) {
+      const pick = rng.next() * table.total;
+      let k = 0;
+      while (table.cumulative[k]! <= pick) k++;
+      const e = table.entries[k]!;
+      if (e.kind === 'item') {
+        const weight = this.itemWeights[e.item]!;
+        add(c, e.item, fits(c, weight, between(e.countMin, e.countMax)), weight);
+      } else if (e.kind === 'table') this.rollTable(e.table, c, rng);
+    }
+  }
+
+  /** Queue an instant player action (FIFO; applied after the movement intent). Ignored after defeat. */
+  queueAction(action: Action): void {
+    if (this.defeat) return;
+    this.actions.push(action);
+  }
+
+  /**
+   * Queue an entity's next move (the player by default); the latest intent
+   * wins until it is applied. Throws for an entity of another world.
+   */
+  queueIntent(intent: Intent, entity: Entity = this.player): void {
+    if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
     if (this.defeat) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
-    this.intent = intent;
+    entity.intent = intent;
   }
 
   /** Goal tile of an entity's active path, or null. */
@@ -225,21 +512,40 @@ export class World {
     return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
+  /** This tick's noises (after `step`, the last stepped tick's), in emission order. */
+  get noises(): readonly Readonly<Noise>[] {
+    return this.pending.slice(0, this.pendingCount);
+  }
+
   /**
-   * Advance exactly one tick (1 / ticksPerSecond seconds): intent, drift,
-   * due systems, clamp, status update, defeat check, `tick++`. A no-op once
-   * defeated.
+   * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
+   * (id order), every entity's movement intent (id order), player actions, drift,
+   * due systems, hearing, clamp, status update, defeat check, `tick++`. A no-op
+   * once defeated.
    */
   step(): void {
     if (this.defeat) return;
     this.ctx.tick = this.tick;
-    this.applyIntent();
+    this.pendingCount = 0;
+    this.think();
+    for (const e of this.entities) {
+      if (e.intent || e.path) this.applyIntent(e);
+      else if (e.moveCooldown > 0) e.moveCooldown--;
+    }
+    if (this.actions.length > 0) this.applyActions();
     this.drift();
     this.runSystems();
+    if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
     this.checkDefeat();
     this.tick++;
+  }
+
+  /** Phase 0: each behavior-driven entity switches state at most once, then issues its activity's intent. */
+  private think(): void {
+    const env = this.thinkEnv;
+    for (const e of this.entities) if (e.state >= 0) think(e, env);
   }
 
   /** Measurement drift: `rate` plus the `rates` of the statuses active now. */
@@ -278,14 +584,67 @@ export class World {
         ctx.self = e;
         if (sys.forFn && !sys.forFn(ctx)) continue;
         if (sys.whenFn && !sys.whenFn(ctx)) continue;
-        const has = this.hasM[e.archetype.index]!;
-        for (const eff of sys.effects) {
-          const idx = eff.measurement;
-          if (has[idx] !== 1) continue;
-          const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
-          e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+        this.runEffects(e, sys.effects);
+      }
+    }
+  }
+
+  /** Run effects on `e` (= `ctx.self`), in order; measurement effects skip measurements it lacks. */
+  private runEffects(e: Entity, effects: readonly EffectDef[]): void {
+    const ctx = this.ctx;
+    const has = this.hasM[e.archetype.index]!;
+    for (const eff of effects) {
+      if (eff.type === 'noise') {
+        this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+        continue;
+      }
+      const idx = eff.measurement;
+      if (has[idx] !== 1) continue;
+      const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
+      e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+    }
+  }
+
+  /** Queue a noise at the source's cell; a radius ≤ 0 (or NaN) emits nothing. */
+  private emitNoise(source: Entity, radius: number): void {
+    if (!(radius > 0)) return;
+    const n = this.pendingCount++;
+    const slot = this.pending[n];
+    if (slot) {
+      slot.x = source.x;
+      slot.y = source.y;
+      slot.radius = radius;
+      slot.source = source.id;
+    } else this.pending.push({ x: source.x, y: source.y, radius, source: source.id });
+  }
+
+  /**
+   * Phase 4: every entity except the source hears a noise within its radius
+   * (euclidean, inclusive, walls ignored) and keeps this tick's nearest one
+   * (ties: the earlier emission). O(noises × entities), no allocation.
+   */
+  private hear(): void {
+    const k = this.pendingCount;
+    const noises = this.pending;
+    for (const e of this.entities) {
+      let best = Infinity;
+      let pick = -1;
+      for (let i = 0; i < k; i++) {
+        const n = noises[i]!;
+        if (n.source === e.id) continue;
+        const dx = n.x - e.x;
+        const dy = n.y - e.y;
+        const d = dx * dx + dy * dy;
+        if (d <= n.radius * n.radius && d < best) {
+          best = d;
+          pick = i;
         }
       }
+      if (pick < 0) continue;
+      const n = noises[pick]!;
+      e.heardX = n.x;
+      e.heardY = n.y;
+      e.heardTick = this.tick;
     }
   }
 
@@ -332,25 +691,27 @@ export class World {
     return k !== undefined && e.st[k] === 1;
   }
 
-  private applyIntent(): void {
-    const p = this.player;
-    const intent = this.intent;
+  /** Resolve an entity's pending intent, count its cooldown down, then step or advance its path. */
+  private applyIntent(p: Entity): void {
+    const intent = p.intent;
     if (intent?.kind === 'goto') {
-      this.intent = null;
+      p.intent = null;
       this.pathfinder ??= new Pathfinder(this.grid);
-      const path = this.pathfinder.findPath(p.x, p.y, intent.x, intent.y);
+      const path = intent.adjacent
+        ? this.pathfinder.findPathAdjacent(p.x, p.y, intent.x, intent.y)
+        : this.pathfinder.findPath(p.x, p.y, intent.x, intent.y);
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
-      this.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+      p.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
     } else if (intent?.kind === 'step') {
       p.path = null;
     }
 
     if (p.moveCooldown > 0) p.moveCooldown--;
     if (p.moveCooldown > 0) return;
-    if (this.intent?.kind === 'step') {
-      const { dx, dy } = this.intent;
-      this.intent = null;
+    if (p.intent?.kind === 'step') {
+      const { dx, dy } = p.intent;
+      p.intent = null;
       this.move(p, dx, dy);
     } else if (p.path) {
       const next = p.path[p.pathPos++]!;
@@ -358,6 +719,66 @@ export class World {
       if (p.pathPos >= p.path.length) p.path = null;
       if (!this.move(p, (next % w) - p.x, Math.floor(next / w) - p.y)) p.path = null;
     }
+  }
+
+  private applyActions(): void {
+    const queue = this.actions;
+    this.actions = [];
+    for (const a of queue) this.lastAction = this.applyAction(a);
+  }
+
+  private applyAction(a: Action): ActionRecord {
+    const tick = this.tick;
+    const fail = (reason: ActionFailure): ActionRecord => ({ kind: a.kind, item: a.item, moved: 0, ok: false, reason, tick });
+    const done = (moved: number): ActionRecord => {
+      this.containerVersion++;
+      return { kind: a.kind, item: a.item, moved, ok: true, tick };
+    };
+    const p = this.player;
+    const inv = p.inv;
+    if (!inv) return fail('no_inventory');
+    const item = this.def.ids.items[a.item];
+    if (item === undefined) return fail('missing');
+    const weight = this.itemWeights[item]!;
+    const want = a.kind === 'use' || a.count === undefined ? Infinity : Math.floor(a.count);
+    if (!(want >= 1)) return fail('missing');
+
+    if (a.kind === 'use') {
+      if (countOf(inv, item) === 0) return fail('missing');
+      const use = this.def.items[item]!.use;
+      const ctx = this.ctx;
+      ctx.self = p;
+      ctx.tick = tick;
+      if (!use || (use.whenFn && !use.whenFn(ctx))) return fail('cannot_use');
+      this.runEffects(p, use.effects);
+      return done(remove(inv, item, use.consume, weight));
+    }
+
+    if (a.kind === 'drop') {
+      const n = Math.min(want, countOf(inv, item));
+      if (n === 0) return fail('missing');
+      let pile = this.containersAt(p.x, p.y).find((c) => c.kind === 'ground');
+      if (!pile) {
+        pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x: p.x, y: p.y });
+        this.addContainer(pile);
+      }
+      remove(inv, item, n, weight);
+      add(pile, item, n, weight);
+      return done(n);
+    }
+
+    const c = this.containers.get(a.container);
+    if (!c || c.kind === 'inventory') return fail('unknown_container');
+    if (Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) > 1) return fail('out_of_reach');
+    const [from, to] = a.kind === 'take' ? [c, inv] : [inv, c];
+    const have = Math.min(want, countOf(from, item));
+    if (have === 0) return fail('missing');
+    const n = fits(to, weight, have);
+    if (n === 0) return fail('too_heavy');
+    remove(from, item, n, weight);
+    add(to, item, n, weight);
+    this.pruneGround(c);
+    return done(n);
   }
 
   /** Take one step if allowed; records the render-facing step state. */
@@ -401,12 +822,13 @@ export class World {
 
   snapshot(): WorldSnapshot {
     const ms = this.def.measurements;
+    const items = this.def.items;
     return {
       tick: this.tick,
       rng: this.rng.state,
       player: this.player.id,
-      intent: this.intent,
-      lastGoto: this.lastGoto,
+      actions: [...this.actions],
+      lastAction: this.lastAction,
       defeat: this.defeat,
       entities: this.entities.map((e) => ({
         id: e.id,
@@ -422,7 +844,20 @@ export class World {
           : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
         statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),
+        intent: e.intent,
+        lastGoto: e.lastGoto,
+        home: [e.homeX, e.homeY],
+        behavior: e.behavior
+          ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
+          : null,
+        heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
       })),
+      containers: [...this.containers.values()].map((c) => {
+        const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
+        if (c.kind === 'inventory') out.owner = c.owner;
+        else out.cell = [c.x, c.y];
+        return out;
+      }),
     };
   }
 

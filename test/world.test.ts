@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadPacksOrThrow, World, type Intent } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { loadFixture } from './helpers.ts';
+import { GAMES, loadFixture } from './helpers.ts';
 
 const close = (a: number | undefined, b: number) => assert.ok(a !== undefined && Math.abs(a - b) < 1e-9, `${a} ≉ ${b}`);
 
@@ -129,9 +129,9 @@ function run(defDirs: string[], seed: number, ticks: number): World {
 }
 
 test('determinism: same definition + seed + intents ⇒ same hash (1000 ticks)', () => {
-  for (const genre of ['packs/zombie', 'packs/vampire']) {
-    const a = run(['packs/base', genre], 1234, 1000);
-    const b = run(['packs/base', genre], 1234, 1000);
+  for (const dirs of Object.values(GAMES)) {
+    const a = run([...dirs], 1234, 1000);
+    const b = run([...dirs], 1234, 1000);
     assert.equal(a.tick, 1000);
     assert.equal(a.hash(), b.hash());
     assert.deepEqual(a.snapshot(), b.snapshot());

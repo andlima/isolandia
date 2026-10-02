@@ -58,9 +58,20 @@ export function formatError(e: LoadError): string {
   return `${where}${e.path ? ` ${e.path}` : ''}: ${e.message}`;
 }
 
-/** Accumulates errors across all loader stages. */
+/** Accumulates errors (and non-fatal warnings) across all loader stages. */
 export class ErrorSink {
   readonly errors: LoadError[] = [];
+  readonly warnings: LoadError[] = [];
+
+  warn(src: Src, message: string): void {
+    this.warnings.push({
+      pack: src.source.pack,
+      file: src.source.file,
+      path: formatPath(src.path),
+      line: lineOf(src.source, src.path),
+      message,
+    });
+  }
 
   add(src: Src, message: string): void {
     this.errors.push({

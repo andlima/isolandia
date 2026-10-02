@@ -14,6 +14,7 @@ import { Hud } from './hud.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
 import { assetUrls, buildPackSources } from './packs.ts';
+import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
 
 declare global {
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
   app.stage.addChild(scene.root);
 
   const hud = new Hud(document.body);
+  const panels = new Panels(document.body, world);
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
     const r = renderPosition(world.player, world.tick, alpha);
@@ -78,11 +80,12 @@ async function main(): Promise<void> {
     zoom: (sx, sy, f) => rig.zoom(sx, sy, f, playerIso(loop.alpha), app.screen.width, app.screen.height),
     click: (sx, sy) => {
       const t = pickTile(sx, sy, rig.cam, (x, y) => world.grid.tileAt(x, y)?.raised ?? false);
-      world.queueIntent({ kind: 'goto', x: t.x, y: t.y });
+      world.queueIntent(clickIntent(world, t.x, t.y));
     },
     key: (code) => {
       if (code === 'KeyH') hud.toggle();
       if (code === 'Space') rig.recenter();
+      if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
     },
   });
 
@@ -99,6 +102,7 @@ async function main(): Promise<void> {
     const cam = rig.update(playerIso(loop.alpha), width, height);
     scene.update(cam, width, height, loop.alpha, now);
     hud.update(world);
+    panels.update();
     app.renderer.render(app.stage);
     requestAnimationFrame(frame);
   };

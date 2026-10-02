@@ -29,6 +29,6 @@ export class Hud {
     if (this.el.hidden || world.tick === this.lastTick) return;
     this.lastTick = world.tick;
     const m = hudModel(world);
-    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud'].join('\n');
+    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud', ...(world.player.inv ? ['[I/Tab] inventory'] : [])].join('\n');
   }
 }

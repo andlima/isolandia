@@ -5,6 +5,7 @@
  */
 
 import { dayAt, isDayAt, minuteOfDay, type ClockDef } from '../clock.ts';
+import { countOf, type Container } from '../sim/containers.ts';
 import type { Ast } from './parser.ts';
 
 /** An entity as seen by expressions. */
@@ -16,6 +17,10 @@ export interface ExprEntity {
   readonly tags: ReadonlySet<string>;
   /** Active statuses: 1 at a status index when that status is active. */
   readonly st: Uint8Array;
+  /** The entity's inventory, or null. */
+  readonly inv: Container | null;
+  /** Tick at which the entity last heard a noise; -1 = never. */
+  readonly heardTick: number;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -44,6 +49,10 @@ export interface ExprContext {
   tileIdAt(x: number, y: number): string;
   /** Tags of the tile at (x, y); empty out of bounds. */
   tileTagsAt(x: number, y: number): ReadonlySet<string>;
+  /** Whether the cell at (x, y) is in a room with the room tag of that index. */
+  inRoom(x: number, y: number, tag: number): boolean;
+  /** Tile line of sight between two cells (see `lineOfSight`). */
+  los(x0: number, y0: number, x1: number, y1: number): boolean;
   warn(message: string): void;
 }
 
@@ -69,6 +78,10 @@ export interface CompileSymbols {
   resolveMeasurement(ref: string): { index: number } | { error: string };
   /** Resolve a status reference to its index; without it, `has_status` is an error. */
   resolveStatus?(ref: string): { index: number } | { error: string };
+  /** Resolve an item reference to its index; without it, `count_item`/`has_item` are errors. */
+  resolveItem?(ref: string): { index: number } | { error: string };
+  /** Resolve a room tag to its index; without it, `in_room` is an error. */
+  resolveRoomTag?(tag: string): { index: number } | { error: string };
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -84,7 +97,8 @@ interface Builtin {
 
 type Point = { x: number; y: number };
 
-function isPointType(t: ValueType): boolean {
+/** Whether a value of this type has a position (`x`, `y`). */
+export function isPointType(t: ValueType): boolean {
   return t === 'entity' || t === 'tile' || t === 'any';
 }
 
@@ -194,10 +208,10 @@ const BUILTINS: Record<string, Builtin> = {
 };
 
 /** Built-ins compiled specially (their id argument is resolved at load time). */
-const SPECIAL_NAMES = ['has_status'];
+const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see', 'heard'];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
@@ -267,6 +281,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         const root = entityRoot(obj.name);
         if (prop === 'x') return { fn: (c) => root(c).x, type: 'number' };
         if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
+        if (prop === 'carry_weight') return { fn: (c) => (root(c).inv?.load ?? 0) / 100, type: 'number' };
+        if (prop === 'carry_capacity') return { fn: (c) => (root(c).inv?.capacity ?? 0) / 100, type: 'number' };
         const r = symbols.resolveMeasurement(prop);
         if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
         const idx = r.index;
@@ -324,6 +340,10 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       return err('only built-in functions can be called', node.pos);
     }
     if (name === 'has_status') return hasStatus(argNodes, node.pos);
+    if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
+    if (name === 'in_room') return inRoom(argNodes, node.pos);
+    if (name === 'can_see') return canSee(argNodes, node.pos);
+    if (name === 'heard') return heard(argNodes, node.pos);
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
       if (fast) return fast;
@@ -372,7 +392,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
   function hasStatus(argNodes: Ast[], pos: number): CompiledExpr {
     if (argNodes.length !== 2) return err(`has_status() takes 2 arguments, got ${argNodes.length}`, pos);
     const idNode = argNodes[1]!;
-    if (idNode.kind !== 'string') return err('has_status() expects a string literal status id, e.g. has_status(self, "hungry")', idNode.pos);
+    if (idNode.kind !== 'string') return err('has_status() expects a string literal status id, e.g. has_status(self, "stunned")', idNode.pos);
     if (!symbols.resolveStatus) return err('has_status() is not available here', pos);
     const r = symbols.resolveStatus(idNode.value);
     if ('error' in r) return err(`has_status: ${r.error}`, idNode.pos);
@@ -385,6 +405,123 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (t.type !== 'entity' && t.type !== 'any') return err(`has_status(entity, id) expects an entity, got ${t.type}`, pos);
     const f = t.fn;
     return { type: 'boolean', fn: (c) => (f(c) as ExprEntity).st[k] === 1 };
+  }
+
+  /** Entity argument of a special built-in: `self`/`player` without a closure call, else any entity expression. */
+  function entityArg(name: string, target: Ast, pos: number, sig = 'entity, id'): ((c: ExprContext) => ExprEntity) | null {
+    if (target.kind === 'ident' && target.name === 'self') return (c) => c.self;
+    if (target.kind === 'ident' && target.name === 'player') return (c) => c.player;
+    const t = walk(target);
+    if (t === fail) return null;
+    if (t.type !== 'entity' && t.type !== 'any') {
+      err(`${name}(${sig}) expects an entity, got ${t.type}`, pos);
+      return null;
+    }
+    return t.fn as (c: ExprContext) => ExprEntity;
+  }
+
+  /** `count_item(entity, "id")` / `has_item(entity, "id")`: the item id is resolved now; runtime scans one inventory. */
+  function itemCount(name: 'count_item' | 'has_item', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`${name}() takes 2 arguments, got ${argNodes.length}`, pos);
+    const idNode = argNodes[1]!;
+    if (idNode.kind !== 'string') return err(`${name}() expects a string literal item id, e.g. ${name}(self, "bandage")`, idNode.pos);
+    if (!symbols.resolveItem) return err(`${name}() is not available here`, pos);
+    const r = symbols.resolveItem(idNode.value);
+    if ('error' in r) return err(`${name}: ${r.error}`, idNode.pos);
+    const k = r.index;
+    const target = entityArg(name, argNodes[0]!, pos);
+    if (!target) return fail;
+    if (name === 'has_item') {
+      return {
+        type: 'boolean',
+        fn: (c) => {
+          const inv = target(c).inv;
+          return inv !== null && countOf(inv, k) > 0;
+        },
+      };
+    }
+    return {
+      type: 'number',
+      fn: (c) => {
+        const inv = target(c).inv;
+        return inv === null ? 0 : countOf(inv, k);
+      },
+    };
+  }
+
+  /** `in_room(tile, "tag")` / `tile.in_room("tag")`: room tags of the cell under `self`. */
+  function inRoom(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`in_room() takes 2 arguments, got ${argNodes.length}`, pos);
+    const target = argNodes[0]!;
+    if (target.kind !== 'ident' || target.name !== 'tile') return err('in_room(tile, tag) expects `tile` as its first argument', pos);
+    const tagNode = argNodes[1]!;
+    if (tagNode.kind !== 'string') return err('in_room() expects a string literal room tag, e.g. tile.in_room("kitchen")', tagNode.pos);
+    if (!symbols.resolveRoomTag) return err('in_room() is not available here', pos);
+    const r = symbols.resolveRoomTag(tagNode.value);
+    if ('error' in r) return err(`in_room: ${r.error}`, tagNode.pos);
+    const k = r.index;
+    return { type: 'boolean', fn: (c) => c.inRoom(c.self.x, c.self.y, k) };
+  }
+
+  /** Point argument without allocating: `tile` reads as `self`'s cell, since both share a position. */
+  function pointArg(node: Ast): CompiledExpr {
+    if (node.kind === 'ident' && (node.name === 'self' || node.name === 'tile')) return { type: 'entity', fn: (c) => c.self };
+    if (node.kind === 'ident' && node.name === 'player') return { type: 'entity', fn: (c) => c.player };
+    return walk(node);
+  }
+
+  /** `can_see(a, b[, range])`: euclidean range check first, then tile line of sight; no argument array. */
+  function canSee(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2 && argNodes.length !== 3) return err(`can_see() takes 2 or 3 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const a = pointArg(argNodes[0]!);
+    const b = pointArg(argNodes[1]!);
+    const r = argNodes.length === 3 ? walk(argNodes[2]!) : null;
+    if (errors.length > before) return fail;
+    if (!isPointType(a.type) || !isPointType(b.type)) return err('can_see(a, b) expects two entities or tiles', pos);
+    if (r && !isNumericType(r.type)) return err('can_see(a, b, range) expects a numeric range', pos);
+    const A = a.fn as (c: ExprContext) => Point;
+    const B = b.fn as (c: ExprContext) => Point;
+    if (!r) {
+      return {
+        type: 'boolean',
+        fn: (c) => {
+          const p = A(c);
+          const q = B(c);
+          return c.los(p.x, p.y, q.x, q.y);
+        },
+      };
+    }
+    const R = r.fn as (c: ExprContext) => number;
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const p = A(c);
+        const q = B(c);
+        const dx = q.x - p.x;
+        const dy = q.y - p.y;
+        if (Math.sqrt(dx * dx + dy * dy) > Number(R(c))) return false;
+        return c.los(p.x, p.y, q.x, q.y);
+      },
+    };
+  }
+
+  /** `heard(entity, seconds)`: the entity heard a noise less than `seconds` ago; no argument array. */
+  function heard(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`heard() takes 2 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const target = entityArg('heard', argNodes[0]!, pos, 'entity, seconds');
+    const s = walk(argNodes[1]!);
+    if (errors.length > before || !target) return fail;
+    if (!isNumericType(s.type)) return err('heard(entity, seconds) expects numeric seconds', pos);
+    const S = s.fn as (c: ExprContext) => number;
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const t = target(c).heardTick;
+        return t >= 0 && c.tick - t < Number(S(c)) * c.ticksPerSecond;
+      },
+    };
   }
 
   function binary(node: Extract<Ast, { kind: 'binary' }>): CompiledExpr {

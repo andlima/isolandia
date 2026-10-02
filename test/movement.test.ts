@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadPacksOrThrow, Pathfinder, renderPosition, World, type Intent } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { loadFixture } from './helpers.ts';
+import { GAMES, loadFixture } from './helpers.ts';
 
 /** A world over an ASCII map: `#` wall, `.` floor, `@` player on floor. */
 function worldOf(rows: string[], ticksPerStep = 2): World {
@@ -152,17 +152,17 @@ test('goto: unreachable or blocked goals are dropped and recorded', () => {
 test('goto: path and pending intent are part of the snapshot', () => {
   const w = worldOf(['@....'], 2);
   w.queueIntent({ kind: 'goto', x: 3, y: 0 });
-  assert.deepEqual(w.snapshot().intent, { kind: 'goto', x: 3, y: 0 });
+  assert.deepEqual(w.snapshot().entities[0]!.intent, { kind: 'goto', x: 3, y: 0 });
   w.step();
   const snap = w.snapshot();
-  assert.equal(snap.intent, null);
+  assert.equal(snap.entities[0]!.intent, null);
   assert.deepEqual(snap.entities[0]!.path, [[2, 0], [3, 0]]);
-  assert.deepEqual(snap.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
+  assert.deepEqual(snap.entities[0]!.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
 });
 
 test('determinism: mixed goto and keyboard intents ⇒ same hash', () => {
-  for (const genre of ['packs/zombie', 'packs/vampire']) {
-    const def = loadPacksOrThrow(['packs/base', genre].map(readPack));
+  for (const dirs of Object.values(GAMES)) {
+    const def = loadPacksOrThrow(dirs.map(readPack));
     const run = () => {
       const w = World.create(def, 99);
       const map = def.maps[def.start.map]!;
