@@ -1,5 +1,14 @@
 # Hand-written placeholder art on the 64×32 grid (see docs/packs.md).
+# Directional assets list one image per drawn facing; the rest are mirrored.
 assets:
   - { id: carpet_img, file: assets/carpet.svg }
-  - { id: coffin_img, file: assets/coffin.svg }
-  - { id: vampire_img, file: assets/vampire.svg, anchor: [0.5, 0.92] }
+  - id: coffin_img        # 4-way
+    directions: { s: assets/coffin_s.svg, w: assets/coffin_w.svg }
+  - id: vampire_img       # 8-way
+    anchor: [0.5, 0.92]
+    directions:
+      s: assets/vampire_s.svg
+      se: assets/vampire_se.svg
+      ne: assets/vampire_ne.svg
+      w: assets/vampire_w.svg
+      nw: assets/vampire_nw.svg

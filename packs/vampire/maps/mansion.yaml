@@ -6,12 +6,14 @@ maps:
       ".": { tile: floor }
       "c": { tile: carpet }
       ",": { tile: creaky }
-      "=": { tile: coffin }
+      "=": { tile: coffin, facing: s }
+      "[": { tile: coffin, facing: e }
+      "]": { tile: coffin, facing: w }
       "\"": { tile: window }
       "'": { tile: sunbeam }
       "C": { tile: crypt }
       "B": { tile: font }
-      "L": { tile: bookshelf }
+      "L": { tile: bookshelf, facing: s }   # against the north wall
       "X": { tile: chest }
       "R": { tile: wine_rack }
       "V": { tile: carpet, player: true }
@@ -25,7 +27,7 @@ maps:
       - "###+####cccVccc####+##"
       - "#......+,ccccc,+.....#"
       - "#..b...#ccccccc#.....#"
-      - "#..'...#cc=b=cc#...''\""
+      - "#..'...#cc[b]cc#...''\""
       - "###\"#######+#######\"##"
       - "#LLLL.LLL#c,c#RRR.RRR#"
       - "#cccccccc+ccc+CCCCCCC#"

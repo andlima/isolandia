@@ -150,7 +150,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 |---|---|---|---|
 | S0 | **Feasibility spike** (before anything else): 4×4 chunks of 32×32 isometric tiles, ~500 entities wandering with A*, player moves by click; measure fps on a mid-range laptop and a phone | Confirms (or not) TS + Pixi | ✅ done¹ |
 | M0 | Simulation core: grid, entities, tick loop, measurements, compiled expressions, namespaced YAML loader; **top-down ASCII** render | Walk around and watch measurements change over time | ✅ done |
-| M1 | Isometric renderer: tiles, depth sort, camera, click-to-move (A*), assets manifest | The same game, in iso | ✅ done |
+| M1 | Isometric renderer: tiles, depth sort, camera, click-to-move (A*), assets manifest, directional sprites² | The same game, in iso | ✅ done |
 | M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
@@ -165,6 +165,10 @@ numbers (mid-range laptop and phone) are still **pending** — the manual
 table and `s0-bench.json` still need to be filled in (see
 `docs/spikes/s0-results.md`, "Browser benchmark"). The spike's verdict is
 only confirmed after that.
+
+² Added after M1 (spec `iso-directional-sprites`): 4/8-way assets with
+mirroring, render-derived character facing, legend `facing` for tiles; see
+§7.
 
 ## 6. Risks
 
@@ -316,6 +320,16 @@ only confirmed after that.
   clocks; bats investigate creaky floorboards. There is no "last known
   position" for `pursue`, no memory of more than one noise, and no
   per-archetype hearing range yet. See `docs/packs.md`.
+- ~~How do things get an orientation in the iso view?~~ **Decided (spec
+  `iso-directional-sprites`):** **directional pre-rendered sprites**, in the
+  style of classic isometric games; **no real-time 3D** and no change to
+  the projection. Assets take `directions` (4-way or 8-way) and
+  **horizontal mirroring** fills the rest (5 drawings for 8 ways, 2 for 4).
+  Characters face their movement direction, **derived at render time**
+  from the last step (no sim state, snapshots and hashes unchanged); map
+  tiles get a static 4-way `facing` from the legend. Facing as simulation
+  state (turning in place, facing-aware actions) may be promoted in M5.
+  Animation frames are a later step. See `docs/iso.md`.
 
 ## 8. Next step
 

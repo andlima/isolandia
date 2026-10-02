@@ -1,11 +1,19 @@
 # Hand-written placeholder art on the 64×32 grid. Tiles anchor at the
 # diamond's bottom vertex, archetypes at the tile's ground centre; the
-# default anchor [0.5, 1] is the image's bottom centre.
+# default anchor [0.5, 1] is the image's bottom centre. Directional assets
+# list one image per drawn facing; the rest are mirrored (see docs/packs.md).
 assets:
   - id: grass_img
     file: assets/grass.svg
-  - id: car_img
-    file: assets/car.svg
-  - id: shambler_img
-    file: assets/shambler.svg
+  - id: car_img           # 4-way: n and e are the mirrors of w and s
+    directions:
+      s: assets/car_s.svg
+      w: assets/car_w.svg
+  - id: shambler_img      # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
+    directions:
+      s: assets/shambler_s.svg
+      se: assets/shambler_se.svg
+      ne: assets/shambler_ne.svg
+      w: assets/shambler_w.svg
+      nw: assets/shambler_nw.svg
