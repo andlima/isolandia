@@ -6,6 +6,7 @@
 
 import type { ClockDef } from './clock.ts';
 import type { Compiled } from './expr/index.ts';
+import type { Facing, FacingImage } from './facing.ts';
 
 export const TICKS_PER_SECOND = 10;
 
@@ -32,16 +33,30 @@ export interface MeasurementDef {
   readonly rateFn: Compiled | null;
 }
 
-/** A single image in a pack (`assets` domain). */
-export interface AssetDef {
-  readonly id: string;
-  readonly index: number;
-  /** Namespace of the pack that ships the file. */
-  readonly pack: string;
+/** One image file of an asset. */
+export interface AssetImage {
   /** Path relative to the pack root (`.svg` or `.png`). */
   readonly file: string;
   /** Normalized image point placed on the entry's anchor spot; default [0.5, 1]. */
   readonly anchor: readonly [number, number];
+}
+
+/** An image, or one image per direction, in a pack (`assets` domain). */
+export interface AssetDef {
+  readonly id: string;
+  readonly index: number;
+  /** Namespace of the pack that ships the files. */
+  readonly pack: string;
+  /** The distinct image files (one for a `file` asset). */
+  readonly images: readonly AssetImage[];
+  /** 1 for a `file` asset, else 4 or 8 (`directions` with a diagonal key). */
+  readonly ways: 1 | 4 | 8;
+  /**
+   * Image per facing, indexed like `FACINGS` (see `facingTable`). Null only
+   * for the diagonals of a 4-way asset, which snap via `resolveFacing`. A
+   * `file` asset uses image 0 unmirrored for every facing.
+   */
+  readonly byFacing: readonly (FacingImage | null)[];
 }
 
 export interface TileDef {
@@ -222,6 +237,11 @@ export interface MapDef {
   readonly height: number;
   /** Tile index per cell, row-major. */
   readonly cells: readonly number[];
+  /**
+   * Legend `facing` per cell, row-major; null where the legend does not set
+   * one (shown as the default `s`). Render-only: the simulation ignores it.
+   */
+  readonly facings: readonly (Facing | null)[];
   readonly spawns: readonly SpawnDef[];
   readonly playerStart: { readonly x: number; readonly y: number } | null;
   readonly rooms: RoomsDef;

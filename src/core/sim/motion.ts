@@ -1,3 +1,4 @@
+import { DEFAULT_FACING, facingOfStep, type Facing } from '../facing.ts';
 import type { Entity } from './world.ts';
 
 /**
@@ -19,4 +20,15 @@ export function renderPosition(
   const t = (tick - e.stepTick + alpha) / e.archetype.ticksPerStep;
   const p = t <= 0 ? 0 : t >= 1 ? 1 : t;
   return { x: e.fromX + (e.x - e.fromX) * p, y: e.fromY + (e.y - e.fromY) * p };
+}
+
+/**
+ * Render facing of an entity: the direction of its current or last step
+ * (`sign(x - fromX), sign(y - fromY)`), or `s` if it has never moved. It
+ * turns as soon as a step is taken, which is the tick its interpolation
+ * starts showing (`renderPosition`). Derived for renderers only; the
+ * simulation never reads it.
+ */
+export function facingOf(e: Pick<Entity, 'x' | 'y' | 'fromX' | 'fromY'>): Facing {
+  return facingOfStep(e.x - e.fromX, e.y - e.fromY) ?? DEFAULT_FACING;
 }

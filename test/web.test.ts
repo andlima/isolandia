@@ -56,8 +56,8 @@ test('web packs: glob results → ordered PackSources with YAML text and other f
     r.definition.packs.map((p) => p.namespace),
     w.urls,
   );
-  assert.deepEqual(urls, ['data:image/svg+xml,floor', '/assets/p-3.png']);
-  assert.deepEqual(assetUrls(r.definition.assets, ['nope'], w.urls), [null, null]);
+  assert.deepEqual(urls, [['data:image/svg+xml,floor'], ['/assets/p-3.png']]);
+  assert.deepEqual(assetUrls(r.definition.assets, ['nope'], w.urls), [[null], [null]]);
 });
 
 test('web packs: unknown pack names are reported like load errors', () => {
