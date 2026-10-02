@@ -11,6 +11,7 @@ import {
   TICKS_PER_SECOND,
   type ArchetypeDef,
   type AssetDef,
+  type AssetImage,
   type ActivityKind,
   type BehaviorDef,
   type BehaviorStateDef,
@@ -40,6 +41,7 @@ import {
   type TintKeyframe,
   type TransitionDef,
 } from '../definition.ts';
+import { CARDINALS, FACINGS, MIRROR, facingTable, isDiagonal, isFacing, type Facing } from '../facing.ts';
 import { compileSource, isPointType, nearMiss, type Compiled, type CompiledExpr } from '../expr/index.ts';
 import { at, ErrorSink, PackLoadError, type LoadError, type Src } from './errors.ts';
 import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
@@ -332,29 +334,95 @@ class Loader {
   }
 
   private asset(d: Defined): AssetDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'file', 'anchor'], 'asset');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'file', 'anchor', 'directions'], 'asset');
     const pack = this.packs.find((p) => p.scope.namespace === d.scope.namespace)!.raw;
-    let file = f.string('file') ?? '';
-    if (file) {
-      file = file.replace(/^\.\//, '');
-      if (!ASSET_EXT_RE.test(file)) {
-        this.sink.add(f.at('file'), `unsupported asset file '${file}': must end in .svg or .png`);
-      } else if (!pack.otherFiles.has(file)) {
-        const base = file.slice(file.lastIndexOf('/') + 1);
-        const s = nearMiss(file, pack.otherFiles) ?? [...pack.otherFiles].find((p) => p.endsWith(`/${base}`) || p === base) ?? null;
-        this.sink.add(f.at('file'), `asset file '${file}' not found in pack '${pack.namespace}'${s ? ` (did you mean '${s}'?)` : ''}`);
+    const anchor = this.anchor(f.raw('anchor'), f.at('anchor')) ?? DEFAULT_ANCHOR;
+    const single = (file: string): AssetDef => ({
+      id: d.id,
+      index: d.index,
+      pack: pack.namespace,
+      images: [{ file, anchor }],
+      ways: 1,
+      byFacing: FACINGS.map(() => ({ image: 0, mirrored: false })),
+    });
+    if (!f.has('directions')) {
+      if (!f.has('file')) {
+        this.sink.add(f.src, `missing required field 'file' (or 'directions')`);
+        return single('');
       }
+      return single(this.assetFile(f.string('file') ?? '', f.at('file'), pack));
     }
-    let anchor = DEFAULT_ANCHOR;
-    const a = f.raw('anchor');
-    if (a !== undefined && a !== null) {
-      if (!Array.isArray(a) || a.length !== 2 || !a.every((v) => typeof v === 'number' && Number.isFinite(v))) {
-        this.sink.add(f.at('anchor'), `field 'anchor' must be a pair of numbers [ax, ay], got ${JSON.stringify(a)}`);
-      } else if (!a.every((v) => (v as number) >= 0 && (v as number) <= 1)) {
-        this.sink.add(f.at('anchor'), `anchor ${JSON.stringify(a)} is out of range: both values must be in [0, 1]`);
-      } else anchor = [a[0] as number, a[1] as number];
+    if (f.has('file')) {
+      this.sink.add(f.src, `asset has both 'file' and 'directions'; use one or the other`);
+      return single('');
     }
-    return { id: d.id, index: d.index, pack: pack.namespace, file, anchor };
+    const dirs = f.mapping('directions');
+    if (!dirs) return single('');
+    const images: AssetImage[] = [];
+    const listed = new Map<Facing, number>();
+    for (const [key, value] of Object.entries(dirs)) {
+      const src = f.at('directions', key);
+      if (!isFacing(key)) {
+        const s = nearMiss(key, FACINGS);
+        this.sink.add(src, `unknown direction '${key}'${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${FACINGS.join(', ')}`);
+        continue;
+      }
+      let file: string;
+      let own = anchor;
+      if (typeof value === 'string') file = this.assetFile(value, src, pack);
+      else if (isObject(value)) {
+        const df = new Fields(this.sink, src, value, ['file', 'anchor'], 'direction');
+        file = this.assetFile(df.string('file') ?? '', df.at('file'), pack);
+        own = this.anchor(df.raw('anchor'), df.at('anchor')) ?? anchor;
+      } else {
+        this.sink.add(src, `direction '${key}' must be a file path or a mapping like { file: a.svg, anchor: [0.5, 1] }`);
+        continue;
+      }
+      let i = images.findIndex((im) => im.file === file && im.anchor[0] === own[0] && im.anchor[1] === own[1]);
+      if (i < 0) i = images.push({ file, anchor: own }) - 1;
+      listed.set(key, i);
+    }
+    if (Object.keys(dirs).length === 0) {
+      this.sink.add(f.at('directions'), `'directions' must list at least one direction`);
+      return single('');
+    }
+    const { byFacing, missing } = facingTable(listed);
+    const ways = [...listed.keys()].some(isDiagonal) ? 8 : 4;
+    if (listed.size > 0 && missing.length) {
+      this.sink.add(
+        f.at('directions'),
+        `incomplete ${ways}-way directions: cannot produce ${missing.join(', ')} (a missing direction is drawn as its mirror partner: ${missing
+          .map((m) => `${m}↔${MIRROR[m]}`)
+          .join(', ')})`,
+      );
+    }
+    if (images.length === 0) return single('');
+    return { id: d.id, index: d.index, pack: pack.namespace, images, ways, byFacing };
+  }
+
+  /** Validates an asset file path (exists in the pack, `.svg`/`.png`); returns it normalized. */
+  private assetFile(raw: string, src: Src, pack: RawPack): string {
+    if (!raw) return raw;
+    const file = raw.replace(/^\.\//, '');
+    if (!ASSET_EXT_RE.test(file)) {
+      this.sink.add(src, `unsupported asset file '${file}': must end in .svg or .png`);
+    } else if (!pack.otherFiles.has(file)) {
+      const base = file.slice(file.lastIndexOf('/') + 1);
+      const s = nearMiss(file, pack.otherFiles) ?? [...pack.otherFiles].find((p) => p.endsWith(`/${base}`) || p === base) ?? null;
+      this.sink.add(src, `asset file '${file}' not found in pack '${pack.namespace}'${s ? ` (did you mean '${s}'?)` : ''}`);
+    }
+    return file;
+  }
+
+  /** Optional `anchor` pair; undefined when absent or invalid (reported). */
+  private anchor(a: Json | undefined, src: Src): readonly [number, number] | undefined {
+    if (a === undefined || a === null) return undefined;
+    if (!Array.isArray(a) || a.length !== 2 || !a.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      this.sink.add(src, `field 'anchor' must be a pair of numbers [ax, ay], got ${JSON.stringify(a)}`);
+    } else if (!a.every((v) => (v as number) >= 0 && (v as number) <= 1)) {
+      this.sink.add(src, `anchor ${JSON.stringify(a)} is out of range: both values must be in [0, 1]`);
+    } else return [a[0] as number, a[1] as number];
+    return undefined;
   }
 
   /** Optional `sprite` asset reference → asset index or null. */
@@ -507,6 +575,7 @@ class Loader {
       tile: number;
       spawn: number | null;
       player: boolean;
+      facing: Facing | null;
     }
     const legend = new Map<string, Legend>();
     const rawLegend = f.mapping('legend', true);
@@ -520,12 +589,21 @@ class Loader {
         this.sink.add(src, `legend entry must be a mapping like { tile: floor }`);
         continue;
       }
-      const lf = new Fields(this.sink, src, value, ['tile', 'spawn', 'player'], 'legend');
+      const lf = new Fields(this.sink, src, value, ['tile', 'spawn', 'player', 'facing'], 'legend');
       const tile = lf.has('tile') ? this.symbols.ref('tile', value['tile'], d.scope, lf.at('tile'), this.sink) : lf.string('tile');
       const spawn = lf.has('spawn') ? this.symbols.ref('archetype', value['spawn'], d.scope, lf.at('spawn'), this.sink) : null;
       const player = lf.boolean('player', false) ?? false;
-      if (tile && typeof tile === 'object') legend.set(ch, { tile: tile.index, spawn: spawn?.index ?? null, player });
-      else legend.set(ch, { tile: -1, spawn: null, player });
+      let facing: Facing | null = null;
+      const rawFacing = lf.has('facing') ? value['facing'] : undefined;
+      if (rawFacing !== undefined) {
+        if (typeof rawFacing === 'string' && CARDINALS.includes(rawFacing as Facing)) facing = rawFacing as Facing;
+        else {
+          const diag = isFacing(rawFacing) ? ` (tiles face one of the 4 diamond sides; diagonals are not allowed)` : '';
+          this.sink.add(lf.at('facing'), `legend 'facing' must be one of ${CARDINALS.join(', ')}, got ${JSON.stringify(rawFacing)}${diag}`);
+        }
+      }
+      if (tile && typeof tile === 'object') legend.set(ch, { tile: tile.index, spawn: spawn?.index ?? null, player, facing });
+      else legend.set(ch, { tile: -1, spawn: null, player, facing });
     }
 
     const rows = f.list('rows');
@@ -533,6 +611,7 @@ class Loader {
     const width = rows && typeof rows[0] === 'string' ? [...rows[0]].length : 0;
     const height = rows?.length ?? 0;
     const cells: number[] = new Array<number>(width * height).fill(0);
+    const facings: (Facing | null)[] = new Array<Facing | null>(width * height).fill(null);
     const spawns: SpawnDef[] = [];
     let playerStart: { x: number; y: number } | null = null;
     const missing = new Set<string>();
@@ -559,6 +638,7 @@ class Loader {
           return;
         }
         cells[y * width + x] = l.tile;
+        facings[y * width + x] = l.facing;
         if (l.spawn !== null) spawns.push({ x, y, archetype: l.spawn });
         if (l.player) {
           if (playerStart) this.sink.add(src, `map has more than one player start cell (another at ${playerStart.x},${playerStart.y})`);
@@ -567,7 +647,7 @@ class Loader {
       });
     });
     const rooms = this.rooms(f, width, height);
-    return { id: d.id, index: d.index, width, height, cells, spawns, playerStart, rooms };
+    return { id: d.id, index: d.index, width, height, cells, facings, spawns, playerStart, rooms };
   }
 
   /** Room tags from every raw map, so expressions and distributions can resolve them. */

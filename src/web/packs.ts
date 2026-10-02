@@ -68,17 +68,18 @@ export function buildPackSources(yaml: GlobMap, files: GlobMap, names: readonly 
 }
 
 /**
- * URL for each asset (index-aligned with `assets`). `namespaces[i]` is the
- * namespace of the pack loaded from `urls[i]` — after a successful load,
- * `definition.packs` lists them in source order.
+ * URL for each image of each asset (`result[asset][image]`, aligned with
+ * `assets` and `AssetDef.images`). `namespaces[i]` is the namespace of the
+ * pack loaded from `urls[i]` — after a successful load, `definition.packs`
+ * lists them in source order.
  */
 export function assetUrls(
   assets: readonly AssetDef[],
   namespaces: readonly string[],
   urls: readonly Readonly<Record<string, string>>[],
-): (string | null)[] {
+): (string | null)[][] {
   return assets.map((a) => {
     const i = namespaces.indexOf(a.pack);
-    return (i >= 0 ? urls[i]?.[a.file] : undefined) ?? null;
+    return a.images.map((im) => (i >= 0 ? urls[i]?.[im.file] : undefined) ?? null);
   });
 }

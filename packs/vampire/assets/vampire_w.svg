@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
+  <!-- facing w (up-left): three-quarter back, the cape covers the body -->
+  <ellipse cx="16" cy="44" rx="10" ry="4" fill="#000" opacity="0.3"/>
+  <path d="M4 42L9 15h14l6 27z" fill="#1a1024" stroke="#8b1e2d"/>
+  <path d="M8 16l15-1 1 6-15 1z" fill="#8b1e2d"/>
+  <circle cx="16" cy="11" r="7" fill="#e0e0ff" stroke="#1a1024"/>
+  <path d="M10.5 8a7 7 0 0 1 12 1l-1 7a7 7 0 0 1-8 1z" fill="#1a1024"/>
+  <path d="M9 10l-1-2 2 1" fill="#e0e0ff" stroke="#1a1024" stroke-width="0.6"/>
+</svg>

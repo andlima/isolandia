@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- facing s (down-left): head end with plaque on the left face, cross near it -->
+  <polygon points="0,36 32,52 32,64 0,48" fill="#3a281d"/>
+  <polygon points="32,52 64,36 64,48 32,64" fill="#2a1d15"/>
+  <polygon points="32,20 64,36 32,52 0,36" fill="#4a3426"/>
+  <path d="M18.8 42.6L33.2 35.4M18.9 38.6l8 4" stroke="#c9a227" stroke-width="2"/>
+  <polygon points="11,46 21,51 21,54.5 11,49.5" fill="#c9a227"/>
+  <path d="M37.8 55.1l4.4-2.2M53.8 47.1l4.4-2.2" stroke="#c9a227" stroke-width="1.5"/>
+</svg>
