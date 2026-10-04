@@ -7,7 +7,7 @@ import { GAMES, loadFixture } from './helpers.ts';
 /** A world over an ASCII map: `#` wall, `.` floor, `@` player on floor. */
 function worldOf(rows: string[], ticksPerStep = 2): World {
   const def = loadFixture({
-    'archetypes.yaml': `archetypes:\n  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_step: ${ticksPerStep} }\n`,
+    'archetypes.yaml': `archetypes:\n  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, ticks_per_step: ${ticksPerStep} }\n`,
     'map.yaml': `maps:
   - id: room
     legend: { ".": { tile: floor }, "#": { tile: wall }, "@": { tile: floor, player: true } }

@@ -70,9 +70,9 @@ behaviors:
     measurements: [hp, food, vol]
     ticks_per_step: 1
     inventory: { capacity: 10, items: { bell: 1, whistle: 1 } }
-  - { id: ear, label: Ear, glyph: e, color: gray, measurements: [vol] }
-  - { id: npc, label: Npc, glyph: n, color: red, ticks_per_step: 1, behavior: curious }
-  - { id: eager, label: Eager, glyph: m, color: red, ticks_per_step: 1, behavior: eager }
+  - { id: ear, label: Ear, glyph: e, color: gray, ticks_per_turn: 0, measurements: [vol] }
+  - { id: npc, label: Npc, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: curious }
+  - { id: eager, label: Eager, glyph: m, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: eager }
 `,
 };
 
@@ -495,6 +495,35 @@ test('vampire: creaky floorboards bring a bat over; it then returns to roost', (
   assert.ok(cheb(bat.x, bat.y, 3, 6) <= 3);
 });
 
+test('garden: hopping on the gravel path draws a napping cat over to investigate', () => {
+  const w = game('garden');
+  const cat = byHome(w, 14, 4);
+  assert.equal(cat.archetype.id, 'gdn:cat');
+  assert.equal(stateOf(cat), 'nap');
+  assert.equal(w.grid.tileAt(8, 7)!.id, 'gdn:gravel');
+  assert.ok(w.grid.tileAt(8, 7)!.tags.includes('crunchy'));
+  place(w.player, 8, 7); // within earshot (7) but too far to be seen (5)
+  const seen: string[] = [];
+  let end = -1;
+  for (let t = 0; t < 200 && end < 0; t++) {
+    w.step();
+    if (t === 2) assert.ok(w.noises.length > 0 || cat.heardTick >= 0, 'the gravel crunches');
+    const s = stateOf(cat);
+    if (seen[seen.length - 1] !== s) seen.push(s);
+    if (s === 'chase' || (seen.includes('investigate') && cheb(cat.x, cat.y, 8, 7) <= 1)) end = t;
+  }
+  assert.equal(seen[0], 'nap');
+  assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
+  assert.ok(end >= 0, `never arrived: ${seen.join(' → ')} at ${cat.x},${cat.y}`);
+  // Grass is quiet.
+  const q = game('garden');
+  place(q.player, 8, 6);
+  for (let t = 0; t < 20; t++) {
+    q.step();
+    assert.equal(q.noises.length, 0);
+  }
+});
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; noisy: number } {
@@ -503,7 +532,8 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
     const item = w.def.ids.items['zmb:alarm_clock']!;
     add(w.player.inv!, item, 1, w.def.items[item]!.weight);
     place(w.player, 8, 8);
-  } else place(w.player, 8, 5);
+  } else if (name === 'garden') place(w.player, 8, 7);
+  else place(w.player, 8, 5);
   const input = new Rng(seed ^ 0x5eed);
   let noisy = 0;
   for (let t = 0; t < ticks; t++) {
@@ -519,8 +549,8 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
   return { w, noisy };
 }
 
-test('determinism: noise and hearing on both genres ⇒ same hash and snapshot (1200 ticks)', () => {
-  for (const name of ['zombie', 'vampire'] as const) {
+test('determinism: noise and hearing on every genre ⇒ same hash and snapshot (1200 ticks)', () => {
+  for (const name of ['zombie', 'vampire', 'garden'] as const) {
     const a = run(name, 7, 1200);
     const b = run(name, 7, 1200);
     assert.ok(a.noisy > 0, `${name}: no noise`);

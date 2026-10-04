@@ -58,8 +58,8 @@ const ITEMS = `items:
 `;
 
 const ARCHETYPES = `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, tags: [living], measurements: [hp, food], inventory: { capacity: 0.6, items: { pebble: 1 } } }
-  - { id: rock, label: Rock, glyph: o, color: gray }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, tags: [living], measurements: [hp, food], inventory: { capacity: 0.6, items: { pebble: 1 } } }
+  - { id: rock, label: Rock, glyph: o, color: gray, ticks_per_turn: 0 }
 `;
 const NO_INVENTORY = ', inventory: { capacity: 0.6, items: { pebble: 1 } }';
 
@@ -201,12 +201,12 @@ test('take/put: partial moves up to capacity; moving 0 units fails with too_heav
   at(w, 4, 1);
   w.queueAction({ kind: 'take', container: 1, item: 't:pebble' }); // all 9, only 5 fit (0.1 carried, cap 0.6)
   w.step();
-  assert.deepEqual(w.lastAction, { kind: 'take', item: 't:pebble', moved: 5, ok: true, tick: 0 });
+  assert.deepEqual(w.lastAction, { kind: 'take', item: 't:pebble', moved: 5, ok: true, stage: 'complete', tick: 0 });
   assert.equal(countOf(inv(w), idx(w, 'pebble')), 6);
   assert.deepEqual(stacks(w, 1), [['t:pebble', 4]]);
   w.queueAction({ kind: 'take', container: 1, item: 't:pebble', count: 1 });
   w.step();
-  assert.deepEqual(w.lastAction, { kind: 'take', item: 't:pebble', moved: 0, ok: false, reason: 'too_heavy', tick: 1 });
+  assert.deepEqual(w.lastAction, { kind: 'take', item: 't:pebble', moved: 0, ok: false, stage: 'complete', reason: 'too_heavy', tick: 1 });
   w.queueAction({ kind: 'put', container: 1, item: 't:pebble', count: 2 });
   w.step();
   assert.equal(w.lastAction!.moved, 2);
@@ -279,7 +279,7 @@ test('actions: FIFO within a tick; queue and lastAction are in the snapshot', ()
   ]);
   w.step();
   assert.deepEqual(w.snapshot().actions, []);
-  assert.deepEqual(w.snapshot().lastAction, { kind: 'use', item: 't:apple', moved: 1, ok: true, tick: 0 });
+  assert.deepEqual(w.snapshot().lastAction, { kind: 'use', item: 't:apple', moved: 1, ok: true, stage: 'complete', tick: 0 });
   assert.equal(countOf(inv(w), idx(w, 'apple')), 0);
 });
 
@@ -314,6 +314,19 @@ test('actions: ignored after defeat, like intents', () => {
   const w = world({ 'map.yaml': MAP.replace('start: { map: room, player: hero }', 'start: { map: room, player: hero, defeat: { when: "true" } }') });
   w.step();
   assert.ok(w.defeat);
+  const before = w.hash();
+  w.queueAction({ kind: 'drop', item: 't:pebble' });
+  w.step();
+  assert.deepEqual(w.snapshot().actions, []);
+  assert.equal(w.hash(), before);
+});
+
+test('actions: ignored after victory too; the world reports it has ended (panels read-only)', () => {
+  const w = world({ 'map.yaml': MAP.replace('start: { map: room, player: hero }', 'start: { map: room, player: hero, victory: { when: "true" } }') });
+  assert.equal(w.ended, false);
+  w.step();
+  assert.deepEqual(w.victory, { tick: 0, message: 'Victory' });
+  assert.equal(w.ended, true);
   const before = w.hash();
   w.queueAction({ kind: 'drop', item: 't:pebble' });
   w.step();

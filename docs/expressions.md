@@ -2,7 +2,7 @@
 
 A small, pure expression language used in pack fields such as a
 measurement's `max` and `rate`, system and status conditions, effect
-values, status `rates` and `start.defeat.when`. Ported from rogue-engine, with three
+values, status `rates`, `start.defeat.when` and `start.victory.when`. Ported from rogue-engine, with three
 changes: expressions are **compiled at load time**, identifiers can be
 **namespaced**, and `/` is **float** division.
 
@@ -117,6 +117,8 @@ sets.
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
 | `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
 | `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
+| `busy(entity)`                           | Whether the entity has an in-progress [activity](packs.md#actions) (same as `entity.busy`) |
+| `doing(entity, "action")`                | Whether the entity's activity is that pack action |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 
@@ -180,6 +182,28 @@ on:
   - { when: 'self.has_status("alert")', to: chase }   # sight beats sound
   - { when: 'heard(self, 1)', to: investigate }
 ```
+
+`self.busy` / `player.busy` (or `busy(entity)`) is true while the entity
+has an in-progress timed action or timed item use. `doing(entity,
+"action_id")` is true while that activity is the given pack
+[action](packs.md#actions); like `has_status`, the id is a **string
+literal** resolved at load time (an unknown id is a load error with a
+*did you mean* suggestion), so the runtime check is one comparison. It has
+a method form, `self.doing("rest")`. For example, a status that applies
+while resting:
+
+```yaml
+statuses:
+  - { id: focused, label: Focused, when: 'doing(self, "rest")' }
+```
+
+**`tile` in tile-targeted actions.** In the `when`, `interrupt`,
+`duration` and `effects` of an action whose `target` is a tile filter,
+`tile` (and `tile.x`, `tile.y`, `tile.id`, `tile.has_tag(...)`,
+`tile.in_room(...)`, and `tile` as a `can_see`/distance argument) is the
+**target cell**, not the cell under the actor; `self` is still the actor.
+Everywhere else (systems, statuses, behaviors, item uses, `self` actions)
+`tile` is the cell under `self`.
 
 `random` and `roll` draw from the world RNG, so results are part of the
 deterministic simulation: same seed + same inputs ⇒ same values.

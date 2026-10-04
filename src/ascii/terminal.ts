@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, type Intent, type World } from '../core/index.ts';
+import { hudModel, reasonText, recipeHint, type Action, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -92,20 +92,116 @@ export const KEYMAP: Readonly<Record<string, Intent>> = {
   n: d(1, 1),
 };
 
-/** Pending multi-key input (the `d` drop prefix). */
+/** An entry of the `x` list. */
+export interface ActEntry {
+  readonly label: string;
+  /** Target cell (tile actions and containers). */
+  readonly x?: number;
+  readonly y?: number;
+  readonly ok: boolean;
+  /** Why it cannot be done now (`reasonText`), or `''`. */
+  readonly hint: string;
+  /** Queued in order when chosen. */
+  readonly actions: readonly Action[];
+}
+
+/** The `c` list: recipes that can be made now, or (when there are none) a few that cannot, with hints. */
+export interface CraftMenu {
+  /** `ok` recipes, in definition order (at most 9); `1`–`9` craft one. */
+  readonly entries: readonly ActEntry[];
+  /** Up to three not-`ok` recipes, only when `entries` is empty (to aid discovery). */
+  readonly blocked: readonly ActEntry[];
+}
+
+/** Pending multi-key input (the `d` drop prefix, the `x` action list and the `c` craft list). */
 export interface KeyState {
   dropPending: boolean;
+  /** The open `x` list, or null/absent when closed. */
+  actions?: ActEntry[] | null;
+  /** The open `c` list, or null/absent when closed. */
+  crafting?: CraftMenu | null;
 }
 
 /**
- * Apply one key to the world. With an inventory, `g` takes everything that
- * fits from every reachable container, `1`–`9` use inventory stack N and
- * `d` then `1`–`9` drops stack N (so digits and `d` stop moving; arrows,
- * `hjklyubn`, `wsa` and the numpad with NumLock off still do). Returns
+ * The `x` list, at most 9 entries: the self and tile actions that can be
+ * started here (`availableActions`), then `take all` for each reachable
+ * non-empty container (`interactionsAt` over the reachable cells, row-major).
+ */
+export function actionMenu(world: World): ActEntry[] {
+  const out: ActEntry[] = [];
+  for (const a of world.availableActions()) {
+    if (a.kind !== 'act') continue;
+    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! };
+    out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y! } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
+  }
+  const { x: px, y: py } = world.player;
+  for (let y = py - 1; y <= py + 1; y++) {
+    for (let x = px - 1; x <= px + 1; x++) {
+      for (const e of world.interactionsAt(x, y)) {
+        if (e.kind === 'take_all') out.push({ label: e.label, x, y, ok: e.ok, hint: reasonText(e), actions: e.actions! });
+      }
+    }
+  }
+  return out.slice(0, 9);
+}
+
+/** `act: 1) Barricade (12,3)  2) Rest [Not now]`, or a note when nothing can be done here. */
+export function actionMenuText(list: readonly ActEntry[]): string {
+  if (list.length === 0) return 'no actions here (any key)';
+  const entry = (a: ActEntry, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y})` : ''}${a.ok ? '' : ` [${a.hint}]`}`;
+  return `act: ${list.map(entry).join('  ')}`;
+}
+
+/** The `c` list from `availableRecipes` (labels `<verb>: <label>`, each crafted at its chosen station). */
+export function craftMenu(world: World): CraftMenu {
+  const all = world.availableRecipes().map(
+    (r): ActEntry => ({
+      label: `${r.verb}: ${r.label}`,
+      ...(r.station ? { x: r.station.x, y: r.station.y } : {}),
+      ok: r.ok,
+      hint: r.ok ? '' : recipeHint(world, r),
+      actions: [r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y } : { kind: 'craft', recipe: r.recipe }],
+    }),
+  );
+  const entries = all.filter((e) => e.ok).slice(0, 9);
+  return { entries, blocked: entries.length ? [] : all.filter((e) => !e.ok).slice(0, 3) };
+}
+
+/** `craft: 1) Cook: Hot beans  2) Make: Bandage`, or `Nothing to craft` and a few blocked recipes with their hints. */
+export function craftMenuText(menu: CraftMenu): string {
+  if (menu.entries.length) return `craft: ${menu.entries.map((e, i) => `${i + 1}) ${e.label}`).join('  ')}`;
+  return ['Nothing to craft', ...menu.blocked.map((e) => `${e.label} [${e.hint}]`)].join('  ');
+}
+
+/**
+ * Apply one key to the world. `x` opens the list of pack actions and
+ * `take all`s that can be done here, `c` the list of recipes that can be
+ * made now (`1`–`9` start one, any other key closes either). With an
+ * inventory, `g` takes everything that fits from every reachable container,
+ * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
+ * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
+ * NumLock off still do, and cancel what the player is doing). Returns
  * `'quit'` for `q`/Ctrl-C.
  */
 export function handleKey(world: World, key: string, state: KeyState): 'quit' | void {
   if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  const open = state.actions ?? state.crafting?.entries;
+  if (open) {
+    state.actions = null;
+    state.crafting = null;
+    const a = /^[1-9]$/.test(key) ? open[Number(key) - 1] : undefined;
+    if (a) {
+      for (const action of a.actions) world.queueAction(action);
+      return;
+    }
+    if (/^[1-9]$/.test(key)) return;
+  } else if (key === 'x' && !state.dropPending) {
+    state.actions = actionMenu(world);
+    return;
+  } else if (key === 'c' && !state.dropPending) {
+    state.crafting = craftMenu(world);
+    return;
+  }
   const inv = world.player.inv;
   if (inv) {
     const digit = /^[1-9]$/.test(key) ? Number(key) : 0;
@@ -142,17 +238,17 @@ export interface TerminalIO {
 export function runTerminal(world: World, io: TerminalIO): Promise<void> {
   const { stdin, stdout } = io;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, carrying/inventory, status, nearby, action and defeat lines, blank line, help line.
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 6 + 2;
-  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop' : 'q: quit';
-  const keys: KeyState = { dropPending: false };
+  // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 7 + 2;
+  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act';
+  const keys: KeyState = { dropPending: false, actions: null, crafting: null };
 
   return new Promise((resolve) => {
     const draw = () => {
       const width = Math.max(10, stdout.columns ?? 80);
       const height = Math.max(5, (stdout.rows ?? 24) - HUD_ROWS);
       const frame = renderAscii(world, { width, height });
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
     };
 
     const onKey = (buf: Buffer) => {

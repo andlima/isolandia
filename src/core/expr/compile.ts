@@ -21,6 +21,8 @@ export interface ExprEntity {
   readonly inv: Container | null;
   /** Tick at which the entity last heard a noise; -1 = never. */
   readonly heardTick: number;
+  /** In-progress activity (`action` = action index, -1 for an item use); null or absent when idle. */
+  readonly activity?: { readonly action: number } | null;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -39,6 +41,11 @@ export type Value = number | boolean | string | ExprEntity | TileRef;
  */
 export interface ExprContext {
   self: ExprEntity;
+  /**
+   * Cell that `tile` refers to while a tile-targeted action is evaluated;
+   * null or absent means the cell under `self`.
+   */
+  target?: { readonly x: number; readonly y: number } | null;
   player: ExprEntity;
   tick: number;
   ticksPerSecond: number;
@@ -82,6 +89,8 @@ export interface CompileSymbols {
   resolveItem?(ref: string): { index: number } | { error: string };
   /** Resolve a room tag to its index; without it, `in_room` is an error. */
   resolveRoomTag?(tag: string): { index: number } | { error: string };
+  /** Resolve an action reference to its index; without it, `doing` is an error. */
+  resolveAction?(ref: string): { index: number } | { error: string };
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -208,14 +217,18 @@ const BUILTINS: Record<string, Builtin> = {
 };
 
 /** Built-ins compiled specially (their id argument is resolved at load time). */
-const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see', 'heard'];
+const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see', 'heard', 'busy', 'doing'];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
 const TILE_FIELDS = ['x', 'y', 'id'];
+
+/** Cell `tile` refers to: the context's target override, else `self`'s cell. */
+const tileX = (c: ExprContext): number => (c.target ? c.target.x : c.self.x);
+const tileY = (c: ExprContext): number => (c.target ? c.target.y : c.self.y);
 const WORLD_FIELDS = ['tick', 'seconds', 'day', 'hour', 'minute', 'time_of_day', 'is_day'];
 
 /** Levenshtein edit distance. */
@@ -283,6 +296,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
         if (prop === 'carry_weight') return { fn: (c) => (root(c).inv?.load ?? 0) / 100, type: 'number' };
         if (prop === 'carry_capacity') return { fn: (c) => (root(c).inv?.capacity ?? 0) / 100, type: 'number' };
+        if (prop === 'busy') return { fn: (c) => (root(c).activity ?? null) !== null, type: 'boolean' };
         const r = symbols.resolveMeasurement(prop);
         if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
         const idx = r.index;
@@ -291,9 +305,9 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
           : { fn: (c) => c.player.m[idx]!, type: 'number' };
       }
       case 'tile':
-        if (prop === 'x') return { fn: (c) => c.self.x, type: 'number' };
-        if (prop === 'y') return { fn: (c) => c.self.y, type: 'number' };
-        if (prop === 'id') return { fn: (c) => c.tileIdAt(c.self.x, c.self.y), type: 'string' };
+        if (prop === 'x') return { fn: tileX, type: 'number' };
+        if (prop === 'y') return { fn: tileY, type: 'number' };
+        if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c)), type: 'string' };
         return err(`unknown property 'tile.${prop}'${hint(`tile.${prop}`, TILE_FIELDS.map((f) => `tile.${f}`))}`, node.pos);
       case 'world':
         if (prop === 'tick') return { fn: (c) => c.tick, type: 'number' };
@@ -317,7 +331,11 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         return { fn: (c) => c.player, type: 'entity' };
       case 'tile':
         return {
-          fn: (c) => ({ x: c.self.x, y: c.self.y, id: c.tileIdAt(c.self.x, c.self.y), tags: c.tileTagsAt(c.self.x, c.self.y) }),
+          fn: (c) => {
+            const x = tileX(c);
+            const y = tileY(c);
+            return { x, y, id: c.tileIdAt(x, y), tags: c.tileTagsAt(x, y) };
+          },
           type: 'tile',
         };
       case 'world':
@@ -344,6 +362,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'in_room') return inRoom(argNodes, node.pos);
     if (name === 'can_see') return canSee(argNodes, node.pos);
     if (name === 'heard') return heard(argNodes, node.pos);
+    if (name === 'busy') return busy(argNodes, node.pos);
+    if (name === 'doing') return doing(argNodes, node.pos);
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
       if (fast) return fast;
@@ -382,7 +402,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'player':
         return { type: 'boolean', fn: (c) => c.player.tags.has(tag) };
       case 'tile':
-        return { type: 'boolean', fn: (c) => c.tileTagsAt(c.self.x, c.self.y).has(tag) };
+        return { type: 'boolean', fn: (c) => c.tileTagsAt(tileX(c), tileY(c)).has(tag) };
       default:
         return null;
     }
@@ -449,7 +469,35 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     };
   }
 
-  /** `in_room(tile, "tag")` / `tile.in_room("tag")`: room tags of the cell under `self`. */
+  /** `busy(entity)`: the entity has an in-progress activity. */
+  function busy(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`busy() takes 1 argument, got ${argNodes.length}`, pos);
+    const target = entityArg('busy', argNodes[0]!, pos, 'entity');
+    if (!target) return fail;
+    return { type: 'boolean', fn: (c) => (target(c).activity ?? null) !== null };
+  }
+
+  /** `doing(entity, "action")`: the action id is resolved now, so runtime is one comparison. */
+  function doing(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`doing() takes 2 arguments, got ${argNodes.length}`, pos);
+    const idNode = argNodes[1]!;
+    if (idNode.kind !== 'string') return err('doing() expects a string literal action id, e.g. doing(self, "rest")', idNode.pos);
+    if (!symbols.resolveAction) return err('doing() is not available here', pos);
+    const r = symbols.resolveAction(idNode.value);
+    if ('error' in r) return err(`doing: ${r.error}`, idNode.pos);
+    const k = r.index;
+    const target = entityArg('doing', argNodes[0]!, pos);
+    if (!target) return fail;
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const a = target(c).activity;
+        return a !== undefined && a !== null && a.action === k;
+      },
+    };
+  }
+
+  /** `in_room(tile, "tag")` / `tile.in_room("tag")`: room tags of the cell `tile` refers to. */
   function inRoom(argNodes: Ast[], pos: number): CompiledExpr {
     if (argNodes.length !== 2) return err(`in_room() takes 2 arguments, got ${argNodes.length}`, pos);
     const target = argNodes[0]!;
@@ -460,12 +508,13 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const r = symbols.resolveRoomTag(tagNode.value);
     if ('error' in r) return err(`in_room: ${r.error}`, tagNode.pos);
     const k = r.index;
-    return { type: 'boolean', fn: (c) => c.inRoom(c.self.x, c.self.y, k) };
+    return { type: 'boolean', fn: (c) => c.inRoom(tileX(c), tileY(c), k) };
   }
 
-  /** Point argument without allocating: `tile` reads as `self`'s cell, since both share a position. */
+  /** Point argument without allocating: `tile` reads as the target cell, or `self` (same position) without one. */
   function pointArg(node: Ast): CompiledExpr {
-    if (node.kind === 'ident' && (node.name === 'self' || node.name === 'tile')) return { type: 'entity', fn: (c) => c.self };
+    if (node.kind === 'ident' && node.name === 'self') return { type: 'entity', fn: (c) => c.self };
+    if (node.kind === 'ident' && node.name === 'tile') return { type: 'tile', fn: (c) => (c.target ?? c.self) as ExprEntity };
     if (node.kind === 'ident' && node.name === 'player') return { type: 'entity', fn: (c) => c.player };
     return walk(node);
   }

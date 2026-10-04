@@ -10,5 +10,6 @@ archetypes:
     label: Person
     glyph: "@"
     color: white
+    sprite: humanoid_img
     tags: [humanoid]
     measurements: [hp]

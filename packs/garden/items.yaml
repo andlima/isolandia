@@ -1,0 +1,63 @@
+items:
+  # The goal: no `use`, so a carrot can never be eaten away from the win.
+  - { id: carrot, label: Carrot, glyph: "v", color: "#ff8c2a", weight: 0.2, tags: [veggie], sprite: carrot_img }
+  - id: clover
+    label: Clover
+    glyph: "%"
+    color: "#5cc45a"
+    sprite: clover_img
+    weight: 0.1
+    tags: [snack]
+    use:
+      label: Nibble
+      effects:
+        - { type: apply, measurement: energy, delta: 15 }
+  - id: strawberry
+    label: Strawberry
+    glyph: "%"
+    color: "#ff4a6a"
+    sprite: strawberry_img
+    weight: 0.2
+    tags: [snack]
+    use:
+      label: Munch
+      effects:
+        - { type: apply, measurement: energy, delta: 25 }
+  - { id: acorn, label: Acorn, glyph: ",", color: "#a8743a", weight: 0.1, tags: [junk], sprite: acorn_img }
+  - { id: feather, label: Feather, glyph: "'", color: "#f0f0ff", weight: 0.05, tags: [junk], sprite: feather_img }
+
+loot:
+  # Carrot patches in the vegetable garden always hold 2–3 carrots, the wild
+  # ones 1–2, so every seed has enough for the win (see the map).
+  - id: veggie_patch
+    rolls: 1
+    entries:
+      - { item: carrot, count: [2, 3] }
+  - id: wild_patch
+    rolls: 1
+    entries:
+      - { item: carrot, count: [1, 2] }
+  - id: berries
+    rolls: [1, 3]
+    entries:
+      - { item: strawberry, weight: 3 }
+      - { item: clover, weight: 2, count: [1, 2] }
+  - id: odds_and_ends
+    rolls: [1, 3]
+    entries:
+      - { item: acorn, weight: 3, count: [1, 3] }
+      - { item: feather, weight: 2 }
+      - { table: berries, weight: 1 }
+      - { nothing: true, weight: 1 }
+  - id: shed_barrow
+    rolls: 2
+    entries:
+      - { item: clover, weight: 2, count: [1, 2] }
+      - { table: odds_and_ends, weight: 1 }
+
+distributions:
+  - { container: carrot_patch, room: veggies, table: veggie_patch }
+  - { container: carrot_patch, table: wild_patch }
+  - { container: berry_bush, table: berries }
+  - { container: wheelbarrow, room: shed, table: shed_barrow }
+  - { container: wheelbarrow, table: odds_and_ends }

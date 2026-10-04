@@ -6,9 +6,11 @@
 import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
+import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
+import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
-import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
+import { add, countOf, createContainer, fits, GROUND_LABEL, remove, type Container, type ContainerKind } from './containers.ts';
 import { Grid } from './grid.ts';
 import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
@@ -24,6 +26,8 @@ export interface Entity extends ExprEntity {
   readonly max: Float64Array;
   /** Ticks until the entity may step again. */
   moveCooldown: number;
+  /** Direction the entity faces; it turns toward a new direction before stepping. */
+  facing: Facing;
   /** Tile the current (or last) step started from; equals (x, y) before any step. */
   fromX: number;
   fromY: number;
@@ -36,6 +40,8 @@ export interface Entity extends ExprEntity {
   path: Int32Array | null;
   /** Index of the next cell of `path` to step onto. */
   pathPos: number;
+  /** Action queued when the current path arrives (player only, from `GotoIntent.then`), or null. */
+  then: Action | null;
   /** Active statuses, indexed by status index (1 = active). */
   readonly st: Uint8Array;
   /** The entity's inventory (from its archetype's `inventory`), or null. */
@@ -61,6 +67,8 @@ export interface Entity extends ExprEntity {
   heardX: number;
   heardY: number;
   heardTick: number;
+  /** In-progress timed action, item use or recipe, or null. */
+  activity: Activity | null;
 }
 
 /** A noise emitted this tick by a `noise` effect. */
@@ -72,11 +80,16 @@ export interface Noise {
   source: number;
 }
 
-/** Recorded when the pack's `start.defeat` condition becomes true. */
-export interface DefeatRecord {
+/** Recorded when the pack's `start.defeat` or `start.victory` condition becomes true. */
+export interface OutcomeRecord {
   readonly tick: number;
   readonly message: string;
 }
+
+/** Recorded when the pack's `start.defeat` condition becomes true. */
+export type DefeatRecord = OutcomeRecord;
+/** Recorded when the pack's `start.victory` condition becomes true. */
+export type VictoryRecord = OutcomeRecord;
 
 /** One-tile move in a direction (keyboard); cancels any active path. */
 export interface StepIntent {
@@ -95,6 +108,12 @@ export interface GotoIntent {
    * walkable) with the shortest path, e.g. to walk up to a fridge.
    */
   readonly adjacent?: boolean;
+  /**
+   * Player only: queued as an action when the path ends on its last cell
+   * (at once when the path is empty); dropped when no path is found or the
+   * path is cleared first.
+   */
+  readonly then?: Action;
 }
 
 export type Intent = StepIntent | GotoIntent;
@@ -134,27 +153,163 @@ export interface DropAction {
   readonly count?: number;
 }
 
-/** Run the item's `use` on the player, then remove `consume` units. */
+/** Run the item's `use` on the player, then remove `consume` units (at completion when timed). */
 export interface UseAction {
   readonly kind: 'use';
   readonly item: string;
 }
 
-/** An instant player action, queued with `queueAction` and applied after the movement intent. */
-export type Action = TakeAction | PutAction | DropAction | UseAction;
+/** Start a pack action (`actions` domain); `x`/`y` are required for tile targets and forbidden for `self`. */
+export interface ActAction {
+  readonly kind: 'act';
+  /** Qualified action id. */
+  readonly action: string;
+  readonly x?: number;
+  readonly y?: number;
+}
 
-export type ActionFailure = 'out_of_reach' | 'too_heavy' | 'missing' | 'cannot_use' | 'no_inventory' | 'unknown_container';
+/**
+ * Start a recipe (`recipes` domain). For a station recipe, `x`/`y` name the
+ * station cell (omitted: the first matching cell in reach, row-major); they
+ * are forbidden for recipes without a station.
+ */
+export interface CraftAction {
+  readonly kind: 'craft';
+  /** Qualified recipe id. */
+  readonly recipe: string;
+  readonly x?: number;
+  readonly y?: number;
+}
+
+/** A player action, queued with `queueAction` and applied after the movement intents. */
+export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction | CraftAction;
+
+export type ActionFailure =
+  | 'out_of_reach'
+  | 'too_heavy'
+  | 'missing'
+  | 'cannot_use'
+  | 'no_inventory'
+  | 'unknown_container'
+  | 'unknown_action'
+  | 'unknown_recipe'
+  | 'invalid_target'
+  | 'cannot_act'
+  | 'occupied'
+  | 'cancelled'
+  | 'interrupted'
+  | 'unreachable';
+
+/** An item the player lacks for an action: its id and label, and how many more units are needed. */
+export interface MissingItem {
+  /** Qualified item id. */
+  readonly item: string;
+  readonly label: string;
+  readonly count: number;
+}
 
 /** Outcome of the latest action, for shell feedback. */
 export interface ActionRecord {
   readonly kind: Action['kind'];
+  /** Qualified item id (take/put/drop/use); empty for `act` and `craft`. */
   readonly item: string;
-  /** Units moved (take/put/drop) or consumed (use). */
+  /** Qualified action id (`act` only). */
+  readonly action?: string;
+  /** Qualified recipe id (`craft` only). */
+  readonly recipe?: string;
+  /** Units moved (take/put/drop), consumed (use/act) or produced (craft). */
   readonly moved: number;
+  /** Produced units that did not fit and went to the ground pile (`craft`, only when > 0). */
+  readonly dropped?: number;
   readonly ok: boolean;
+  /**
+   * `start` when a timed activity starts (or fails to); `complete` when an
+   * action is applied instantly or an activity ends (completed, cancelled,
+   * interrupted, or failed its re-check).
+   */
+  readonly stage: ActivityStage;
   readonly reason?: ActionFailure;
   /** Tick at which the action was applied. */
   readonly tick: number;
+}
+
+/** An entry of `world.availableActions()`. */
+export interface AvailableAction {
+  readonly kind: 'act' | 'use';
+  /** Qualified action id (`act`). */
+  readonly action?: string;
+  /** Qualified item id (`use`). */
+  readonly item?: string;
+  /** Target cell of a tile-targeted action. */
+  readonly x?: number;
+  readonly y?: number;
+  readonly label: string;
+  /** False when tools, consumed items, the inventory or `when` fail now. */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  /** Absent tools and consumed items (reason `missing`). */
+  readonly missing?: readonly MissingItem[];
+  /** The action's `unavailable` text (reason `cannot_act`, when the pack sets one). */
+  readonly unavailable?: string;
+}
+
+/** An entry of `world.availableRecipes()`. */
+export interface AvailableRecipe {
+  /** Qualified recipe id. */
+  readonly recipe: string;
+  readonly label: string;
+  readonly verb: string;
+  readonly category: string;
+  /** False when the station is out of reach, or items, the inventory or `when` fail now. */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  readonly missing?: readonly MissingItem[];
+  /** The recipe's `unavailable` text (reason `cannot_act`, when the pack sets one). */
+  readonly unavailable?: string;
+  /** The chosen station cell in reach (station recipes). */
+  readonly station?: { readonly x: number; readonly y: number };
+}
+
+export type InteractionKind = 'act' | 'craft' | 'open' | 'take_all' | 'walk';
+
+/** An entry of `world.interactionsAt(x, y)`. */
+export interface Interaction {
+  /** Stable within a query, e.g. `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `walk`. */
+  readonly id: string;
+  readonly label: string;
+  readonly kind: InteractionKind;
+  /** Whether it can be done (ignoring reach). */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  readonly missing?: readonly MissingItem[];
+  readonly unavailable?: string;
+  /** The action to queue: the `act` or `craft`, or the first `take` of a `take_all`. */
+  readonly action?: Action;
+  /** Every `take` of a `take_all`, in stack order. */
+  readonly actions?: readonly Action[];
+  /** Container id (`open`, `take_all`). */
+  readonly container?: number;
+  /** Whether the player can do it without walking. */
+  readonly inReach: boolean;
+}
+
+/** `world.activityProgress()`: what is being done and how far along it is. */
+export interface ActivityProgress {
+  readonly label: string;
+  /** In [0, 1]. */
+  readonly fraction: number;
+}
+
+/** An activity in a snapshot (ids qualified). */
+export interface ActivitySnapshot {
+  kind: 'act' | 'use' | 'craft';
+  action?: string;
+  item?: string;
+  recipe?: string;
+  x: number;
+  y: number;
+  startTick: number;
+  endTick: number;
 }
 
 export interface ContainerSnapshot {
@@ -173,6 +328,7 @@ export interface EntitySnapshot {
   archetype: string;
   x: number;
   y: number;
+  facing: Facing;
   fromX: number;
   fromY: number;
   stepTick: number;
@@ -189,6 +345,9 @@ export interface EntitySnapshot {
   behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
   /** Last heard noise, or null if never. */
   heard: { x: number; y: number; tick: number } | null;
+  activity: ActivitySnapshot | null;
+  /** Action queued when the current path arrives. */
+  then: Action | null;
 }
 
 export interface WorldSnapshot {
@@ -199,9 +358,12 @@ export interface WorldSnapshot {
   actions: Action[];
   lastAction: ActionRecord | null;
   defeat: DefeatRecord | null;
+  victory: VictoryRecord | null;
   entities: EntitySnapshot[];
   /** Every container, in id order. */
   containers: ContainerSnapshot[];
+  /** Cells whose tile differs from the map, as [cell index, qualified tile id], by cell index. */
+  tiles: [number, string][];
 }
 
 /** FNV-1a 32-bit over a string, as 8 hex chars. */
@@ -239,6 +401,8 @@ export class World {
 
   /** Set once the defeat condition holds; the world is frozen from then on. */
   defeat: DefeatRecord | null = null;
+  /** Set once the victory condition holds (and defeat did not); the world is frozen from then on. */
+  victory: VictoryRecord | null = null;
   /** Result of the most recent action (a new object each time). */
   lastAction: ActionRecord | null = null;
   /** Every container by id (tile containers, inventories, ground piles), in id order. */
@@ -270,6 +434,13 @@ export class World {
   private readonly statusRates: (NumberTerm | undefined)[][];
   /** Scratch for the status update: next flags of every entity, row-major. */
   private statusNext = new Uint8Array(0);
+  /** Activity source per action index. */
+  private readonly actionSources: readonly ActivitySource[];
+  /** Activity source per item index (null without a `use`). */
+  private readonly useSources: readonly (ActivitySource | null)[];
+  /** Activity source per recipe index. */
+  private readonly recipeSources: readonly ActivitySource[];
+  private readonly runner: ActivityRunner;
 
   constructor(
     readonly def: Definition,
@@ -328,6 +499,20 @@ export class World {
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
+    this.actionSources = def.actions.map(actionSource);
+    this.useSources = def.items.map(useSource);
+    this.recipeSources = def.recipes.map(recipeSource);
+    this.runner = new ActivityRunner({
+      grid: this.grid,
+      tiles: def.tiles,
+      ctx: this.ctx,
+      entities: this.entities,
+      ticksPerSecond: def.ticksPerSecond,
+      runEffects: (e, effects, target) => this.runEffects(e, effects, target),
+      removeItem: (inv, item, count) => remove(inv, item, count, this.itemWeights[item]!),
+      giveItem: (e, item, count) => this.giveItem(e, item, count),
+      record: (e, source, stage, ok, reason, moved, dropped) => this.recordActivity(e, source, stage, ok, reason, moved, dropped),
+    });
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
   }
@@ -372,11 +557,13 @@ export class World {
       max,
       tags: this.tagSets[archetype.index]!,
       moveCooldown: 0,
+      facing: DEFAULT_FACING,
       fromX: x,
       fromY: y,
       stepTick: 0,
       path: null,
       pathPos: 0,
+      then: null,
       st: new Uint8Array(this.def.statuses.length),
       inv,
       intent: null,
@@ -392,6 +579,7 @@ export class World {
       heardX: 0,
       heardY: 0,
       heardTick: -1,
+      activity: null,
     };
     this.entities.push(e);
     return e;
@@ -405,6 +593,26 @@ export class World {
     const ids = this.cellContainers.get(cell);
     if (ids) ids.push(c.id);
     else this.cellContainers.set(cell, [c.id]);
+  }
+
+  /** The ground pile on a cell, created if missing. */
+  private groundPile(x: number, y: number): Container {
+    let pile = this.containersAt(x, y).find((c) => c.kind === 'ground');
+    if (!pile) {
+      pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x, y });
+      this.addContainer(pile);
+    }
+    return pile;
+  }
+
+  /** Add `count` units to `e`'s inventory, as many as fit, and the rest to the ground pile on its cell; returns units dropped. */
+  private giveItem(e: Entity, item: number, count: number): number {
+    const weight = this.itemWeights[item]!;
+    const fit = e.inv ? fits(e.inv, weight, count) : 0;
+    if (fit > 0) add(e.inv!, item, fit, weight);
+    const rest = count - fit;
+    if (rest > 0) add(this.groundPile(e.x, e.y), item, rest, weight);
+    return rest;
   }
 
   /** Remove a ground pile once it is empty. */
@@ -488,9 +696,9 @@ export class World {
     }
   }
 
-  /** Queue an instant player action (FIFO; applied after the movement intent). Ignored after defeat. */
+  /** Queue a player action (FIFO; applied after the movement intents). Ignored once the game has ended. */
   queueAction(action: Action): void {
-    if (this.defeat) return;
+    if (this.ended) return;
     this.actions.push(action);
   }
 
@@ -500,9 +708,15 @@ export class World {
    */
   queueIntent(intent: Intent, entity: Entity = this.player): void {
     if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
-    if (this.defeat) return;
+    if (intent.kind === 'goto' && intent.then && entity !== this.player) throw new Error(`only the player's goto may carry 'then' (entity ${entity.id})`);
+    if (this.ended) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     entity.intent = intent;
+  }
+
+  /** True once the game has ended (defeat or victory): the world is frozen. */
+  get ended(): boolean {
+    return this.defeat !== null || this.victory !== null;
   }
 
   /** Goal tile of an entity's active path, or null. */
@@ -512,6 +726,11 @@ export class World {
     return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
+  /** Bumped on every map edit (`set_tile`), so renderers can redraw changed cells. */
+  get tileVersion(): number {
+    return this.grid.version;
+  }
+
   /** This tick's noises (after `step`, the last stepped tick's), in emission order. */
   get noises(): readonly Readonly<Noise>[] {
     return this.pending.slice(0, this.pendingCount);
@@ -519,12 +738,13 @@ export class World {
 
   /**
    * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
-   * (id order), every entity's movement intent (id order), player actions, drift,
-   * due systems, hearing, clamp, status update, defeat check, `tick++`. A no-op
-   * once defeated.
+   * (id order), every entity's movement intent (id order), player actions,
+   * activity work (id order), drift, due systems, hearing, clamp, status
+   * update, defeat then victory check, `tick++`.
+   * A no-op once the game has ended.
    */
   step(): void {
-    if (this.defeat) return;
+    if (this.ended) return;
     this.ctx.tick = this.tick;
     this.pendingCount = 0;
     this.think();
@@ -533,12 +753,13 @@ export class World {
       else if (e.moveCooldown > 0) e.moveCooldown--;
     }
     if (this.actions.length > 0) this.applyActions();
+    for (const e of this.entities) if (e.activity) this.runner.advance(e, this.tick);
     this.drift();
     this.runSystems();
     if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
-    this.checkDefeat();
+    this.checkOutcome();
     this.tick++;
   }
 
@@ -589,13 +810,20 @@ export class World {
     }
   }
 
-  /** Run effects on `e` (= `ctx.self`), in order; measurement effects skip measurements it lacks. */
-  private runEffects(e: Entity, effects: readonly EffectDef[]): void {
+  /**
+   * Run effects on `e` (= `ctx.self`), in order; measurement effects skip
+   * measurements it lacks. `set_tile` replaces the tile at `target`.
+   */
+  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number } | null = null): void {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
       if (eff.type === 'noise') {
         this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+        continue;
+      }
+      if (eff.type === 'set_tile') {
+        if (target) this.grid.setTile(target.y * this.grid.width + target.x, eff.tile);
         continue;
       }
       const idx = eff.measurement;
@@ -678,11 +906,13 @@ export class World {
     }
   }
 
-  private checkDefeat(): void {
-    const d = this.def.start.defeat;
-    if (!d) return;
+  /** Phase 7: defeat first; victory only when defeat did not trigger. */
+  private checkOutcome(): void {
+    const { defeat, victory } = this.def.start;
+    if (!defeat && !victory) return;
     this.ctx.self = this.player;
-    if (d.when(this.ctx)) this.defeat = { tick: this.tick, message: d.message };
+    if (defeat && defeat.when(this.ctx)) this.defeat = { tick: this.tick, message: defeat.message };
+    else if (victory && victory.when(this.ctx)) this.victory = { tick: this.tick, message: victory.message };
   }
 
   /** Whether an entity has a status (by qualified id). */
@@ -691,9 +921,13 @@ export class World {
     return k !== undefined && e.st[k] === 1;
   }
 
-  /** Resolve an entity's pending intent, count its cooldown down, then step or advance its path. */
+  /**
+   * Resolve an entity's pending intent (which cancels its activity), count
+   * its cooldown down, then step or advance its path.
+   */
   private applyIntent(p: Entity): void {
     const intent = p.intent;
+    if (intent && p.activity) this.runner.end(p, 'cancelled');
     if (intent?.kind === 'goto') {
       p.intent = null;
       this.pathfinder ??= new Pathfinder(this.grid);
@@ -703,39 +937,149 @@ export class World {
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
       p.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+      p.then = path ? (intent.then ?? null) : null;
+      if (!path && intent.then) this.lastAction = this.unreachable(intent.then);
+      if (p.then && !p.path) this.arrive(p);
     } else if (intent?.kind === 'step') {
       p.path = null;
+      p.then = null;
     }
 
     if (p.moveCooldown > 0) p.moveCooldown--;
     if (p.moveCooldown > 0) return;
+    const w = this.grid.width;
+    let dx: number;
+    let dy: number;
+    if (p.intent?.kind === 'step') ({ dx, dy } = p.intent);
+    else if (p.path) {
+      const next = p.path[p.pathPos]!;
+      dx = (next % w) - p.x;
+      dy = Math.floor(next / w) - p.y;
+    } else return;
+
+    // Turn toward the step first; the intent and path stay pending meanwhile.
+    const want = facingOfStep(dx, dy);
+    if (want && p.facing !== want) {
+      if (p.archetype.ticksPerTurn > 0) {
+        p.facing = turnToward(p.facing, want);
+        p.moveCooldown = p.archetype.ticksPerTurn;
+        return;
+      }
+      p.facing = want;
+    }
+
     if (p.intent?.kind === 'step') {
-      const { dx, dy } = p.intent;
       p.intent = null;
       this.move(p, dx, dy);
     } else if (p.path) {
-      const next = p.path[p.pathPos++]!;
-      const w = this.grid.width;
+      p.pathPos++;
       if (p.pathPos >= p.path.length) p.path = null;
-      if (!this.move(p, (next % w) - p.x, Math.floor(next / w) - p.y)) p.path = null;
+      if (!this.move(p, dx, dy)) {
+        p.path = null;
+        p.then = null;
+      } else if (!p.path && p.then) this.arrive(p);
     }
   }
 
+  /** The path is done: queue its `then` (applied in this tick's action step). */
+  private arrive(p: Entity): void {
+    this.actions.push(p.then!);
+    p.then = null;
+  }
+
+  /** Record of a `then` dropped because its goto found no path. */
+  private unreachable(a: Action): ActionRecord {
+    return {
+      kind: a.kind,
+      item: a.kind === 'act' || a.kind === 'craft' ? '' : a.item,
+      ...(a.kind === 'act' ? { action: a.action } : {}),
+      ...(a.kind === 'craft' ? { recipe: a.recipe } : {}),
+      moved: 0,
+      ok: false,
+      stage: 'complete',
+      reason: 'unreachable',
+      tick: this.tick,
+    };
+  }
+
+  /** Each queued action first cancels the player's activity, then is applied (FIFO). */
   private applyActions(): void {
     const queue = this.actions;
     this.actions = [];
-    for (const a of queue) this.lastAction = this.applyAction(a);
+    this.ctx.tick = this.tick;
+    for (const a of queue) {
+      this.runner.end(this.player, 'cancelled');
+      const r = this.applyAction(a);
+      if (r) this.lastAction = r;
+    }
   }
 
-  private applyAction(a: Action): ActionRecord {
-    const tick = this.tick;
-    const fail = (reason: ActionFailure): ActionRecord => ({ kind: a.kind, item: a.item, moved: 0, ok: false, reason, tick });
-    const done = (moved: number): ActionRecord => {
-      this.containerVersion++;
-      return { kind: a.kind, item: a.item, moved, ok: true, tick };
+  /** Record of an activity source's start or end (the player's becomes `lastAction`). */
+  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number): void {
+    if (ok && stage === 'complete') this.containerVersion++;
+    if (e !== this.player) return;
+    this.lastAction = {
+      kind: s.kind,
+      item: s.item >= 0 ? this.def.items[s.item]!.id : '',
+      ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
+      ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
+      moved,
+      ...(dropped > 0 ? { dropped } : {}),
+      ok,
+      stage,
+      ...(reason ? { reason } : {}),
+      tick: this.tick,
     };
+  }
+
+  /** Apply one action; `act`/`use`/`craft` that reach the activity runner record themselves (null). */
+  private applyAction(a: Action): ActionRecord | null {
+    const tick = this.tick;
     const p = this.player;
     const inv = p.inv;
+
+    if (a.kind === 'act') {
+      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'act', item: '', action: a.action, moved: 0, ok: false, stage, reason, tick });
+      const k = this.def.ids.actions[a.action];
+      if (k === undefined) return fail('unknown_action', 'complete');
+      const s = this.actionSources[k]!;
+      const stage = isTimed(s) ? 'start' : 'complete';
+      if (s.requires.length > 0 && !inv) return fail('no_inventory', stage);
+      const hasXY = a.x !== undefined || a.y !== undefined;
+      if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y)) : hasXY) return fail('invalid_target', stage);
+      this.runner.start(s, p, s.filter ? a.x! : p.x, s.filter ? a.y! : p.y, tick);
+      return null;
+    }
+
+    if (a.kind === 'craft') {
+      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'craft', item: '', recipe: a.recipe, moved: 0, ok: false, stage, reason, tick });
+      const k = this.def.ids.recipes[a.recipe];
+      if (k === undefined) return fail('unknown_recipe', 'complete');
+      const s = this.recipeSources[k]!;
+      const stage = isTimed(s) ? 'start' : 'complete';
+      if (!inv) return fail('no_inventory', stage);
+      const hasXY = a.x !== undefined || a.y !== undefined;
+      if (!s.filter) {
+        if (hasXY) return fail('invalid_target', stage);
+        this.runner.start(s, p, p.x, p.y, tick);
+        return null;
+      }
+      if (!hasXY) {
+        const at = this.stationCell(s);
+        if (!at) return fail('out_of_reach', stage);
+        this.runner.start(s, p, at.x, at.y, tick);
+        return null;
+      }
+      if (!(Number.isInteger(a.x) && Number.isInteger(a.y))) return fail('invalid_target', stage);
+      this.runner.start(s, p, a.x!, a.y!, tick);
+      return null;
+    }
+
+    const fail = (reason: ActionFailure): ActionRecord => ({ kind: a.kind, item: a.item, moved: 0, ok: false, stage: 'complete', reason, tick });
+    const done = (moved: number): ActionRecord => {
+      this.containerVersion++;
+      return { kind: a.kind, item: a.item, moved, ok: true, stage: 'complete', tick };
+    };
     if (!inv) return fail('no_inventory');
     const item = this.def.ids.items[a.item];
     if (item === undefined) return fail('missing');
@@ -744,26 +1088,18 @@ export class World {
     if (!(want >= 1)) return fail('missing');
 
     if (a.kind === 'use') {
+      const s = this.useSources[item];
       if (countOf(inv, item) === 0) return fail('missing');
-      const use = this.def.items[item]!.use;
-      const ctx = this.ctx;
-      ctx.self = p;
-      ctx.tick = tick;
-      if (!use || (use.whenFn && !use.whenFn(ctx))) return fail('cannot_use');
-      this.runEffects(p, use.effects);
-      return done(remove(inv, item, use.consume, weight));
+      if (!s) return fail('cannot_use');
+      this.runner.start(s, p, p.x, p.y, tick);
+      return null;
     }
 
     if (a.kind === 'drop') {
       const n = Math.min(want, countOf(inv, item));
       if (n === 0) return fail('missing');
-      let pile = this.containersAt(p.x, p.y).find((c) => c.kind === 'ground');
-      if (!pile) {
-        pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x: p.x, y: p.y });
-        this.addContainer(pile);
-      }
       remove(inv, item, n, weight);
-      add(pile, item, n, weight);
+      add(this.groundPile(p.x, p.y), item, n, weight);
       return done(n);
     }
 
@@ -781,7 +1117,7 @@ export class World {
     return done(n);
   }
 
-  /** Take one step if allowed; records the render-facing step state. */
+  /** Take one step if allowed (the caller has already turned to face it); records the step for rendering. */
   private move(e: Entity, dx: number, dy: number): boolean {
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy)) return false;
     e.fromX = e.x;
@@ -830,11 +1166,13 @@ export class World {
       actions: [...this.actions],
       lastAction: this.lastAction,
       defeat: this.defeat,
+      victory: this.victory,
       entities: this.entities.map((e) => ({
         id: e.id,
         archetype: e.archetype.id,
         x: e.x,
         y: e.y,
+        facing: e.facing,
         fromX: e.fromX,
         fromY: e.fromY,
         stepTick: e.stepTick,
@@ -851,6 +1189,8 @@ export class World {
           ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
           : null,
         heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
+        activity: e.activity ? this.activitySnapshot(e.activity) : null,
+        then: e.then,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
@@ -858,7 +1198,208 @@ export class World {
         else out.cell = [c.x, c.y];
         return out;
       }),
+      tiles: [...this.grid.changed].sort((a, b) => a[0] - b[0]).map(([i, t]): [number, string] => [i, this.def.tiles[t]!.id]),
     };
+  }
+
+  private activitySnapshot(a: Activity): ActivitySnapshot {
+    const s = a.source;
+    return {
+      kind: s.kind,
+      ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
+      ...(s.item >= 0 ? { item: this.def.items[s.item]!.id } : {}),
+      ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
+      x: a.x,
+      y: a.y,
+      startTick: a.startTick,
+      endTick: a.endTick,
+    };
+  }
+
+  /**
+   * Run a query without side effects: `random` draws from a throwaway copy
+   * of the RNG and warnings are dropped, so `hash()` never changes.
+   */
+  private pure<T>(fn: () => T): T {
+    const ctx = this.ctx;
+    const { random, warn } = ctx;
+    const rng = new Rng(this.rng.state);
+    ctx.random = () => rng.next();
+    ctx.warn = () => {};
+    ctx.tick = this.tick;
+    try {
+      return fn();
+    } finally {
+      ctx.random = random;
+      ctx.warn = warn;
+    }
+  }
+
+  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y). */
+  private verdict(s: ActivitySource, x: number, y: number, skipReach: boolean): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
+    const p = this.player;
+    const reason = this.runner.check(s, p, x, y, skipReach);
+    if (!reason) return { ok: true };
+    if (reason === 'missing') {
+      const items = this.def.items;
+      const missing: MissingItem[] = [];
+      for (const r of s.requires) {
+        const lack = r.count - countOf(p.inv!, r.item);
+        if (lack > 0) missing.push({ item: items[r.item]!.id, label: items[r.item]!.label, count: lack });
+      }
+      return { ok: false, reason, missing };
+    }
+    const unavailable =
+      reason !== 'cannot_act' ? null : s.action >= 0 ? this.def.actions[s.action]!.unavailable : s.recipe >= 0 ? this.def.recipes[s.recipe]!.unavailable : null;
+    return unavailable ? { ok: false, reason, unavailable } : { ok: false, reason };
+  }
+
+  /**
+   * Everything the player could start now: every `self` action, every tile
+   * action on each matching cell in reach (row-major), then each inventory
+   * stack with a `use`. Entries that match but fail on items, the inventory
+   * or `when` are included with `ok: false`. Pure: `random` in a `when` draws
+   * from a throwaway copy of the RNG, so `hash()` never changes.
+   */
+  availableActions(): AvailableAction[] {
+    const p = this.player;
+    return this.pure(() => {
+      const out: AvailableAction[] = [];
+      for (const s of this.actionSources) {
+        if (s.filter) continue;
+        out.push({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
+      }
+      const { grid } = this;
+      for (const s of this.actionSources) {
+        if (!s.filter) continue;
+        for (let y = p.y - 1; y <= p.y + 1; y++) {
+          for (let x = p.x - 1; x <= p.x + 1; x++) {
+            if (!grid.inBounds(x, y) || s.filter[grid.cells[y * grid.width + x]!] !== 1) continue;
+            const v = this.verdict(s, x, y, false);
+            if (v.reason === 'out_of_reach' || v.reason === 'invalid_target') continue;
+            out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, label: s.label, ...v });
+          }
+        }
+      }
+      for (const st of p.inv?.stacks ?? []) {
+        const s = this.useSources[st.item];
+        if (s) out.push({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
+      }
+      return out;
+    });
+  }
+
+  /** First cell in the player's reach (row-major) matching a station source's filter, or null. */
+  private stationCell(s: ActivitySource): { x: number; y: number } | null {
+    const { grid, player: p } = this;
+    for (let y = p.y - 1; y <= p.y + 1; y++) {
+      for (let x = p.x - 1; x <= p.x + 1; x++) {
+        if (grid.inBounds(x, y) && s.filter![grid.cells[y * grid.width + x]!] === 1) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Every recipe, in definition order, for the crafting panel. A station
+   * recipe is checked at its first matching cell in reach (row-major, as
+   * `station`); with none it is `ok: false, reason: 'out_of_reach'`. Pure,
+   * like `availableActions`.
+   */
+  availableRecipes(): AvailableRecipe[] {
+    const p = this.player;
+    return this.pure(() =>
+      this.recipeSources.map((s): AvailableRecipe => {
+        const r = this.def.recipes[s.recipe]!;
+        const base = { recipe: r.id, label: r.label, verb: r.verb, category: r.category };
+        if (!s.filter) return { ...base, ...this.verdict(s, p.x, p.y, false) };
+        const at = this.stationCell(s);
+        if (!at) return { ...base, ok: false, reason: p.inv ? 'out_of_reach' : 'no_inventory' };
+        return { ...base, ...this.verdict(s, at.x, at.y, false), station: at };
+      }),
+    );
+  }
+
+  /**
+   * What the player can choose at a cell, ignoring reach: the tile actions
+   * whose filter matches the cell's tile (definition order), the recipes
+   * whose station matches it (definition order), `open` and
+   * (when not empty) `take_all` per container on the cell, the `self`
+   * actions on the player's own cell, then `walk` on any other walkable
+   * cell. `[]` out of bounds or once the game has ended. Pure, like
+   * `availableActions`.
+   */
+  interactionsAt(x: number, y: number): Interaction[] {
+    const { grid, player: p } = this;
+    if (!grid.inBounds(x, y) || this.ended) return [];
+    const inReach = Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1;
+    const own = x === p.x && y === p.y;
+    return this.pure(() => {
+      const out: Interaction[] = [];
+      const tile = grid.cells[y * grid.width + x]!;
+      for (const s of this.actionSources) {
+        if (!s.filter || s.filter[tile] !== 1) continue;
+        const id = this.def.actions[s.action]!.id;
+        out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id, x, y }, inReach });
+      }
+      for (const s of this.recipeSources) {
+        if (!s.filter || s.filter[tile] !== 1) continue;
+        const id = this.def.recipes[s.recipe]!.id;
+        out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, true), action: { kind: 'craft', recipe: id, x, y }, inReach });
+      }
+      for (const c of this.containersAt(x, y)) {
+        const label = c.kind === 'tile' ? this.def.tiles[c.tile]!.label : GROUND_LABEL;
+        out.push({ id: `open:${c.id}`, label: `Open ${label}`, kind: 'open', ok: true, container: c.id, inReach });
+        if (c.stacks.length === 0) continue;
+        const actions = c.stacks.map((st): Action => ({ kind: 'take', container: c.id, item: this.def.items[st.item]!.id }));
+        const inv = p.inv;
+        const reason: ActionFailure | null = !inv ? 'no_inventory' : c.stacks.some((st) => fits(inv, this.itemWeights[st.item]!, 1) > 0) ? null : 'too_heavy';
+        const base = { id: `take_all:${c.id}`, label: `Take all from ${label}`, kind: 'take_all' as const, action: actions[0]!, actions, container: c.id, inReach };
+        out.push(reason ? { ...base, ok: false, reason } : { ...base, ok: true });
+      }
+      if (own) {
+        for (const s of this.actionSources) {
+          if (s.filter) continue;
+          const id = this.def.actions[s.action]!.id;
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id }, inReach: true });
+        }
+      } else if (grid.walkable(x, y)) {
+        out.push({ id: 'walk', label: 'Walk here', kind: 'walk', ok: true, inReach: false });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * The intent a shell should queue to do `action`, or null when it is
+   * already in reach or needs none (`self` acts, recipes without a station
+   * or cell, `use`, `drop`, and actions on unknown targets: the shell queues
+   * those directly). Otherwise a goto
+   * to the target cell (adjacent when it is not walkable) that queues the
+   * action on arrival.
+   */
+  approachIntent(action: Action): GotoIntent | null {
+    let x: number;
+    let y: number;
+    if (action.kind === 'take' || action.kind === 'put') {
+      const c = this.containers.get(action.container);
+      if (!c || c.kind === 'inventory') return null;
+      ({ x, y } = c);
+    } else if (action.kind === 'act' || action.kind === 'craft') {
+      const s = action.kind === 'act' ? this.actionSources[this.def.ids.actions[action.action] ?? -1] : this.recipeSources[this.def.ids.recipes[action.recipe] ?? -1];
+      if (!s?.filter || !Number.isInteger(action.x) || !Number.isInteger(action.y)) return null;
+      x = action.x!;
+      y = action.y!;
+    } else return null;
+    const p = this.player;
+    if (Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1) return null;
+    return { kind: 'goto', x, y, adjacent: !this.grid.walkable(x, y), then: action };
+  }
+
+  /** The entity's activity (the player's by default): its progress text and how far along it is, or null. */
+  activityProgress(e: Entity = this.player): ActivityProgress | null {
+    const fraction = ActivityRunner.fraction(e, this.tick);
+    return fraction === null ? null : { label: e.activity!.source.progress, fraction };
   }
 
   hash(): string {

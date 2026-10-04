@@ -1,13 +1,14 @@
 # Packs
 
 A **pack** is a directory of YAML files that defines game content. The
-engine has no genre knowledge: the zombie and vampire mini-games under
-`packs/` are pure data on top of the same code.
+engine has no genre knowledge: the zombie, vampire and garden mini-games
+under `packs/` are pure data on top of the same code.
 
 ```sh
 npm run check -- packs/std packs/std-needs packs/zombie   # validate only
 npm run play  -- packs/std packs/std-needs packs/zombie   # play in the terminal
 npm run play  -- packs/std packs/vampire --seed 7
+npm run play  -- packs/std packs/garden
 ```
 
 `check` also accepts a *library* stack with no `start` (e.g.
@@ -19,8 +20,13 @@ Packs are loaded in the order given. Keys: arrows / WASD / numpad /
 inventory, `g` takes everything that fits from every reachable container,
 `1`–`9` use inventory stack N and `d` followed by `1`–`9` drops stack N (so
 digits and `d` no longer move; arrows, `hjklyubn`, `w`/`a`/`s` and the
-numpad with NumLock off still do). The same packs run in the
-browser in isometric view: see [iso.md](iso.md).
+numpad with NumLock off still do). `x` opens a numbered list of the pack
+[actions](#actions) that can be started here, and `c` a numbered list of
+the [recipes](#recipes) that can be made now (when there are none it shows
+`Nothing to craft` and up to three recipes with what they need); `1`–`9`
+start one and any other key closes the list. Moving cancels whatever the
+player is doing. The
+same packs run in the browser in isometric view: see [iso.md](iso.md).
 
 Diagonal moves never cut corners: a diagonal step needs the target and
 both orthogonal neighbours to be walkable (keyboard and click-to-move
@@ -40,6 +46,8 @@ packs/zombie/
   survival.yaml        # statuses and systems
   items.yaml
   loot.yaml            # loot tables and distributions
+  actions.yaml
+  recipes.yaml
   lighting.yaml
 ```
 
@@ -59,6 +67,8 @@ domain. Any other top-level key is a load error.
 | `items`        | list of entries |
 | `loot`         | list of entries |
 | `behaviors`    | list of entries |
+| `actions`      | list of entries |
+| `recipes`      | list of entries |
 | `distributions`| list (no ids)   |
 | `start`        | one mapping     |
 | `clock`        | one mapping     |
@@ -107,7 +117,8 @@ measurements:
 
 Images used by the isometric renderer: a single image, or one image per
 direction (no spritesheets or animation yet). Asset ids are namespaced and
-referenced like any other id.
+referenced like any other id. For the conventions the shipped art follows,
+see [art.md](art.md).
 
 | Field        | Type                 | Default    | Notes |
 |--------------|----------------------|------------|-------|
@@ -187,7 +198,9 @@ tiles:
 ```
 
 Entries without a `sprite` get a placeholder generated from their `color`.
-The ASCII renderer ignores sprites.
+The ASCII renderer ignores sprites. The art of the shipped packs is pixel
+art on a 2 px grid; [art.md](art.md) is its style guide (sizes, anchors,
+shading, palettes and the generator).
 
 ### `tiles`
 
@@ -231,6 +244,7 @@ Templates for entities (the player and everything else).
 | `measurements`   | list of measurement ids | `[]`  | Which measurements the entity has |
 | `initial`        | map id → number       |         | Overrides a measurement's `initial` |
 | `ticks_per_step` | positive integer      | `2`     | Movement speed (ticks per tile) |
+| `ticks_per_turn` | non-negative integer  | `1`     | Ticks per 45° turn before stepping in a new direction; `0` turns instantly (see [iso.md](iso.md#facing)) |
 | `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
 | `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
 | `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
@@ -291,7 +305,7 @@ legend character per orientation:
       "F": { tile: fridge, facing: s }   # against a north wall
 ```
 
-`facing` does not affect `spawn` or `player` (entities face their movement
+`facing` does not affect `spawn` or `player` (entities turn toward their movement
 direction, starting at `s`). It is static, render-only map data: not part
 of world snapshots or hashes, and ignored by walkability, opacity,
 containers, sight and the ASCII renderer.
@@ -337,6 +351,9 @@ entries within the pack. A system that is not due costs nothing.
 | `{ type: apply, measurement: <id>, delta: <n or expr> }` | Add `delta` to the measurement |
 | `{ type: set, measurement: <id>, value: <n or expr> }`   | Replace the measurement's value |
 | `{ type: noise, radius: <n or expr> }`                   | Emit a noise at `self`'s cell (see below) |
+
+(`set_tile`, which edits the map, is only allowed in the effects of
+tile-targeted [actions](#actions).)
 
 - An effect on a measurement the entity does not have is skipped.
 - Each effect sees the values left by the effects before it, and by the
@@ -538,7 +555,7 @@ container holds stacks `{ item, count }`.
 | `sprite` | asset id                  | placeholder | Iso ground-pile sprite, anchored at the tile's ground centre |
 | `use`    | mapping                   | none        | Items without `use` cannot be used |
 
-`use` is `{ label?, when?, effects, consume? }`:
+`use` is `{ label?, when?, effects, consume?, duration?, interrupt? }`:
 
 - `label` — the verb shown in the UI, `"Use"` by default;
 - `when` — an optional condition with `self` = the user; when falsy the
@@ -549,7 +566,23 @@ container holds stacks `{ item, count }`.
   `noise` effect is emitted only when the use succeeds (e.g. an alarm clock
   with `consume: 0`);
 - `consume` — units removed per use, a non-negative integer (default `1`;
-  `0` makes the item reusable).
+  `0` makes the item reusable);
+- `duration` — sim seconds, as for [actions](#actions) (default `0`). A
+  use with a duration > 0 is **timed**: the item must still be held and
+  `when` must still hold at completion, and `effects` run and `consume`
+  units are removed only then. `0` keeps the use instant, exactly as above;
+- `interrupt` — an optional condition checked every tick of a timed use
+  after its start; truthy ends it with `interrupted` (the item is kept).
+
+```yaml
+    use:
+      label: Apply
+      when: "self.hp < 100"
+      duration: 3
+      interrupt: "heard(self, 0.2)"   # a noise nearby wastes the attempt
+      effects:
+        - { type: apply, measurement: hp, delta: 20 }
+```
 
 ```yaml
 items:
@@ -565,6 +598,240 @@ items:
         - { type: apply, measurement: hunger, delta: -35 }
   - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3 }
 ```
+
+### `actions`
+
+Things that take time, started by the player with `{ kind: 'act' }`
+(see [player actions](#player-actions)): barricading a window, closing
+shutters, resting.
+
+| Field       | Type                         | Default  | Notes |
+|-------------|------------------------------|----------|-------|
+| `id`        | id                           | required | Own id space |
+| `label`     | string                       | required | Verb shown in the UI, e.g. `Barricade` |
+| `progress`  | string                       | `label`  | Text shown while in progress, e.g. `Barricading` |
+| `target`    | `self` or a tile filter      | required | See below |
+| `when`      | expression                   | `true`   | Checked at start and at completion |
+| `unavailable` | string                     | none     | UI text shown when `when` is falsy (default `Not now`), e.g. `Only in the crypt` |
+| `tools`     | list of item ids             | `[]`     | Held (≥ 1 unit) at start and at completion; never consumed |
+| `consume`   | map item id → integer ≥ 1    | `{}`     | Held at start and at completion; removed at completion |
+| `duration`  | number ≥ 0 or expression     | `0`      | Sim seconds (see below) |
+| `interrupt` | expression                   | none     | Checked every tick after the start; truthy cancels |
+| `effects`   | list                         | `[]`     | Run once, at completion. An action with no `effects` and no `consume` is a load error |
+
+**Targets.** `target: self` acts on the actor; `tile` is the cell under
+it. A **tile filter** `{ tiles?: [tile ids], tags?: [tile tags] }` (at
+least one non-empty list) matches a cell whose tile is listed **or** has
+any of the tags; the action then targets one cell `(x, y)`: the actor's
+cell or one of the 8 around it (the reach of containers). In that action's
+`when`, `interrupt`, `duration` and `effects`, `tile` is the **target
+cell** (see [expressions](expressions.md)); `self` is still the actor.
+Unknown tile or item ids are load errors with suggestions; a tag that no
+loaded tile carries is a load **warning**. The filter is compiled to one
+flag per tile, so matching a cell is a single array read.
+
+**Effects** are those of [systems](#systems) (`apply`/`set`/`noise` act on
+the actor; a `noise` is emitted at the actor's cell), in order, plus
+**`set_tile`**, allowed only in the effects of tile-targeted actions:
+
+| Effect                              | Meaning |
+|-------------------------------------|---------|
+| `{ type: set_tile, tile: <tile id> }` | Replace the tile at the target cell |
+
+- The new tile must not have a `container` (load error), and neither may
+  the target cell's current tile (checked at run time: the action fails
+  with `invalid_target`). Container identity never changes.
+- The cell keeps its legend `facing`. Walkability and opacity change at
+  once: pathfinding and line of sight read the live grid (nothing is
+  cached across calls). Paths already in progress are not recomputed; a
+  step into a cell that is no longer walkable fails and clears the path.
+- If the new tile is not walkable and any entity (the actor included)
+  stands on the target cell, the whole action fails with `occupied` at
+  completion: no effect runs and nothing is consumed.
+- `world.tileVersion` increases on every change (renderers redraw the
+  changed cells). Changed cells are simulation state: `snapshot().tiles`
+  lists `[cellIndex, tileId]` for every cell that differs from the map,
+  sorted by cell index, and `hash()` covers them.
+
+**Duration.** In sim seconds, like `systems.every`. A number must be a
+whole number of ticks (load error otherwise). An expression is evaluated
+**once, at start** (with `tile` bound as above); its result is rounded up
+to whole ticks, and a negative result counts as 0. A 0-tick action
+completes in the phase it starts in: it is instant and never becomes an
+activity.
+
+**The activity.** Started with a duration > 0, an action (or a timed item
+use) becomes the actor's **activity**:
+`{ kind: 'act' | 'use', action?, item?, x, y, startTick, endTick }` with
+`endTick = startTick + ticks`. Starting it clears the actor's path and
+pending intent, so the player stops walking. It is part of the entity's
+snapshot and of `hash()`, and `world.activityProgress()` returns
+`{ label, fraction }` (the `progress` text, or the use's label) or `null`.
+
+- **Cancel:** a movement intent applied for the actor (a `step` or a
+  click's `goto`) and every newly queued player action (`act`, `craft`,
+  `use`, `take`, `put`, `drop`) end it with `cancelled`, before the new one is
+  applied. Of several actions queued in one tick, the last one started
+  wins.
+- **Interrupt:** in every tick **after** the start tick, `interrupt` (if
+  any) is evaluated first, with `self` = the actor; truthy ends it with
+  `interrupted`. Hearing runs after the work step, so `heard(self, s)` sees
+  a noise from the previous tick only when `s ≥ 0.2`. An entity never
+  hears its own noises, so the player's own hammering never interrupts the
+  player.
+- **Complete:** in the work step of the tick where `tick == endTick` (a
+  6-second action started on tick 100 completes on tick 160): `when`, the
+  tools, the consumed items, reach and the filter are checked again (the
+  world may have changed; a failure ends it with that reason), then the
+  `occupied` check, then the effects run in order, then `consume` units
+  are removed.
+- A cancelled or interrupted activity has no effects and consumes
+  nothing; there is no partial progress. Defeat freezes the world as
+  usual, with the activity left in the snapshot.
+
+```yaml
+actions:
+  - id: barricade
+    label: Barricade
+    progress: Barricading
+    target: { tiles: [window] }
+    tools: [hammer]
+    consume: { plank: 2, nails: 4 }
+    duration: 6
+    effects:
+      - { type: set_tile, tile: barricaded_window }
+      - { type: noise, radius: 14 }        # heard when the last nail goes in
+  - id: rest
+    label: Rest
+    progress: Resting
+    target: self
+    when: 'tile.has_tag("crypt")'
+    unavailable: Only in the crypt
+    duration: 10
+    interrupt: 'heard(self, 1)'
+    effects:
+      - { type: apply, measurement: hp, delta: 30 }
+```
+
+`world.availableActions()` lists what the player could start right now:
+every `self` action, then every tile action on each matching cell in reach
+(row-major), then each inventory stack with a `use`. Each entry is
+`{ kind, action?, item?, x?, y?, label, ok, reason?, missing?, unavailable? }`;
+entries whose target matches but whose tools, consumed items, inventory or
+`when` fail are included with `ok: false` and the reason, and cells out of
+reach or not matching are omitted. `missing` lists `{ item, label, count }`
+for each absent tool or consumed item (`count` = units still needed), and
+`unavailable` is the action's text when `when` fails. It is pure:
+`random()` in a `when` draws from a throwaway copy of the RNG, so `hash()`
+never changes. The terminal opens these with `x` (followed by `take all`
+for each reachable non-empty container).
+
+`world.interactionsAt(x, y)` lists what the player can choose at **any**
+cell, ignoring reach (the browser's [context menu](ui.md) is built from
+it). Entries, in order: every tile action whose filter matches the cell's
+tile (definition order); every [recipe](#recipes) whose station matches it
+(kind `craft`, definition order); for each container on the cell (tile container,
+ground pile) an `open` entry, plus `take_all` when it is not empty; every
+`self` action when the cell is the player's own; and `walk` when the cell
+is walkable and not the player's. Each entry is
+`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, inReach }`:
+`ok`/`reason` use the same checks as `act` with reach left out (`take_all`
+fails with `no_inventory`, or `too_heavy` when no stack fits at all),
+`action` is the action to queue (the first `take` of a `take_all`, whose
+`actions` lists them all), and `inReach` says whether the player can do it
+without walking. It returns `[]` out of bounds or once the game has ended,
+and is pure like `availableActions()`.
+
+`reasonText(entry)` (in `src/core/hud.ts`) turns an entry's reason into
+short UI text: `Needs: Hammer, 2× Plank` for `missing`, the
+`unavailable` text or `Not now` for `cannot_act`, `Can't do that here` for
+`invalid_target`, `Can't get there` for `unreachable`, and so on.
+
+### `recipes`
+
+Crafting: a recipe turns items into other items. It consumes some items,
+needs tools in the inventory, may need a **station** (a nearby tile such
+as a stove), and takes time. Started by the player with `{ kind: 'craft' }`
+(see [player actions](#player-actions)). Recipes run on the same activity
+lifecycle as [actions](#actions): the same progress bar, cancellation,
+`interrupt` and completion-only rules.
+
+| Field       | Type                         | Default        | Notes |
+|-------------|------------------------------|----------------|-------|
+| `id`        | id                           | required       | Own id space |
+| `label`     | string                       | required       | Name of the result, e.g. `Hot beans` |
+| `verb`      | string                       | `Craft`        | Shown as `<verb>: <label>` in menus, e.g. `Cook: Hot beans` |
+| `category`  | string                       | `General`      | Grouping in the crafting panel |
+| `consume`   | map item id → integer ≥ 1    | required       | Non-empty; held at start and at completion, removed at completion |
+| `tools`     | list of item ids             | `[]`           | Held (≥ 1 unit) at start and at completion; never consumed |
+| `produce`   | map item id → integer ≥ 1    | required       | Non-empty; added at completion, in the order written |
+| `station`   | tile filter `{ tiles?, tags? }` | none        | The cell the recipe is made at, in reach (see [actions](#actions) for filters) |
+| `when`      | expression                   | `true`         | Checked at start and at completion |
+| `unavailable` | string                     | none           | UI text shown when `when` is falsy |
+| `duration`  | number ≥ 0 or expression     | `0`            | Sim seconds, as for actions |
+| `interrupt` | expression                   | none           | As for actions |
+| `effects`   | list (`apply`/`set`/`noise`) | `[]`           | Extra effects on the crafter, run last at completion; `set_tile` is a load error |
+| `progress`  | string                       | `<verb>: <label>` | Text shown while in progress |
+
+An item listed in both `consume` and `tools` is a load error; unknown item
+or tile ids are load errors with suggestions, and a station tag that no
+tile carries is a load warning. In `when`, `interrupt`, `duration` and
+`effects`, `self` is the crafter and `tile` is the **station cell** for
+station recipes (the cell under the crafter otherwise), bound exactly like
+the target of a tile action. All recipes are known from the start; there
+is no learning.
+
+**Completion**, after every start check passes again (`when`, tools,
+consumed items, and the station's reach and filter):
+
+1. the `consume` items are removed;
+2. each `produce` entry is added to the crafter's inventory, in the order
+   written, as many units as fit;
+3. any **overflow** goes to the ground pile on the crafter's cell (created
+   if needed, as for `drop`);
+4. `effects` run.
+
+Consumed items leave **before** produced ones arrive, so a recipe that
+lightens the load never fails for lack of room. The record is
+`{ kind: 'craft', item: '', recipe, moved, dropped?, ok, stage, … }` with
+`moved` = total units produced and `dropped` = the units that went to the
+ground (only when > 0); `actionText` reads `You make 1× Hot beans.`, with
+` (some dropped on the ground)` on overflow. `containerVersion` increases.
+The activity snapshot is `{ kind: 'craft', recipe, x, y, startTick,
+endTick }` (`x`/`y` = the station cell, or the crafter's cell).
+
+```yaml
+recipes:
+  - id: cook_beans
+    label: Hot beans
+    verb: Cook
+    category: Cooking
+    station: { tags: [heat] }          # a stove next to you
+    consume: { canned_beans: 1 }
+    produce: { hot_beans: 1 }
+    duration: 5
+    effects:
+      - { type: noise, radius: 3 }     # the sizzle
+  - id: tear_bandage
+    label: Bandage
+    verb: Make
+    category: Medical
+    consume: { rag: 2 }
+    produce: { bandage: 1 }
+    duration: 3
+```
+
+`world.availableRecipes()` lists **every** recipe, in definition order
+(the crafting panel is built from it). Each entry is
+`{ recipe, label, verb, category, ok, reason?, missing?, unavailable?, station? }`;
+for a station recipe, `station` is the cell it would use (the first
+matching cell in reach, row-major), and a recipe with no matching cell in
+reach is `ok: false, reason: 'out_of_reach'` (`recipeHint` shows it as
+`Go to a Stove`, from the first matching tile's label). In
+`world.interactionsAt(x, y)`, every recipe whose station matches the cell
+is an entry of kind `craft` labelled `<verb>: <label>`, after the tile
+actions and before the containers; recipes without a station are not
+listed per cell. Both queries are pure (no RNG, no `hash()` change).
 
 ### Containers
 
@@ -650,18 +917,29 @@ dropped silently; the loader **warns** (without failing) when a table's
 maximum possible weight exceeds the capacity of a container it is
 distributed to.
 
-### Actions
+### Player actions
 
-The shells change containers through instant player **actions**, queued
-with `world.queueAction(action)`. This queue is separate from movement
-intents, so looting never cancels walking.
+The shells change the world through player **actions**, queued with
+`world.queueAction(action)`. This queue is separate from movement
+intents, so looting never cancels walking (but a new action cancels an
+[activity](#actions) in progress).
 
 | Kind   | Fields                                  | Effect |
 |--------|-----------------------------------------|--------|
 | `take` | `container`, `item`, `count?` (default all) | Container → player inventory |
 | `put`  | `container`, `item`, `count?`           | Player inventory → container |
 | `drop` | `item`, `count?`                        | Player inventory → the ground pile on the player's cell (created if missing) |
-| `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units |
+| `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units (at completion when timed) |
+| `act`  | `action`, `x?`, `y?`                    | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self` |
+| `craft`| `recipe`, `x?`, `y?`                    | Starts a [recipe](#recipes); for a station recipe `x`/`y` name the station cell (omitted: the first matching cell in reach, row-major); forbidden without a station |
+
+An `act` is checked in this order: the action id resolves
+(`unknown_action`); the actor has an inventory if the action needs
+`tools`/`consume` (`no_inventory`); the target is in reach and matches the
+filter (`out_of_reach` / `invalid_target`); tools and consumed items are
+held (`missing`); `when` is truthy (`cannot_act`). A `craft` is checked
+in the same order, with `unknown_recipe` first and the station in place of
+the target (`out_of_reach` when no matching cell is in reach).
 
 - `container` is a numeric container id (`world.containersAt(x, y)`,
   `world.reachableContainers()`); `item` is a qualified item id.
@@ -670,15 +948,54 @@ intents, so looting never cancels walking.
 - `take`/`put` move as many units as fit, up to `count`; moving 0 units is
   a failure.
 - Every action records `world.lastAction`:
-  `{ kind, item, moved, ok, reason?, tick }`, where `reason` is one of
-  `out_of_reach`, `too_heavy`, `missing`, `cannot_use`, `no_inventory` or
-  `unknown_container`.
-- Pending actions and `lastAction` are part of `snapshot()`. After defeat
-  `queueAction` ignores its input.
+  `{ kind, item, action?, recipe?, moved, dropped?, ok, stage, reason?, tick }`.
+  `item` is empty for `act` and `craft`, `action` is the qualified action
+  id (`act` only) and `recipe` the qualified recipe id (`craft` only).
+  `moved` counts units moved, consumed, or produced (`craft`, whose
+  `dropped` counts the overflow put on the ground). `stage` is `start` when a timed
+  activity starts (or fails to start), and `complete` for an instant
+  action (take/put/drop, an instant use or a 0-second act) or when an
+  activity ends (completed, cancelled, interrupted, or failed its
+  re-check). `reason` is one of `out_of_reach`, `too_heavy`, `missing`,
+  `cannot_use`, `no_inventory`, `unknown_container`, `unknown_action`,
+  `unknown_recipe`, `invalid_target`, `cannot_act`, `occupied`, `cancelled`,
+  `interrupted` or `unreachable` (a `goto.then` whose goto found no
+  path, see below). `lastAction` is written on start, on completion and on
+  cancellation or interruption; `actionText` (in `src/core/hud.ts`) turns
+  it into a message such as `You start barricading.` or
+  `Barricade interrupted.`.
+- Pending actions and `lastAction` are part of `snapshot()`. Once the game
+  has ended (after defeat or victory) `queueAction` ignores its input.
 
 A `goto` intent with `adjacent: true` ends on the reachable walkable tile
 8-adjacent to the goal (or the goal itself, if walkable) with the shortest
 path; the browser uses it when you click a non-walkable container.
+
+**Walk-then-act.** A player's `goto` may carry `then: <action>` (any
+action of the table above). When the path ends with the player standing on
+its last cell, `then` is appended to the action queue and applied in the
+same tick's action step (phase 1, step 2), exactly as if a shell had
+queued it, so every check runs as usual and it may still fail. A goto
+whose path is empty (already at the goal, or already adjacent with
+`adjacent: true`) queues it in the same tick.
+
+- If A* finds **no path**, `then` is dropped and `world.lastAction`
+  records `{ kind, item, action?, moved: 0, ok: false, stage: 'complete',
+  reason: 'unreachable', tick }` (`You can't get there.`).
+- If the path is cleared before arrival (a step fails because a cell
+  became unwalkable, a new intent replaces it, or a timed activity starts),
+  `then` is dropped silently; a new goto's own `then` replaces it.
+- The pending `then` is part of the entity snapshot (`then`) and of
+  `hash()`. Only the player's intents may carry it: `queueIntent` with
+  `then` for another entity throws.
+
+`world.approachIntent(action)` returns the intent a shell should queue for
+an action: `null` when it is already in reach or needs none (`self` acts,
+recipes without a station or cell, `use`, `drop`), so the shell queues the
+action directly; otherwise
+`{ kind: 'goto', x, y, adjacent: <target not walkable>, then: action }`
+targeting the action's cell (the container's cell for `take`/`put`, `x`/`y`
+for `act` and `craft`).
 
 Movement intents (`step` and `goto`) are queued with
 `world.queueIntent(intent, entity?)`; `entity` defaults to the player, and
@@ -693,20 +1010,30 @@ are driven by their archetype's [behavior](#behaviors).
 
 0. **think**: [behaviors](#behaviors) switch state (at most once) and
    issue movement intents, in ascending id order (the player is skipped);
-1. apply **each entity's** movement intent, in ascending id order (the
-   player is id 0), then the queued (player) actions, in FIFO order;
+1. three steps:
+   1. apply **each entity's** movement intent, in ascending id order (the
+      player is id 0); applying one cancels that entity's
+      [activity](#actions);
+   2. the queued (player) actions, in FIFO order; each cancels the
+      player's activity first, and may start a new one (a 0-second action
+      completes here);
+   3. **work**: advance every entity's activity, in id order (the
+      `interrupt` check, then completion on its `endTick`); an activity
+      does nothing in the tick it started;
 2. measurement drift: `rate` plus the `rates` of the statuses active at the
    **start** of the tick;
 3. systems that are due, in definition order;
 4. **hear**: skipped when no noise was emitted this tick; otherwise each
    entity records the nearest noise it heard (see [noise](#systems)).
-   Noises are emitted in order: player actions (phase 1), then systems
+   Noises are emitted in order: player actions and completed activities
+   (phase 1), then systems
    (definition order, entity order). `world.noises` lists this tick's
    noises until the next tick starts;
 5. clamp every measurement to `[min, max]`;
 6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
-7. defeat check (see `start.defeat`);
+7. outcome check: defeat first (see `start.defeat`), then victory (see
+   `start.victory`) only if defeat did not trigger on this tick;
 8. `tick++`.
 
 Statuses are also evaluated once when the world is created, after the
@@ -723,6 +1050,9 @@ start:
   defeat:             # optional
     when: "self.hp <= 0"
     message: "You did not survive the outbreak."
+  victory:            # optional
+    when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+    message: "You got the car running!"
 ```
 
 Exactly one `start` must exist across all loaded packs. Typically the last
@@ -734,6 +1064,18 @@ each tick with `self` = the player. When it becomes truthy the world
 records the defeat (tick and `message`, which defaults to `"Game over"`),
 the HUD shows it, and from then on the simulation is frozen and player
 input is ignored. Without `defeat` the game never ends.
+
+`victory` has the same shape and validation as `defeat` (`when` with
+`self` = the player, optional `message`; unknown fields and conditions that
+evaluate to an entity or tile are load errors). It is checked in the same
+phase, right after defeat: when defeat triggers on a tick, victory is not
+checked on that tick. When `when` becomes truthy the world records the
+victory (tick and `message`, which defaults to `"Victory"`), the HUD shows
+it, and the world is frozen exactly as after defeat: `step()` is a no-op,
+queued intents and actions are ignored, and the browser panels become
+read-only. `victory` is part of `snapshot()` and `hash()`, and a world has
+at most one of the two outcomes. A pack may define either, both or
+neither.
 
 ### `clock`
 
@@ -853,7 +1195,7 @@ unsupported extensions, malformed or out-of-range anchors, and unknown
 positive or not a whole number of ticks; empty `effects`; unknown effect
 types or fields; effects missing `measurement`/`delta`/`value`; unknown
 measurements in effects or `rates` keys (with suggestions); conditions
-(`for`/`when`/`until`/`defeat.when`) that evaluate to an entity or tile;
+(`for`/`when`/`until`/`defeat.when`/`victory.when`) that evaluate to an entity or tile;
 non-numeric `delta`/`value`/`rates`; `has_status` with a non-literal or
 unknown id; malformed tile tags; and `lighting` problems (empty `tint`,
 malformed times or colours, duplicate `at`, a second pack defining it).
@@ -868,8 +1210,20 @@ whose `container` tile has no `container`; and non-literal ids in
 `count_item`/`has_item`/`in_room`. For M4 content: `noise` effects without
 `radius`, with a `measurement` or another unknown field, or with a
 non-numeric `radius`; `target` on `investigate`; and `done` outside
-`home`/`investigate`. Warnings (e.g. a loot table that can
-exceed a container's capacity) are printed but do not fail the load.
+`home`/`investigate`. For M5 content: an action without `target`, with a
+`target` that is neither `self` nor a mapping, a tile filter with no
+non-empty `tiles`/`tags` list or an unknown field, unknown tile or item ids
+in filters, `tools`, `consume` or `set_tile` (with suggestions), a
+consumed count that is not an integer ≥ 1, an action with neither
+`effects` nor `consume`, `set_tile` outside a tile-targeted action (systems,
+item uses and `self` actions included) or placing a tile with a
+`container`, a `duration` that is negative or not a whole number of ticks
+(actions and item uses), and `doing` with a non-literal or unknown action
+id. For recipes: missing or empty `consume`/`produce`, a count that is not
+an integer ≥ 1, an item in both `consume` and `tools`, unknown item or
+tile ids (with suggestions), a malformed `station` filter, and `set_tile`
+in `effects`. Warnings (e.g. a loot table that can exceed a container's capacity, or
+a filter or station tag no tile carries) are printed but do not fail the load.
 A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
 
@@ -879,14 +1233,17 @@ resolved definition (ids → indices, expressions → closures).
   compiler), `load/` (pack parsing, namespaces, validation), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
   `hud.ts` (renderer-independent HUD model), `sim/`
-  (world, grid, RNG, A*, containers). No Node built-ins, DOM or Pixi.
+  (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
+  checks and lifecycle of timed actions, item uses and recipes, shared
+  by every activity source). No Node built-ins, DOM or Pixi.
 - `src/node/read-pack.ts` — reads a pack directory into
   `{ relativePath: text }` (plus the names of its other files) for the
   loader.
 - `src/iso/` — Pixi isometric renderer: projection, depth buckets,
   camera, textures and placeholders.
 - `src/web/` — browser shell: pack loading via Vite, input, HUD,
-  inventory/loot panels (`panels.ts`, `I`/`Tab` toggles the inventory),
+  inventory, loot and crafting panels (`panels.ts`, `I`/`Tab` toggles the
+  inventory, `C` the crafting panel),
   error screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
 - `src/cli/` — `play` and `check`.

@@ -4,8 +4,10 @@
  */
 
 import { clockAt, type ClockTime } from './clock.ts';
-import type { Container } from './sim/containers.ts';
-import type { ActionRecord, World } from './sim/world.ts';
+import { GROUND_LABEL, type Container } from './sim/containers.ts';
+
+export { GROUND_LABEL };
+import type { ActionFailure, ActionRecord, AvailableRecipe, MissingItem, OutcomeRecord, World } from './sim/world.ts';
 
 export interface HudMeasurement {
   readonly label: string;
@@ -29,6 +31,8 @@ export interface HudModel {
   readonly statusLine: string | null;
   /** Set once the world is defeated. */
   readonly defeat: HudDefeat | null;
+  /** Set once the world is won. */
+  readonly victory: HudVictory | null;
   /** The player's inventory, or null when the player has none. */
   readonly inventory: HudInventory | null;
   /** Containers the player can reach now, in id order (never the player's own inventory). */
@@ -37,6 +41,17 @@ export interface HudModel {
   readonly nearbyLine: string | null;
   /** Short text for the latest action (e.g. `Took 2 Canned beans`, `Too heavy`), or null once it is stale. */
   readonly lastAction: string | null;
+  /** The player's in-progress activity, or null. */
+  readonly activity: HudActivity | null;
+}
+
+export interface HudActivity {
+  /** Progress text, e.g. `Barricading`. */
+  readonly label: string;
+  /** In [0, 1]. */
+  readonly fraction: number;
+  /** `Label [######----] 60%`. */
+  readonly text: string;
 }
 
 export interface HudStack {
@@ -75,34 +90,45 @@ export interface HudContainer {
   readonly text: string;
 }
 
-export interface HudDefeat {
+export interface HudOutcome {
   readonly message: string;
-  /** In-game clock at the defeat tick, `Day D HH:MM`. */
+  /** In-game clock at the defeat/victory tick, `Day D HH:MM`. */
   readonly clock: string;
   /** `message (Day D HH:MM)`. */
   readonly text: string;
 }
 
+export type HudDefeat = HudOutcome;
+export type HudVictory = HudOutcome;
+
 function fmt(n: number): string {
   return n.toFixed(1);
 }
 
-/** Label of a ground pile (engine-level, not pack data). */
-export const GROUND_LABEL = 'Ground';
 /** How long (sim seconds) the latest action stays in the HUD. */
 const ACTION_SECONDS = 3;
+/** Cells of the ASCII progress bar. */
+const BAR_CELLS = 10;
+
+/** `Label [######----] 60%`. */
+export function progressText(label: string, fraction: number): string {
+  const filled = Math.min(BAR_CELLS, Math.floor(fraction * BAR_CELLS + 1e-9));
+  return `${label} [${'#'.repeat(filled)}${'-'.repeat(BAR_CELLS - filled)}] ${Math.round(fraction * 100)}%`;
+}
 
 /**
  * HUD text lines shared by the shells: time, measurements, then — only when
- * present — carrying/inventory, status, nearby, latest action and defeat.
+ * present — carrying/inventory, status, nearby, latest action and defeat/victory.
  */
 export function hudLines(m: HudModel): string[] {
   const lines = [m.time, ...m.measurements.map((x) => x.text)];
   if (m.inventory) lines.push(m.inventory.carrying, m.inventory.line);
   if (m.statusLine) lines.push(m.statusLine);
   if (m.nearbyLine) lines.push(m.nearbyLine);
+  if (m.activity) lines.push(m.activity.text);
   if (m.lastAction) lines.push(m.lastAction);
   if (m.defeat) lines.push(m.defeat.text);
+  if (m.victory) lines.push(m.victory.text);
   return lines;
 }
 
@@ -131,10 +157,149 @@ function containerLabel(world: World, c: Container): string {
   return c.kind === 'tile' ? world.def.tiles[c.tile]!.label : GROUND_LABEL;
 }
 
+/** `Barricading` → `barricading`, for the middle of a sentence. */
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+const UNREACHABLE_TEXT = "You can't get there.";
+
+/** `Needs: Hammer, 2× Plank`. */
+export function needsText(missing: readonly MissingItem[]): string {
+  return `Needs: ${missing.map((m) => (m.count > 1 ? `${m.count}× ${m.label}` : m.label)).join(', ')}`;
+}
+
+/** Short UI text per failure reason (`missing` and `cannot_act` have richer text, see `reasonText`). */
+const REASON_TEXT: Record<ActionFailure, string> = {
+  out_of_reach: 'Too far',
+  too_heavy: 'Too heavy',
+  missing: 'Missing items',
+  cannot_use: 'Not now',
+  no_inventory: 'No inventory',
+  unknown_container: 'Not here',
+  unknown_action: 'Unknown action',
+  unknown_recipe: 'Unknown recipe',
+  invalid_target: "Can't do that here",
+  cannot_act: 'Not now',
+  occupied: 'Something is in the way',
+  cancelled: 'Cancelled',
+  interrupted: 'Interrupted',
+  unreachable: "Can't get there",
+};
+
+/**
+ * Why an entry (of `interactionsAt` or `availableActions`) is disabled, as
+ * short UI text: `Needs: Hammer, 2× Plank`, the action's `unavailable` text
+ * or `Not now`, `Can't do that here`…; `''` when it has no reason.
+ */
+export function reasonText(entry: { readonly reason?: ActionFailure; readonly missing?: readonly MissingItem[]; readonly unavailable?: string }): string {
+  const { reason } = entry;
+  if (!reason) return '';
+  if (reason === 'missing' && entry.missing?.length) return needsText(entry.missing);
+  if (reason === 'cannot_act' && entry.unavailable) return entry.unavailable;
+  return REASON_TEXT[reason];
+}
+
+/** Label of the first tile (definition order) a recipe's station matches, or null for a recipe without a station. */
+export function stationLabel(world: World, recipe: string): string | null {
+  const k = world.def.ids.recipes[recipe];
+  const station = k === undefined ? null : world.def.recipes[k]!.station;
+  if (!station) return null;
+  return world.def.tiles.find((t) => station.match[t.index] === 1)?.label ?? null;
+}
+
+/** `reasonText` for an `availableRecipes` entry; a station out of reach reads `Go to a Stove`. */
+export function recipeHint(world: World, r: AvailableRecipe): string {
+  const station = r.reason === 'out_of_reach' ? stationLabel(world, r.recipe) : null;
+  return station ? `Go to a ${station}` : reasonText(r);
+}
+
+/** `1× Hot beans, 2× Rag`. */
+function countsText(world: World, list: readonly { item: number; count: number }[]): string {
+  return list.map((c) => `${c.count}× ${world.def.items[c.item]!.label}`).join(', ');
+}
+
+/** Short feedback text for a `craft` record. */
+function craftText(world: World, a: ActionRecord): string {
+  const k = world.def.ids.recipes[a.recipe ?? ''];
+  const def = k === undefined ? null : world.def.recipes[k]!;
+  if (!def) return `Unknown recipe ${a.recipe ?? ''}`;
+  const name = `${def.verb}: ${def.label}`;
+  if (a.ok) {
+    if (a.stage === 'start') return `You start: ${def.progress}.`;
+    return `You make ${countsText(world, def.produce)}.${a.dropped ? ' (some dropped on the ground)' : ''}`;
+  }
+  switch (a.reason) {
+    case 'no_inventory':
+      return 'No inventory';
+    case 'out_of_reach': {
+      const station = stationLabel(world, def.id);
+      return station ? `You need to be at a ${station}.` : "You can't reach that.";
+    }
+    case 'invalid_target':
+      return `You can't ${lower(def.verb)} that here.`;
+    case 'missing': {
+      const items = world.def.items;
+      return `You need ${[...def.tools.map((t) => items[t]!.label), ...def.consume.map((c) => `${items[c.item]!.label} x${c.count}`)].join(', ')}.`;
+    }
+    case 'cannot_act':
+      return def.unavailable ?? `You can't ${lower(def.verb)} ${lower(def.label)} now.`;
+    case 'cancelled':
+      return `${name} cancelled.`;
+    case 'interrupted':
+      return `${name} interrupted.`;
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
+    default:
+      return `${name} failed.`;
+  }
+}
+
+/** Short feedback text for an `act` record. */
+function actText(world: World, a: ActionRecord): string {
+  const k = world.def.ids.actions[a.action ?? ''];
+  const def = k === undefined ? null : world.def.actions[k]!;
+  const label = def?.label ?? a.action ?? '';
+  if (a.ok) return a.stage === 'start' ? `You start ${lower(def!.progress)}.` : `You finish ${lower(def!.progress)}.`;
+  switch (a.reason) {
+    case 'unknown_action':
+      return `Unknown action ${label}`;
+    case 'no_inventory':
+      return 'No inventory';
+    case 'out_of_reach':
+      return "You can't reach that.";
+    case 'invalid_target':
+      return `You can't ${lower(label)} that.`;
+    case 'missing': {
+      const items = world.def.items;
+      const need = [...def!.tools.map((t) => items[t]!.label), ...def!.consume.map((c) => `${items[c.item]!.label} x${c.count}`)];
+      return `You need ${need.join(', ')}.`;
+    }
+    case 'cannot_act':
+      return `You can't ${lower(label)} now.`;
+    case 'occupied':
+      return 'Something is in the way.';
+    case 'cancelled':
+      return `${label} cancelled.`;
+    case 'interrupted':
+      return `${label} interrupted.`;
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
+    default:
+      return `${label} failed.`;
+  }
+}
+
 /** Short feedback text for an action record. */
 export function actionText(world: World, a: ActionRecord): string {
+  if (a.kind === 'act') return actText(world, a);
+  if (a.kind === 'craft') return craftText(world, a);
   const idx = world.def.ids.items[a.item];
   const label = idx === undefined ? a.item : world.def.items[idx]!.label;
+  if (a.kind === 'use' && idx !== undefined && world.def.items[idx]!.use) {
+    const verb = world.def.items[idx]!.use!.label;
+    if (a.ok && a.stage === 'start') return `You start: ${verb} ${label}.`;
+    if (a.reason === 'cancelled') return `${verb} cancelled.`;
+    if (a.reason === 'interrupted') return `${verb} interrupted.`;
+  }
   if (a.ok) {
     switch (a.kind) {
       case 'take':
@@ -149,7 +314,7 @@ export function actionText(world: World, a: ActionRecord): string {
   }
   switch (a.reason) {
     case 'out_of_reach':
-      return 'Out of reach';
+      return "You can't reach that.";
     case 'too_heavy':
       return 'Too heavy';
     case 'cannot_use':
@@ -158,6 +323,8 @@ export function actionText(world: World, a: ActionRecord): string {
       return 'No inventory';
     case 'unknown_container':
       return 'No such container';
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
     default:
       return `No ${label}`;
   }
@@ -200,8 +367,11 @@ export function hudModel(world: World): HudModel {
   });
   const a = world.lastAction;
   const fresh = a !== null && world.tick - a.tick <= ACTION_SECONDS * world.def.ticksPerSecond;
-  const d = world.defeat;
-  const defeatClock = d ? formatClock(clockAt(world.def.clock, d.tick, world.def.ticksPerSecond)) : '';
+  const outcome = (r: OutcomeRecord | null): HudOutcome | null => {
+    if (!r) return null;
+    const at = formatClock(clockAt(world.def.clock, r.tick, world.def.ticksPerSecond));
+    return { message: r.message, clock: at, text: `${r.message} (${at})` };
+  };
   return {
     clock,
     tick: world.tick,
@@ -209,10 +379,17 @@ export function hudModel(world: World): HudModel {
     measurements,
     statuses,
     statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,
-    defeat: d ? { message: d.message, clock: defeatClock, text: `${d.message} (${defeatClock})` } : null,
+    defeat: outcome(world.defeat),
+    victory: outcome(world.victory),
     inventory,
     nearby,
     nearbyLine: nearby.length ? `Nearby: ${nearby.map((c) => c.text).join('; ')}` : null,
     lastAction: fresh ? actionText(world, a) : null,
+    activity: hudActivity(world),
   };
+}
+
+function hudActivity(world: World): HudActivity | null {
+  const p = world.activityProgress();
+  return p ? { ...p, text: progressText(p.label, p.fraction) } : null;
 }

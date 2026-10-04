@@ -3,16 +3,19 @@
  *
  *   root (camera transform)
  *     ground   — flat tiles, one container per 16×16 render chunk (culled)
- *     markers  — path target outline, unreachable flash
+ *     markers  — path target outline, unreachable flash, context-menu target
  *     objects  — one container per diagonal (x + y); raised tiles, ground
  *                piles and entities, depth-sorted inside their diagonal only
  *
  * Ground and objects are multiplied by the pack's day/night tint (if any);
  * markers are not.
  *
- * Entities face their current or last step (`facingOf`); a sprite's
+ * Entities show their simulation facing (`facingOf`); a sprite's
  * texture, anchor and mirroring are swapped only when the direction it shows
  * changes. Tiles face their cell's legend `facing`.
+ *
+ * Map edits (`world.tileVersion`) rebuild the render chunks whose cells
+ * changed: their ground container and their raised blocks.
  *
  * Only a bucket whose contents moved gets re-sorted (Pixi sorts a
  * `sortableChildren` container only when one of its children's zIndex
@@ -41,10 +44,13 @@ const CULL_MARGIN = 96;
 const FLASH_MS = 600;
 const TARGET_COLOR = 0xffd23f;
 const INVALID_COLOR = 0xff3355;
+const MENU_COLOR = 0xffffff;
 
 interface Chunk {
+  readonly cx: number;
+  readonly cy: number;
   readonly ground: Container;
-  readonly blocks: Sprite[];
+  blocks: Sprite[];
   readonly bounds: Bounds;
   visible: boolean;
 }
@@ -97,7 +103,12 @@ export class IsoScene {
   private readonly target: Sprite;
   private readonly invalid: Sprite;
   private invalidUntil = 0;
+  /** Steady outline on the open context menu's cell. */
+  private readonly menuMark: Sprite;
   private tint = 0xffffff;
+  /** Tile index per cell as drawn (to find the cells a map edit changed). */
+  private readonly drawn: Uint16Array;
+  private tileVersion: number;
 
   constructor(
     private readonly world: World,
@@ -105,7 +116,8 @@ export class IsoScene {
   ) {
     this.root.addChild(this.ground, this.markers, this.objects);
     const { grid } = world;
-    const { facings } = world.def.maps[world.def.start.map]!;
+    this.drawn = Uint16Array.from(grid.cells);
+    this.tileVersion = world.tileVersion;
 
     for (let d = 0; d <= grid.width + grid.height; d++) {
       const b = new Container();
@@ -117,26 +129,12 @@ export class IsoScene {
     for (let cy = 0; cy < grid.height; cy += CHUNK) {
       for (let cx = 0; cx < grid.width; cx += CHUNK) {
         const ground = new Container();
-        const blocks: Sprite[] = [];
-        for (let y = cy; y < Math.min(cy + CHUNK, grid.height); y++) {
-          for (let x = cx; x < Math.min(cx + CHUNK, grid.width); x++) {
-            const tile = grid.tileAt(x, y)!;
-            const s = sprite(textures.tile(tile, facings[y * grid.width + x] ?? null));
-            const p = tileAnchorIso(x, y);
-            s.position.set(p.x, p.y);
-            if (tile.raised) {
-              s.zIndex = depthKey(x, y, Layer.Block);
-              this.buckets[diagonalOf(x, y)]!.addChild(s);
-              blocks.push(s);
-            } else {
-              ground.addChild(s);
-            }
-          }
-        }
         this.ground.addChild(ground);
         const bounds = tileRectIsoBounds(cx, cy, CHUNK, CHUNK);
         bounds.minY -= BLOCK_H * 3; // raised tiles and tall sprites
-        this.chunks.push({ ground, blocks, bounds, visible: true });
+        const chunk: Chunk = { cx, cy, ground, blocks: [], bounds, visible: true };
+        this.fillChunk(chunk);
+        this.chunks.push(chunk);
       }
     }
 
@@ -151,8 +149,55 @@ export class IsoScene {
 
     this.target = sprite(textures.outline(TARGET_COLOR));
     this.invalid = sprite(textures.outline(INVALID_COLOR));
-    this.target.visible = this.invalid.visible = false;
-    this.markers.addChild(this.target, this.invalid);
+    this.menuMark = sprite(textures.outline(MENU_COLOR));
+    this.target.visible = this.invalid.visible = this.menuMark.visible = false;
+    this.markers.addChild(this.target, this.invalid, this.menuMark);
+  }
+
+  /** Create the tile sprites of a chunk: flat tiles in its ground container, raised ones in the object buckets. */
+  private fillChunk(chunk: Chunk): void {
+    const { grid } = this.world;
+    const { facings } = this.world.def.maps[this.world.def.start.map]!;
+    for (let y = chunk.cy; y < Math.min(chunk.cy + CHUNK, grid.height); y++) {
+      for (let x = chunk.cx; x < Math.min(chunk.cx + CHUNK, grid.width); x++) {
+        const tile = grid.tileAt(x, y)!;
+        const s = sprite(this.textures.tile(tile, facings[y * grid.width + x] ?? null));
+        const p = tileAnchorIso(x, y);
+        s.position.set(p.x, p.y);
+        if (tile.raised) {
+          s.zIndex = depthKey(x, y, Layer.Block);
+          s.visible = chunk.visible;
+          this.buckets[diagonalOf(x, y)]!.addChild(s);
+          chunk.blocks.push(s);
+        } else {
+          chunk.ground.addChild(s);
+        }
+      }
+    }
+  }
+
+  /** After a map edit: rebuild every chunk with a changed cell (ground and raised blocks). */
+  private syncTiles(): void {
+    const { world } = this;
+    if (world.tileVersion === this.tileVersion) return;
+    this.tileVersion = world.tileVersion;
+    const { grid } = world;
+    const perRow = Math.ceil(grid.width / CHUNK);
+    const dirty = new Set<number>();
+    for (let i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] === this.drawn[i]) continue;
+      this.drawn[i] = grid.cells[i]!;
+      const x = i % grid.width;
+      const y = (i - x) / grid.width;
+      dirty.add(Math.floor(y / CHUNK) * perRow + Math.floor(x / CHUNK));
+    }
+    for (const k of dirty) {
+      const chunk = this.chunks[k]!;
+      for (const s of chunk.ground.removeChildren()) s.destroy();
+      for (const s of chunk.blocks) s.destroy();
+      chunk.blocks = [];
+      this.fillChunk(chunk);
+    }
   }
 
   /** Add, retexture or remove ground-pile sprites after container changes. */
@@ -194,6 +239,15 @@ export class IsoScene {
     this.invalidUntil = now + FLASH_MS;
   }
 
+  /** Outline a cell while the context menu is open for it (null hides it). */
+  markMenuTarget(cell: { x: number; y: number } | null): void {
+    this.menuMark.visible = cell !== null;
+    if (cell) {
+      const p = tileAnchorIso(cell.x, cell.y);
+      this.menuMark.position.set(p.x, p.y);
+    }
+  }
+
   /** Applies the camera, culls chunks and entities, interpolates and re-buckets entities. */
   update(cam: CameraState, viewW: number, viewH: number, alpha: number, now: number): SceneStats {
     this.root.position.set(cam.offsetX, cam.offsetY);
@@ -219,6 +273,7 @@ export class IsoScene {
       this.objects.tint = tint;
     }
 
+    this.syncTiles();
     this.syncPiles();
 
     let visibleEntities = 0;

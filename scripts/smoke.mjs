@@ -18,6 +18,7 @@ const outDir = resolve(root, 'docs/screens');
 const combos = [
   ['std', 'std-needs', 'zombie'],
   ['std', 'vampire'],
+  ['std', 'garden'],
 ];
 
 await build({ root, logLevel: 'warn' });

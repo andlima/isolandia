@@ -28,10 +28,13 @@ query parameters:
 
 ```
 http://localhost:5173/?packs=std,vampire&seed=42
+http://localhost:5173/?packs=std,garden
 ```
 
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
-there. Space recenters the camera.
+there. Right-click (or long-press) a tile for what you can do there, or
+press `E` for your own cell (see [docs/ui.md](docs/ui.md)). `C` opens the
+crafting panel. Space recenters the camera.
 
 ### Terminal
 
@@ -57,12 +60,15 @@ packs/
   zombie/     # "Zombie Town": loot, survival systems, a small town map
               #   (uses std + std-needs)
   vampire/    # "Vampire Mansion": blood, sunlight, coffins (uses std only)
+  garden/     # "Bunny Garden": a gentle game for kids — gather carrots,
+              #   hide from a sleepy cat; won with start.victory (uses std only)
 ```
 
 Validate a pack stack without running it:
 
 ```bash
 npm run check -- packs/std packs/vampire
+npm run check -- packs/std packs/garden
 ```
 
 Every milestone is validated with two games of different genres, so genre
@@ -86,7 +92,7 @@ Source layout:
 | `src/web/` | Browser shell: input, HUD, panels |
 | `src/ascii/`, `src/cli/`, `src/node/` | Terminal renderer, CLI entry points, reading packs from disk |
 | `packs/` | Game content |
-| `docs/` | Reference: [packs](docs/packs.md), [expressions](docs/expressions.md), [iso projection](docs/iso.md) |
+| `docs/` | Reference: [packs](docs/packs.md), [expressions](docs/expressions.md), [iso projection](docs/iso.md), [browser UI](docs/ui.md) |
 | `specs/` | Specs for each milestone and task |
 
 Work is spec-driven: each feature is described in a spec under `specs/`

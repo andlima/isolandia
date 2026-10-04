@@ -1,7 +1,9 @@
 /**
  * Facings on the map compass (`x` grows east, `y` grows south) and the
- * mirroring/snapping rules shared by the loader and the renderers. Pure data
- * and functions: the simulation never reads a facing.
+ * mirroring/snapping rules shared by the loader, the simulation and the
+ * renderers. Pure data and functions. Facing is simulation state
+ * (`Entity.facing`): an entity turns one compass point at a time
+ * (`turnToward`) before it steps in a new direction.
  */
 
 /** The 8 facings, clockwise from north. Arrays indexed by facing use this order. */
@@ -51,6 +53,17 @@ export function facingOfStep(dx: number, dy: number): Facing | null {
   const sy = Math.sign(dy);
   if (sx === 0 && sy === 0) return null;
   return FACINGS.find((f) => FACING_STEP[f][0] === sx && FACING_STEP[f][1] === sy)!;
+}
+
+/**
+ * One compass point (45°) from `from` toward `to`, the short way round; an
+ * exact reversal turns clockwise. Returns `to` when already facing it.
+ */
+export function turnToward(from: Facing, to: Facing): Facing {
+  const i = FACINGS.indexOf(from);
+  const d = (FACINGS.indexOf(to) - i + 8) % 8;
+  if (d === 0) return to;
+  return FACINGS[(i + (d <= 4 ? 1 : 7)) % 8]!;
 }
 
 /** Which image shows a facing, and whether it is flipped horizontally around the anchor spot. */

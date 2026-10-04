@@ -1,0 +1,4 @@
+namespace: gdn
+name: Bunny Garden
+version: 0.1.0
+depends: [std]

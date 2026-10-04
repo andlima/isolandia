@@ -1,0 +1,20 @@
+# Crafting (docs/packs.md#recipes): moving or acting cancels a recipe in
+# progress; nothing is used up until it completes.
+recipes:
+  # Fill an empty vial at the blood font (stand on it or next to it).
+  - id: fill_vial
+    label: Blood vial
+    verb: Fill
+    category: Blood
+    station: { tags: [blood] }
+    consume: { empty_vial: 1 }
+    produce: { blood_vial: 1 }
+    duration: 2
+  # Lace a bottle of old wine with a vial of blood, anywhere.
+  - id: mix_blood_wine
+    label: Blood wine
+    verb: Mix
+    category: Blood
+    consume: { wine: 1, blood_vial: 1 }
+    produce: { blood_wine: 1 }
+    duration: 2

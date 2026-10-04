@@ -48,7 +48,8 @@ player's measurements, from the same `hudModel` as
 the ASCII HUD, plus a `Status: …` line while the player has active
 statuses. When the pack's `start.defeat` condition is met, the HUD adds the
 defeat message and a centred banner covers the canvas; the camera still
-pans and zooms, but movement input is ignored.
+pans and zooms, but movement input is ignored. `start.victory` works the
+same way with its own, gold-on-green banner (`#victory`).
 
 ## Inventory and loot panels
 
@@ -61,11 +62,21 @@ the view functions are pure and unit-tested) and turn button clicks into
 - the **loot panel** opens by itself whenever a container is within reach
   (the player's cell or the 8 around it). It lists each container's stacks
   with *Take* (one unit) and *Take all*, and a *Put* section to move
-  inventory stacks into a reachable container.
+  inventory stacks into a reachable container. Pack
+  [actions](packs.md#actions) are in the **context menu** (right-click,
+  long-press or `E`; see [ui.md](ui.md)), which outlines its target cell
+  while open;
+- while the player is busy with a timed action or use, a **progress bar**
+  (`#activity`) shows its progress text and percentage; moving or starting
+  another action cancels it.
+
+A map edit (`set_tile`, e.g. a barricaded window) bumps
+`world.tileVersion`; the scene then rebuilds the render chunks with
+changed cells (their ground and raised blocks).
 
 Clicking a non-walkable container tile (a fridge) walks to the closest
-tile next to it (`goto` with `adjacent: true`). After defeat the panels
-stay visible but read-only.
+tile next to it (`goto` with `adjacent: true`). After defeat or
+victory the panels stay visible but read-only.
 
 ## Day/night tint
 
@@ -109,7 +120,8 @@ Tiles and archetypes may reference an asset (`sprite:`; see
 [packs.md](packs.md#assets)). Tile sprites are anchored at the diamond's
 bottom vertex, archetype sprites at the tile's ground centre. All assets
 are loaded before the first frame; one that fails to load logs a warning
-and falls back to its placeholder.
+and falls back to its placeholder. SVG assets are rasterized at `MAX_ZOOM`
+resolution, so pixel art stays sharp at every zoom (see [art.md](art.md)).
 
 Without a sprite, a placeholder is generated lazily, at most once per
 definition entry and facing, from its `color`:
@@ -136,14 +148,16 @@ Facings are named on the map compass (`n` = up-right on screen, `e` =
 down-right, `se` = toward the camera…; the full table is in
 [packs.md](packs.md#assets)).
 
-- **Entities face where they walk.** `facingOf(entity)` (core,
-  `sim/motion.ts`) is the direction of the current or last step,
-  `sign(x − fromX), sign(y − fromY)`, or `s` before the first step. It is
-  derived from the step data the world already keeps, so the simulation,
-  snapshots and hashes are unchanged; nothing in the sim reads it. The
-  facing turns the moment a step is taken, which is also when that step's
-  interpolation starts; an entity that stops keeps its last facing, and a
-  blocked step changes nothing.
+- **Entities turn, then walk.** Facing is simulation state
+  (`Entity.facing`, `s` at spawn, part of snapshots and hashes);
+  `facingOf(entity)` (core, `sim/motion.ts`) just returns it. To step in a
+  direction it is not facing, an entity first rotates one compass point
+  (45°) toward it per `ticks_per_turn` ticks (archetype field, default 1),
+  the short way round (clockwise on a reversal), and steps once it faces
+  that way. The pending step or path waits meanwhile. A blocked step still
+  turns the entity to face it; `ticks_per_turn: 0` turns and steps in the
+  same tick. Each turning beat is a discrete sprite switch (no turn
+  interpolation); an entity that stops keeps its last facing.
 - **Tiles** face their map cell's legend `facing` (default `s`); **ground
   piles** always face `s`.
 - **Mirroring.** A directional asset's missing facing uses its mirror

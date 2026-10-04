@@ -154,7 +154,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
-| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading |  |
+| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
@@ -167,7 +167,7 @@ table and `s0-bench.json` still need to be filled in (see
 only confirmed after that.
 
 ² Added after M1 (spec `iso-directional-sprites`): 4/8-way assets with
-mirroring, render-derived character facing, legend `facing` for tiles; see
+mirroring, character facing (simulation state since spec `turn-before-move`), legend `facing` for tiles; see
 §7.
 
 ## 6. Risks
@@ -295,6 +295,61 @@ mirroring, render-derived character facing, legend `facing` for tiles; see
     applied in the intent phase right after movement, with a reach of 1
     tile (Chebyshev) and the result in `world.lastAction`. Duration,
     progress bar and interruption come in M5.
+- ~~How do actions take time?~~ **Decided (spec `m5-timed-actions`, M5
+  core):**
+  - **Actions are pack-defined** in an **`actions`** domain, with a
+    **`self`** target or a **tile** target picked by a tile filter
+    (`{ tiles?, tags? }`, one of the 8 cells around the actor or its own).
+    In a tile action's expressions, `tile` is the target cell. A new
+    **`set_tile`** effect edits the map (never onto or off a container
+    tile). Item `use` gains the same `duration`/`interrupt`.
+  - **Effects apply only at completion**, after every start check
+    (`when`, tools, consumed items, reach, filter) passes again; nothing is
+    consumed before. There is no partial progress and no resuming.
+  - **Moving or queueing a new action cancels** the activity, and so does
+    the pack's **`interrupt`** expression, checked every tick after the
+    start. Cancellation happens in the tick's intent phase, so it does not
+    depend on the shell.
+  - **Durations are evaluated once, at start** (a number or an
+    expression in sim seconds, rounded up to whole ticks); a 0-tick action
+    is instant and behaves exactly as before.
+  - The activity, and every cell that differs from the map, are
+    simulation state (snapshot and hash). `world.availableActions()` is a
+    pure query for the shells; the context menu (`m5-context-menu`) and
+    recipes (`m5-recipes`) build on it.
+- ~~How does the player pick what to do, and how do far targets work?~~
+  **Decided (spec `m5-context-menu`, M5):**
+  - **Walk-then-act lives in the simulation**, as **`goto.then`**: a
+    player `goto` can carry an action that is queued when the path arrives
+    (in the same tick's action step), so it is deterministic, part of the
+    snapshot and hash, and every check runs as usual. No path records the
+    new `unreachable` reason; a path cleared before arrival drops it
+    silently. `world.approachIntent(action)` picks the goto for a shell.
+  - **Menus are built from a pure core query**, `world.interactionsAt(x,
+    y)` (tile actions, containers, self actions, walk here), shared by the
+    browser context menu (right-click, long-press, `E`) and the terminal's
+    `x` list. The DOM layer is thin over a pure `contextMenu` model.
+  - **Disabled entries are shown with reasons** (`Needs: Hammer, 2×
+    Plank`, a pack's `unavailable` text such as `Only in the crypt`), so
+    players learn what exists; `reasonText` is the one source of that text.
+- ~~How does crafting work?~~ **Decided (spec `m5-recipes`, M5):**
+  - **Recipes are a separate `recipes` domain** (consume, tools, produce,
+    an optional station, `when`, `duration`, `interrupt`, extra effects),
+    not a kind of action. They run as a **third activity source** on the
+    shared lifecycle of `m5-timed-actions` (same cancellation, interrupt,
+    completion-only rules, snapshot and hash). A source declares its
+    completion steps in order, so recipes **consume, then produce, then
+    run effects** while actions and item uses keep effects-then-consume.
+  - **Stations are tile filters**, like action targets: a recipe made at
+    a stove is `station: { tags: [heat] }`, bound to the first matching
+    cell in reach (row-major) unless the shell names one. Station recipes
+    appear in the context menu on the station's cell; the rest live in a
+    crafting panel (browser `C`, terminal `c`).
+  - **All recipes are known** from the start; no learning, skills or
+    success chances.
+  - **Overflow goes to the ground**: produced units that do not fit are
+    put on the ground pile at the crafter's cell, so a completed recipe
+    never loses items or fails for lack of room.
 - ~~How is sight represented?~~ **Decided (task `line-of-sight`, M4
   groundwork):** sight is **tile-based line of sight**. Tiles get an
   **`opaque`** flag (default `!walkable`; the vampire window is
@@ -325,20 +380,33 @@ mirroring, render-derived character facing, legend `facing` for tiles; see
   style of classic isometric games; **no real-time 3D** and no change to
   the projection. Assets take `directions` (4-way or 8-way) and
   **horizontal mirroring** fills the rest (5 drawings for 8 ways, 2 for 4).
-  Characters face their movement direction, **derived at render time**
-  from the last step (no sim state, snapshots and hashes unchanged); map
-  tiles get a static 4-way `facing` from the legend. Facing as simulation
-  state (turning in place, facing-aware actions) may be promoted in M5.
+  Characters face their movement direction. Facing is **simulation
+  state** (in snapshots and hashes): an entity turns 45° per
+  `ticks_per_turn` beat toward a new direction before it steps (spec
+  `turn-before-move`). Map tiles get a static 4-way `facing` from the
+  legend. Facing-aware actions (vision cones, interact with the faced
+  tile) may come in M5.
   Animation frames are a later step. See `docs/iso.md`.
 
 ## 8. Next step
+
+M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
+**context menu** (spec `m5-context-menu`) and **recipes** (spec
+`m5-recipes`). Survivors barricade windows while the dead hear the
+hammering, cook canned beans on a kitchen stove and tear rags into
+bandages; the vampire closes shutters before dawn, rests on a crypt floor,
+fills empty vials at the blood font and mixes blood wine. Right-click a
+window or a stove across the room and the character walks up and starts.
+
+The next step is to author, via `spec-orchestrator`, the **M6 spec**: a
+chunked world, multiple floors, Tiled maps and save/load, for an
+explorable small town.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers
 with per-room loot, weighted inventory, eating/drinking/healing with
 items) and NPCs that see, hear and react, all in YAML, playable in the
-terminal and in iso. The next step is to author, via `spec-orchestrator`,
-the **M5 spec**: actions with duration, the context menu and recipes.
+terminal and in iso.
 
 M4 is delivered: **sight** (`opaque` tiles, `can_see`), with an `alert`
 status on the NPCs of both genres; **behaviors** (declarative state

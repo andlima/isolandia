@@ -10,6 +10,15 @@ import type { Facing, FacingImage } from './facing.ts';
 
 export const TICKS_PER_SECOND = 10;
 
+/**
+ * A duration in sim seconds → whole ticks, rounded up (negative or NaN ⇒ 0).
+ * A tiny epsilon absorbs float noise, so `0.3 s` is 3 ticks, not 4.
+ */
+export function secondsToTicks(seconds: number, ticksPerSecond = TICKS_PER_SECOND): number {
+  const t = seconds * ticksPerSecond;
+  return t > 0 ? Math.ceil(t - 1e-9) : 0;
+}
+
 export interface PackInfo {
   readonly namespace: string;
   readonly name: string;
@@ -95,6 +104,17 @@ export interface InventorySpec extends ContainerSpec {
   readonly items: readonly ItemCount[];
 }
 
+/**
+ * A duration in sim seconds: a constant (already in ticks) or an expression
+ * evaluated once, when the activity starts.
+ */
+export interface DurationDef {
+  /** Ticks when `fn` is null (≥ 0). */
+  readonly ticks: number;
+  /** Seconds, rounded up to whole ticks at start (negative ⇒ 0). */
+  readonly fn: Compiled | null;
+}
+
 /** `items[].use`: effects run on the user, then `consume` units are removed. */
 export interface ItemUseDef {
   /** Verb shown in the UI (default `"Use"`). */
@@ -104,6 +124,82 @@ export interface ItemUseDef {
   readonly effects: readonly EffectDef[];
   /** Units removed per use (0 = reusable). */
   readonly consume: number;
+  /** 0 ticks (the default) keeps the use instant. */
+  readonly duration: DurationDef;
+  /** Cancels a timed use when truthy (checked every tick after the start); null = never. */
+  readonly interruptFn: Compiled | null;
+}
+
+/**
+ * A tile filter `{ tiles?, tags? }`: a cell matches when its tile is listed
+ * or has any of the tags. Compiled to one flag per tile index.
+ */
+export interface TileFilterDef {
+  /** Listed tile indices. */
+  readonly tiles: readonly number[];
+  /** Listed tile tags. */
+  readonly tags: readonly string[];
+  /** 1 at each matching tile index (length = all tiles). */
+  readonly match: readonly number[];
+}
+
+/** A pack-defined action (`actions` domain), started with `{ kind: 'act' }`. */
+export interface ActionDef {
+  readonly id: string;
+  readonly index: number;
+  /** Verb shown in the UI. */
+  readonly label: string;
+  /** Text shown while in progress (defaults to `label`). */
+  readonly progress: string;
+  /** Tile filter of the target cell, or null for a `self` target. */
+  readonly target: TileFilterDef | null;
+  /** Checked at start and at completion; null means always. */
+  readonly whenFn: Compiled | null;
+  /** UI text shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
+  /** Item indices that must be held (never consumed). */
+  readonly tools: readonly number[];
+  /** Items that must be held, removed at completion. */
+  readonly consume: readonly ItemCount[];
+  readonly duration: DurationDef;
+  /** Cancels the activity when truthy (checked every tick after the start); null = never. */
+  readonly interruptFn: Compiled | null;
+  /** Run once, at completion. */
+  readonly effects: readonly EffectDef[];
+}
+
+/**
+ * A pack-defined recipe (`recipes` domain), started with `{ kind: 'craft' }`:
+ * consumes items, needs tools, produces items, optionally at a station cell.
+ */
+export interface RecipeDef {
+  readonly id: string;
+  readonly index: number;
+  /** Name of the result, e.g. `Hot beans`. */
+  readonly label: string;
+  /** Shown as `<verb>: <label>` in menus (default `Craft`). */
+  readonly verb: string;
+  /** Grouping in the crafting panel (default `General`). */
+  readonly category: string;
+  /** Text shown while in progress (defaults to `<verb>: <label>`). */
+  readonly progress: string;
+  /** Item indices that must be held (never consumed). */
+  readonly tools: readonly number[];
+  /** Items removed at completion (non-empty). */
+  readonly consume: readonly ItemCount[];
+  /** Items added at completion, in written order (non-empty); overflow goes to the ground. */
+  readonly produce: readonly ItemCount[];
+  /** Tile filter of the station cell, or null when the recipe needs none. */
+  readonly station: TileFilterDef | null;
+  /** Checked at start and at completion; null means always. */
+  readonly whenFn: Compiled | null;
+  /** UI text shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
+  readonly duration: DurationDef;
+  /** Cancels the activity when truthy (checked every tick after the start); null = never. */
+  readonly interruptFn: Compiled | null;
+  /** Extra effects on the crafter, run last at completion (never `set_tile`). */
+  readonly effects: readonly EffectDef[];
 }
 
 /** An item kind (`items` domain). Items are plain data inside containers. */
@@ -181,6 +277,8 @@ export interface ArchetypeDef {
   /** Initial value per entry of `measurements` (same order). */
   readonly initial: readonly number[];
   readonly ticksPerStep: number;
+  /** Ticks per 45° turn before stepping in a new direction (0 = instant). */
+  readonly ticksPerTurn: number;
   /** Asset index, or null for a generated placeholder. */
   readonly sprite: number | null;
   /** Every entity of this archetype gets an inventory; null for none. */
@@ -265,8 +363,15 @@ export interface NoiseEffectDef extends NumberTerm {
   readonly type: 'noise';
 }
 
-/** One effect of a system or item use. */
-export type EffectDef = MeasurementEffectDef | NoiseEffectDef;
+/** Replaces the tile at an action's target cell (tile-targeted actions only). */
+export interface SetTileEffectDef {
+  readonly type: 'set_tile';
+  /** Tile index (never a tile with a container). */
+  readonly tile: number;
+}
+
+/** One effect of a system, item use or action. */
+export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef;
 
 /** A periodic rule (`systems` domain), run once per matching entity. */
 export interface SystemDef {
@@ -314,11 +419,16 @@ export interface LightingDef {
   readonly tint: readonly TintKeyframe[];
 }
 
-/** `start.defeat`: the game ends when `when` (with `self` = player) is truthy. */
-export interface DefeatDef {
+/** `start.defeat` / `start.victory`: the game ends when `when` (with `self` = player) is truthy. */
+export interface OutcomeDef {
   readonly when: Compiled;
   readonly message: string;
 }
+
+/** `start.defeat`: the game is lost when `when` holds. */
+export type DefeatDef = OutcomeDef;
+/** `start.victory`: the game is won when `when` holds. */
+export type VictoryDef = OutcomeDef;
 
 export interface Definition {
   readonly ticksPerSecond: number;
@@ -333,10 +443,17 @@ export interface Definition {
   readonly items: readonly ItemDef[];
   readonly loot: readonly LootTableDef[];
   readonly behaviors: readonly BehaviorDef[];
+  readonly actions: readonly ActionDef[];
+  readonly recipes: readonly RecipeDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
-  readonly start: { readonly map: number; readonly player: number; readonly defeat: DefeatDef | null };
+  readonly start: {
+    readonly map: number;
+    readonly player: number;
+    readonly defeat: DefeatDef | null;
+    readonly victory: VictoryDef | null;
+  };
   /** In-game calendar; engine defaults when no pack defines `clock`. */
   readonly clock: ClockDef;
   /** Day/night tint; null when no pack defines `lighting` (no tint). */
@@ -353,5 +470,7 @@ export interface Definition {
     readonly items: Readonly<Record<string, number>>;
     readonly loot: Readonly<Record<string, number>>;
     readonly behaviors: Readonly<Record<string, number>>;
+    readonly actions: Readonly<Record<string, number>>;
+    readonly recipes: Readonly<Record<string, number>>;
   };
 }

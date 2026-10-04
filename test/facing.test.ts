@@ -213,7 +213,7 @@ test('the genre packs load with directional assets and legend facings', () => {
 
 // ── facingOf ────────────────────────────────────────────────────────────────
 
-test('facingOf: all 8 step directions, the never-moved case, persistence after the step', () => {
+test('facingOf: all 8 step directions (ticks_per_turn 0), the never-moved case, persistence after the step', () => {
   type D = -1 | 0 | 1;
   const steps: [D, D, Facing][] = [
     [0, -1, 'n'],
@@ -246,11 +246,12 @@ start: { map: m, player: hero }
   }
 });
 
-test('facingOf only depends on the step fields (no new entity state)', () => {
-  assert.equal(facingOf({ x: 3, y: 3, fromX: 3, fromY: 3 }), 's');
-  assert.equal(facingOf({ x: 2, y: 5, fromX: 3, fromY: 3 }), 'sw'); // signs only
+test('facingOf reads the simulation facing', () => {
+  assert.equal(facingOf({ facing: 'nw' }), 'nw');
   const w = World.create(loadFixture(), 1);
-  assert.ok(!Object.keys(w.player).some((k) => /facing/i.test(k)));
+  assert.equal(w.player.facing, 's');
+  w.player.facing = 'e';
+  assert.equal(facingOf(w.player), 'e');
 });
 
 // ── resolveFacing (AC 5) ───────────────────────────────────────────────────

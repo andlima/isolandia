@@ -3,6 +3,7 @@ archetypes:
     label: Survivor
     glyph: "@"
     color: bright_yellow
+    sprite: survivor_img
     tags: [humanoid, living]
     measurements: [hp, hunger, thirst, fatigue]
     initial: { hunger: 20 }
@@ -22,6 +23,7 @@ archetypes:
     label: Crawler
     glyph: z
     color: "#3e7a2a"
+    sprite: crawler_img
     tags: [undead]
     measurements: [hp]
     initial: { hp: 20 }

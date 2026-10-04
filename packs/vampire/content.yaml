@@ -22,24 +22,28 @@ tiles:
     label: Creaky floorboards
     glyph: ","
     color: "#6b2a30"
+    sprite: creaky_img
     walkable: true
     tags: [creaky, shade]
   - id: sunbeam
     label: Sunlit floor
     glyph: "'"
     color: "#e8d27a"
+    sprite: sunbeam_img
     walkable: true
     tags: [sunlit]
   - id: crypt
     label: Crypt floor
     glyph: "_"
     color: "#3b3346"
+    sprite: crypt_img
     walkable: true
     tags: [shade, crypt]
   - id: font
     label: Blood font
     glyph: "u"
     color: "#c0182c"
+    sprite: font_img
     walkable: true
     tags: [shade, blood]
   - id: coffin
@@ -53,18 +57,29 @@ tiles:
     label: Window
     glyph: "\""
     color: "#6fa8dc"
+    sprite: window_img
     walkable: false
     opaque: false                   # you can see through it, not walk through it
+  # A window after the `shutter` action (survival.yaml): no light, no view.
+  - id: shuttered_window
+    label: Shuttered window
+    glyph: "|"
+    color: "#8a6a3a"
+    sprite: shuttered_window_img
+    walkable: false
+    opaque: true
   - id: bookshelf
     label: Bookshelf
     glyph: "L"
     color: "#6a4a2a"
+    sprite: bookshelf_img
     walkable: false
     container: { capacity: 20 }
   - id: chest
     label: Oak chest
     glyph: "X"
     color: "#8a6a3a"
+    sprite: chest_img
     walkable: false
     opaque: false                   # low: blocks the way, not the view
     container: { capacity: 30 }
@@ -72,6 +87,7 @@ tiles:
     label: Wine rack
     glyph: "R"
     color: "#5a1a2a"
+    sprite: wine_rack_img
     walkable: false
     container: { capacity: 8 }
 
@@ -91,6 +107,7 @@ archetypes:
     label: Bat
     glyph: b
     color: "#7a5c8a"
+    sprite: bat_img
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }

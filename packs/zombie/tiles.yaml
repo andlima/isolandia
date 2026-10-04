@@ -3,6 +3,7 @@ tiles:
     label: Road
     glyph: ":"
     color: "#555555"
+    sprite: road_img
     walkable: true
   - id: grass
     label: Grass
@@ -22,43 +23,76 @@ tiles:
     label: Broken glass
     glyph: "*"
     color: "#a8d8e8"
+    sprite: glass_img
     walkable: true
     opaque: false
     tags: [glass]
+  # House windows: the undead see through them; a barricade blocks the view.
+  - id: window
+    label: Window
+    glyph: "\""
+    color: "#a8d8e8"
+    sprite: window_img
+    walkable: false
+    opaque: false
+  - id: barricaded_window
+    label: Barricaded window
+    glyph: "H"
+    color: "#a07242"
+    sprite: barricaded_window_img
+    walkable: false
+    opaque: true
   - id: bed
     label: Bed
     glyph: "="
     color: "#8e6fb5"
+    sprite: bed_img
     walkable: true
+    raised: true                    # iso: drawn as furniture, depth-sorted
     tags: [bed]
+  # The kitchens' cooking station: recipes with `station: { tags: [heat] }`
+  # (recipes.yaml) are made next to it.
+  - id: stove
+    label: Stove
+    glyph: "S"
+    color: "#d2d4dc"
+    sprite: stove_img
+    walkable: false
+    tags: [heat]
   # Containers, filled by `distributions` (loot.yaml).
   - id: fridge
     label: Fridge
     glyph: "F"
     color: "#e8e8f0"
+    sprite: fridge_img
     walkable: false
     container: { capacity: 25 }
   - id: cupboard
     label: Cupboard
     glyph: "K"
     color: "#9a6a3a"
+    sprite: cupboard_img
     walkable: false
     container: { capacity: 12 }
   - id: cabinet
     label: Medicine cabinet
     glyph: "M"
     color: "#d0e0e0"
+    sprite: cabinet_img
     walkable: false
     container: { capacity: 3 }
   - id: dresser
     label: Dresser
     glyph: "D"
     color: "#7a5230"
+    sprite: dresser_img
     walkable: false
     container: { capacity: 15 }
   - id: crate
     label: Crate
     glyph: "x"
     color: "#b08850"
+    sprite: crate_img
     walkable: true                  # a floor crate you can stand on
+    raised: true                    # iso: drawn as a block, depth-sorted
     container: { capacity: 40 }
