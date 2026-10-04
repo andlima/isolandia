@@ -1,11 +1,11 @@
 /**
- * Inventory and loot panels for the browser. The views are pure functions
- * of `hudModel` (so they are testable without a DOM); the `Panels` class
- * only renders them and turns button clicks into `world.queueAction`.
- * Pack actions live in the context menu (`menu.ts`).
+ * Inventory, loot and crafting panels for the browser. The views are pure
+ * functions of `hudModel` and `availableRecipes` (so they are testable
+ * without a DOM); the `Panels` class only renders them and turns button
+ * clicks into `world.queueAction`. Pack actions live in the context menu (`menu.ts`).
  */
 
-import { hudModel, type Action, type GotoIntent, type HudModel, type World } from '../core/index.ts';
+import { hudModel, recipeHint, stationLabel, type Action, type GotoIntent, type HudModel, type World } from '../core/index.ts';
 
 export interface PanelButton {
   readonly label: string;
@@ -13,6 +13,8 @@ export interface PanelButton {
   readonly actions: readonly Action[];
   /** True once the game has ended (defeat or victory): the panels are read-only. */
   readonly disabled: boolean;
+  /** Why it is disabled (`recipeHint`), when it is not just read-only. */
+  readonly hint?: string;
 }
 
 export interface PanelRow {
@@ -89,18 +91,79 @@ export function lootView(m: HudModel, readOnly: boolean): LootView | null {
   return { sections, put };
 }
 
+/** One recipe of the crafting panel. */
+export interface CraftingRow {
+  /** Qualified recipe id. */
+  readonly recipe: string;
+  /** The result's name, e.g. `Hot beans`. */
+  readonly label: string;
+  /** Consumed items, e.g. `2× Rag`. */
+  readonly inputs: string;
+  /** Tools, e.g. `Hammer`; `''` for none. */
+  readonly tools: string;
+  /** `at Stove` (the first matching tile's label), or null without a station. */
+  readonly station: string | null;
+  /** `Craft`: disabled with a hint when the recipe cannot be started now. */
+  readonly craft: PanelButton;
+}
+
+export interface CraftingGroup {
+  readonly category: string;
+  readonly rows: readonly CraftingRow[];
+}
+
+/** Crafting panel: every recipe, grouped by category (first-seen order), rows in definition order. */
+export interface CraftingView {
+  readonly groups: readonly CraftingGroup[];
+}
+
+/**
+ * The crafting panel's view, a pure function of `world.availableRecipes()`.
+ * Craft queues the recipe at its chosen station cell; a station out of reach
+ * stays disabled (`Go to a Stove`): the context menu walks there.
+ */
+export function craftingView(world: World, readOnly: boolean): CraftingView {
+  const { items, recipes, ids } = world.def;
+  const groups: { category: string; rows: CraftingRow[] }[] = [];
+  for (const r of world.availableRecipes()) {
+    const def = recipes[ids.recipes[r.recipe]!]!;
+    const station = stationLabel(world, r.recipe);
+    const action: Action = r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y } : { kind: 'craft', recipe: r.recipe };
+    const craft: PanelButton = r.ok ? button('Craft', action, readOnly) : { ...button('Craft', action, true), hint: recipeHint(world, r) };
+    const row: CraftingRow = {
+      recipe: r.recipe,
+      label: r.label,
+      inputs: def.consume.map((c) => `${c.count}× ${items[c.item]!.label}`).join(', '),
+      tools: def.tools.map((t) => items[t]!.label).join(', '),
+      station: station === null ? null : `at ${station}`,
+      craft,
+    };
+    const g = groups.find((x) => x.category === r.category);
+    if (g) g.rows.push(row);
+    else groups.push({ category: r.category, rows: [row] });
+  }
+  return { groups };
+}
+
+/** One line of a crafting row: `Hot beans: 1× Canned beans · tools: Hammer · at Stove`. */
+export function craftingRowText(r: CraftingRow): string {
+  return [`${r.label}: ${r.inputs}`, ...(r.tools ? [`tools: ${r.tools}`] : []), ...(r.station ? [r.station] : [])].join(' · ');
+}
+
 /** Click-to-move: a non-walkable container tile is approached (`adjacent: true`) instead of entered. */
 export function clickIntent(world: World, x: number, y: number): GotoIntent {
   const t = world.grid.tileAt(x, y);
   return t?.container && !t.walkable ? { kind: 'goto', x, y, adjacent: true } : { kind: 'goto', x, y };
 }
 
-/** DOM rendering of the two panels. Re-renders only when their content changes. */
+/** DOM rendering of the panels. Re-renders only when their content changes. */
 export class Panels {
   private readonly inv: HTMLDivElement;
   private readonly loot: HTMLDivElement;
+  private readonly craft: HTMLDivElement;
   private invKey = '';
   private lootKey = '';
+  private craftKey = '';
   private lastTick = -1;
   private lastVersion = -1;
   private lastTileVersion = -1;
@@ -119,9 +182,29 @@ export class Panels {
     this.loot.id = 'loot';
     this.loot.className = 'panel';
     this.loot.hidden = true;
-    parent.append(this.inv, this.loot);
+    this.craft = document.createElement('div');
+    this.craft.id = 'crafting';
+    this.craft.className = 'panel';
+    this.craft.hidden = true;
+    parent.append(this.inv, this.loot, this.craft);
     this.inv.addEventListener('click', (ev) => this.onClick(ev));
     this.loot.addEventListener('click', (ev) => this.onClick(ev));
+    this.craft.addEventListener('click', (ev) => this.onClick(ev));
+    if (world.def.recipes.length > 0 && world.player.inv) {
+      const toggle = document.createElement('button');
+      toggle.id = 'craft-toggle';
+      toggle.textContent = 'Crafting [C]';
+      toggle.addEventListener('click', () => this.toggleCrafting());
+      parent.append(toggle);
+    }
+  }
+
+  /** `C` or the HUD button: show or hide the crafting panel. */
+  toggleCrafting(): void {
+    if (this.world.def.recipes.length === 0 || !this.world.player.inv) return;
+    this.craft.hidden = !this.craft.hidden;
+    this.craftKey = '';
+    this.lastTick = -1;
   }
 
   /** `I` / `Tab`: show or hide the inventory panel. */
@@ -152,6 +235,33 @@ export class Panels {
       if (key !== this.invKey) {
         this.invKey = key;
         this.inv.replaceChildren(heading('Inventory'), line(iv.carrying), ...iv.rows.map(row), ...(iv.rows.length ? [] : [line('empty')]));
+      }
+    }
+
+    if (!this.craft.hidden) {
+      const cv = craftingView(w, readOnly);
+      const key = JSON.stringify(cv);
+      if (key !== this.craftKey) {
+        this.craftKey = key;
+        const parts: HTMLElement[] = [heading('Crafting')];
+        for (const g of cv.groups) {
+          const h = heading(g.category);
+          h.className = 'panel-subtitle';
+          parts.push(h);
+          for (const r of g.rows) {
+            const d = line(craftingRowText(r));
+            d.className = 'panel-row';
+            d.append(' ', buttonEl(r.craft));
+            if (r.craft.hint) {
+              const hint = document.createElement('span');
+              hint.className = 'panel-hint';
+              hint.textContent = ` ${r.craft.hint}`;
+              d.append(hint);
+            }
+            parts.push(d);
+          }
+        }
+        this.craft.replaceChildren(...parts);
       }
     }
 
@@ -206,6 +316,7 @@ function buttonEl(b: PanelButton): HTMLButtonElement {
   const el = document.createElement('button');
   el.textContent = b.label;
   el.disabled = b.disabled;
+  if (b.hint) el.title = b.hint;
   el.dataset['actions'] = JSON.stringify(b.actions);
   return el;
 }

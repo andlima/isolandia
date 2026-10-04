@@ -7,7 +7,7 @@ import { clockAt, type ClockTime } from './clock.ts';
 import { GROUND_LABEL, type Container } from './sim/containers.ts';
 
 export { GROUND_LABEL };
-import type { ActionFailure, ActionRecord, MissingItem, OutcomeRecord, World } from './sim/world.ts';
+import type { ActionFailure, ActionRecord, AvailableRecipe, MissingItem, OutcomeRecord, World } from './sim/world.ts';
 
 export interface HudMeasurement {
   readonly label: string;
@@ -176,6 +176,7 @@ const REASON_TEXT: Record<ActionFailure, string> = {
   no_inventory: 'No inventory',
   unknown_container: 'Not here',
   unknown_action: 'Unknown action',
+  unknown_recipe: 'Unknown recipe',
   invalid_target: "Can't do that here",
   cannot_act: 'Not now',
   occupied: 'Something is in the way',
@@ -195,6 +196,61 @@ export function reasonText(entry: { readonly reason?: ActionFailure; readonly mi
   if (reason === 'missing' && entry.missing?.length) return needsText(entry.missing);
   if (reason === 'cannot_act' && entry.unavailable) return entry.unavailable;
   return REASON_TEXT[reason];
+}
+
+/** Label of the first tile (definition order) a recipe's station matches, or null for a recipe without a station. */
+export function stationLabel(world: World, recipe: string): string | null {
+  const k = world.def.ids.recipes[recipe];
+  const station = k === undefined ? null : world.def.recipes[k]!.station;
+  if (!station) return null;
+  return world.def.tiles.find((t) => station.match[t.index] === 1)?.label ?? null;
+}
+
+/** `reasonText` for an `availableRecipes` entry; a station out of reach reads `Go to a Stove`. */
+export function recipeHint(world: World, r: AvailableRecipe): string {
+  const station = r.reason === 'out_of_reach' ? stationLabel(world, r.recipe) : null;
+  return station ? `Go to a ${station}` : reasonText(r);
+}
+
+/** `1× Hot beans, 2× Rag`. */
+function countsText(world: World, list: readonly { item: number; count: number }[]): string {
+  return list.map((c) => `${c.count}× ${world.def.items[c.item]!.label}`).join(', ');
+}
+
+/** Short feedback text for a `craft` record. */
+function craftText(world: World, a: ActionRecord): string {
+  const k = world.def.ids.recipes[a.recipe ?? ''];
+  const def = k === undefined ? null : world.def.recipes[k]!;
+  if (!def) return `Unknown recipe ${a.recipe ?? ''}`;
+  const name = `${def.verb}: ${def.label}`;
+  if (a.ok) {
+    if (a.stage === 'start') return `You start: ${def.progress}.`;
+    return `You make ${countsText(world, def.produce)}.${a.dropped ? ' (some dropped on the ground)' : ''}`;
+  }
+  switch (a.reason) {
+    case 'no_inventory':
+      return 'No inventory';
+    case 'out_of_reach': {
+      const station = stationLabel(world, def.id);
+      return station ? `You need to be at a ${station}.` : "You can't reach that.";
+    }
+    case 'invalid_target':
+      return `You can't ${lower(def.verb)} that here.`;
+    case 'missing': {
+      const items = world.def.items;
+      return `You need ${[...def.tools.map((t) => items[t]!.label), ...def.consume.map((c) => `${items[c.item]!.label} x${c.count}`)].join(', ')}.`;
+    }
+    case 'cannot_act':
+      return def.unavailable ?? `You can't ${lower(def.verb)} ${lower(def.label)} now.`;
+    case 'cancelled':
+      return `${name} cancelled.`;
+    case 'interrupted':
+      return `${name} interrupted.`;
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
+    default:
+      return `${name} failed.`;
+  }
 }
 
 /** Short feedback text for an `act` record. */
@@ -235,6 +291,7 @@ function actText(world: World, a: ActionRecord): string {
 /** Short feedback text for an action record. */
 export function actionText(world: World, a: ActionRecord): string {
   if (a.kind === 'act') return actText(world, a);
+  if (a.kind === 'craft') return craftText(world, a);
   const idx = world.def.ids.items[a.item];
   const label = idx === undefined ? a.item : world.def.items[idx]!.label;
   if (a.kind === 'use' && idx !== undefined && world.def.items[idx]!.use) {

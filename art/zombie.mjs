@@ -184,6 +184,30 @@ function furniture(facing, h, { front, side, back = side, top }) {
   return c;
 }
 
+/** A kitchen stove (the `heat` station of the recipes): oven door in front, four burners on top. */
+function stove() {
+  const { c, I } = blockTile();
+  I.box(0, 0, 1, 1, 0, 0.625, {
+    left: (u, z) => {
+      const [A, Z] = [px(u), px(z)];
+      if (Z === 0) return 'dark';
+      if (Z === 9 && (A === 4 || A === 8 || A === 12)) return 'dark'; // knobs
+      if (A >= 3 && A <= 12 && Z >= 2 && Z <= 7) return A === 3 || A === 12 || Z === 2 || Z === 7 ? 'white_lo' : 'asphalt_lo'; // oven window
+      return A === 0 || A === 15 || Z === 8 ? 'white_lo' : 'white';
+    },
+    right: (v, z) => (px(z) === 0 ? 'dark' : 'white_lo'),
+    top: (u, v) => {
+      const [U, V] = [px(u), px(v)];
+      const ring = (cu, cv) => Math.max(Math.abs(U - cu), Math.abs(V - cv));
+      const near = Math.min(ring(4, 4), ring(11, 4), ring(4, 11), ring(11, 11));
+      if (near === 0) return ring(4, 11) === 0 ? 'red' : 'asphalt';
+      if (near <= 2) return 'dark';
+      return 'white_hi';
+    },
+  });
+  return c;
+}
+
 const fridge = (f) =>
   furniture(f, 1, {
     front: (a, z) => {
@@ -347,6 +371,8 @@ const ITEMS = {
   car_battery: ['.r.....dd.', '.dddddddd.', 'dddddddddd', 'aaaaaaaadd', 'ayyaaaaadd', 'aaaaaaaad.'],
   hammer: ['.dddd.....', 'ddaaddoooo', '.dd..onnnN', '.dd.......'],
   plank: ['.......ooon', '....ooooonN', '.oooooonnN.', 'oooonnnN...', 'nnnNN......'],
+  hot_beans: ['..W..W.', '.W..W..', 'wLLLLw.', 'yRrRRyo', 'yyyyyo.', 'wwwwwL.'],
+  rag: ['....bbbb..', '..bbBbbbB.', '.bbbbBBbbb', 'bBbbbbbBB.', '.BBbbBB...'],
   nails: ['.L....L.', '.a..L.a.', '.a..a.a.', '.L..a.L.', '.a....a.', '..L.a...', '..a.a...'],
 };
 
@@ -359,6 +385,7 @@ export function images() {
     { file: 'crate.svg', canvas: crate(), note: 'block' },
     { file: 'window.svg', canvas: windowWall(false), note: 'block' },
     { file: 'barricaded_window.svg', canvas: windowWall(true), note: 'block' },
+    { file: 'stove.svg', canvas: stove(), note: 'block' },
     ...furn('car', (f) => car(f === 's' ? 'v' : 'u')),
     ...furn('bed', bed),
     ...furn('fridge', fridge),

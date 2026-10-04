@@ -41,5 +41,7 @@ assets:
   - { id: blood_vial_img, file: assets/blood_vial.svg, anchor: [0.5, 0.5] }
   - { id: cloak_img, file: assets/cloak.svg, anchor: [0.5, 0.5] }
   - { id: wine_img, file: assets/wine.svg, anchor: [0.5, 0.5] }
+  - { id: empty_vial_img, file: assets/empty_vial.svg, anchor: [0.5, 0.5] }
+  - { id: blood_wine_img, file: assets/blood_wine.svg, anchor: [0.5, 0.5] }
   - { id: tome_img, file: assets/tome.svg, anchor: [0.5, 0.5] }
   - { id: candle_img, file: assets/candle.svg, anchor: [0.5, 0.5] }

@@ -6,7 +6,7 @@ import { nearMiss } from '../expr/index.ts';
 import { at, formatPath, lineOf, type ErrorSink, type Src } from './errors.ts';
 import { ID_RE } from './pack.ts';
 
-export type Kind = 'measurement' | 'asset' | 'tile' | 'archetype' | 'map' | 'system' | 'status' | 'item' | 'loot' | 'behavior' | 'action';
+export type Kind = 'measurement' | 'asset' | 'tile' | 'archetype' | 'map' | 'system' | 'status' | 'item' | 'loot' | 'behavior' | 'action' | 'recipe';
 
 /** The namespaces a pack can see: its own first, then its direct depends. */
 export interface Scope {
@@ -44,6 +44,7 @@ export class SymbolTable {
     loot: new Map(),
     behavior: new Map(),
     action: new Map(),
+    recipe: new Map(),
   };
 
   /**

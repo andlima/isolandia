@@ -154,7 +154,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
-| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | 🚧 in progress (timed actions done) |
+| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
@@ -332,6 +332,24 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   - **Disabled entries are shown with reasons** (`Needs: Hammer, 2×
     Plank`, a pack's `unavailable` text such as `Only in the crypt`), so
     players learn what exists; `reasonText` is the one source of that text.
+- ~~How does crafting work?~~ **Decided (spec `m5-recipes`, M5):**
+  - **Recipes are a separate `recipes` domain** (consume, tools, produce,
+    an optional station, `when`, `duration`, `interrupt`, extra effects),
+    not a kind of action. They run as a **third activity source** on the
+    shared lifecycle of `m5-timed-actions` (same cancellation, interrupt,
+    completion-only rules, snapshot and hash). A source declares its
+    completion steps in order, so recipes **consume, then produce, then
+    run effects** while actions and item uses keep effects-then-consume.
+  - **Stations are tile filters**, like action targets: a recipe made at
+    a stove is `station: { tags: [heat] }`, bound to the first matching
+    cell in reach (row-major) unless the shell names one. Station recipes
+    appear in the context menu on the station's cell; the rest live in a
+    crafting panel (browser `C`, terminal `c`).
+  - **All recipes are known** from the start; no learning, skills or
+    success chances.
+  - **Overflow goes to the ground**: produced units that do not fit are
+    put on the ground pile at the crafter's cell, so a completed recipe
+    never loses items or fails for lack of room.
 - ~~How is sight represented?~~ **Decided (task `line-of-sight`, M4
   groundwork):** sight is **tile-based line of sight**. Tiles get an
   **`opaque`** flag (default `!walkable`; the vampire window is
@@ -372,20 +390,23 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 
 ## 8. Next step
 
-M5 is in progress: **timed actions** are delivered (spec
-`m5-timed-actions`). Survivors barricade windows with a hammer, planks and
-nails while the dead hear the hammering, and bandaging takes a few
-seconds; the vampire closes shutters before dawn and rests on a crypt floor
-until a screeching bat wakes it. The **context menu** is delivered too
-(spec `m5-context-menu`): right-click a window across the room and the
-survivor walks up and starts hammering. Recipes come next.
+M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
+**context menu** (spec `m5-context-menu`) and **recipes** (spec
+`m5-recipes`). Survivors barricade windows while the dead hear the
+hammering, cook canned beans on a kitchen stove and tear rags into
+bandages; the vampire closes shutters before dawn, rests on a crypt floor,
+fills empty vials at the blood font and mixes blood wine. Right-click a
+window or a stove across the room and the character walks up and starts.
+
+The next step is to author, via `spec-orchestrator`, the **M6 spec**: a
+chunked world, multiple floors, Tiled maps and save/load, for an
+explorable small town.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers
 with per-room loot, weighted inventory, eating/drinking/healing with
 items) and NPCs that see, hear and react, all in YAML, playable in the
-terminal and in iso. The next step is to author, via `spec-orchestrator`,
-the **M5 spec**: actions with duration, the context menu and recipes.
+terminal and in iso.
 
 M4 is delivered: **sight** (`opaque` tiles, `can_see`), with an `alert`
 status on the NPCs of both genres; **behaviors** (declarative state

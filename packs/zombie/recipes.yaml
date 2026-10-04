@@ -1,0 +1,22 @@
+# Crafting (docs/packs.md#recipes): items are used up and made only when the
+# recipe completes; moving or starting something else cancels it.
+recipes:
+  # Heat a can on a kitchen stove. The sizzle carries a little.
+  - id: cook_beans
+    label: Hot beans
+    verb: Cook
+    category: Cooking
+    station: { tags: [heat] }
+    consume: { canned_beans: 1 }
+    produce: { hot_beans: 1 }
+    duration: 5
+    effects:
+      - { type: noise, radius: 3 }
+  # Tear two rags into a bandage, anywhere.
+  - id: tear_bandage
+    label: Bandage
+    verb: Make
+    category: Medical
+    consume: { rag: 2 }
+    produce: { bandage: 1 }
+    duration: 3

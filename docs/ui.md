@@ -13,10 +13,13 @@ order:
 
 1. the pack's **tile actions** that match the cell's tile (e.g.
    *Barricade* on a window);
-2. **Open** and, when not empty, **Take all from …** for each container on
+2. the **station recipes** whose station matches the cell (e.g.
+   *Cook: Hot beans* on a stove), with the same in-reach and walk-then-act
+   behaviour as tile actions;
+3. **Open** and, when not empty, **Take all from …** for each container on
    the cell;
-3. on your own cell, the **self actions** (e.g. *Rest*);
-4. **Walk here**, on any other walkable cell.
+4. on your own cell, the **self actions** (e.g. *Rest*);
+5. **Walk here**, on any other walkable cell.
 
 Entries that cannot be done stay in the list, greyed out, with the reason
 underneath (`Needs: Hammer, 2× Plank`, `Only in the crypt`, …), so you
@@ -47,3 +50,17 @@ stale menu is harmless.
 
 Left click still walks to a tile. Pack actions are no longer listed in the
 loot panel; item uses stay in the inventory panel (`I` / `Tab`).
+
+## Crafting panel
+
+`C` (or the **Crafting [C]** button at the bottom left) toggles the
+crafting panel. It lists every [recipe](packs.md#recipes), grouped by
+`category`; each row shows the result, its inputs (`2× Rag`), tools and
+station (`at Stove`), and a **Craft** button. Craft is disabled with a
+hint when the recipe cannot be made now (`Needs: 2× Rag`, or
+`Go to a Stove` when its station is out of reach: right-click the station
+to walk there and craft). The view is the pure function
+`craftingView(world, readOnly)` in `src/web/panels.ts` over
+`world.availableRecipes()`; it re-renders when `tick`, `containerVersion`
+or `tileVersion` changes. Recipes without a station live only here, not in
+the context menu.

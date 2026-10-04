@@ -22,6 +22,6 @@ if (!r.ok) {
       `${def.archetypes.length} archetypes, ${def.maps.length} maps, ` +
       `${def.systems.length} systems, ${def.statuses.length} statuses, ` +
       `${def.items.length} items, ${def.loot.length} loot tables, ${def.distributions.length} distributions, ` +
-      `${def.behaviors.length} behaviors, ${def.actions.length} actions`,
+      `${def.behaviors.length} behaviors, ${def.actions.length} actions, ${def.recipes.length} recipes`,
   );
 }

@@ -168,6 +168,40 @@ export interface ActionDef {
   readonly effects: readonly EffectDef[];
 }
 
+/**
+ * A pack-defined recipe (`recipes` domain), started with `{ kind: 'craft' }`:
+ * consumes items, needs tools, produces items, optionally at a station cell.
+ */
+export interface RecipeDef {
+  readonly id: string;
+  readonly index: number;
+  /** Name of the result, e.g. `Hot beans`. */
+  readonly label: string;
+  /** Shown as `<verb>: <label>` in menus (default `Craft`). */
+  readonly verb: string;
+  /** Grouping in the crafting panel (default `General`). */
+  readonly category: string;
+  /** Text shown while in progress (defaults to `<verb>: <label>`). */
+  readonly progress: string;
+  /** Item indices that must be held (never consumed). */
+  readonly tools: readonly number[];
+  /** Items removed at completion (non-empty). */
+  readonly consume: readonly ItemCount[];
+  /** Items added at completion, in written order (non-empty); overflow goes to the ground. */
+  readonly produce: readonly ItemCount[];
+  /** Tile filter of the station cell, or null when the recipe needs none. */
+  readonly station: TileFilterDef | null;
+  /** Checked at start and at completion; null means always. */
+  readonly whenFn: Compiled | null;
+  /** UI text shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
+  readonly duration: DurationDef;
+  /** Cancels the activity when truthy (checked every tick after the start); null = never. */
+  readonly interruptFn: Compiled | null;
+  /** Extra effects on the crafter, run last at completion (never `set_tile`). */
+  readonly effects: readonly EffectDef[];
+}
+
 /** An item kind (`items` domain). Items are plain data inside containers. */
 export interface ItemDef {
   readonly id: string;
@@ -410,6 +444,7 @@ export interface Definition {
   readonly loot: readonly LootTableDef[];
   readonly behaviors: readonly BehaviorDef[];
   readonly actions: readonly ActionDef[];
+  readonly recipes: readonly RecipeDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -436,5 +471,6 @@ export interface Definition {
     readonly loot: Readonly<Record<string, number>>;
     readonly behaviors: Readonly<Record<string, number>>;
     readonly actions: Readonly<Record<string, number>>;
+    readonly recipes: Readonly<Record<string, number>>;
   };
 }

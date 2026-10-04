@@ -1,26 +1,31 @@
 /**
  * Timed activities: the requirement checks and the lifecycle (start, work,
- * cancel, complete) shared by every "activity source". Pack actions and
- * item uses are sources; a new kind of timed work only has to build one.
+ * cancel, complete) shared by every "activity source". Pack actions, item
+ * uses and recipes are sources; a new kind of timed work only has to build one.
  *
  * An activity has no partial progress: effects run and items are consumed
  * only at completion, after every check has passed again.
  */
 
-import { secondsToTicks, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type TileDef } from '../definition.ts';
+import { secondsToTicks, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
 import type { Compiled, ExprContext } from '../expr/index.ts';
 import { countOf, type Container } from './containers.ts';
 import type { Grid } from './grid.ts';
 import type { ActionFailure, Entity } from './world.ts';
 
+/** One step of a completion, after every check has passed again. */
+export type CompletionStep = 'effects' | 'consume' | 'produce';
+
 /** Something an entity can spend time doing. */
 export interface ActivitySource {
   /** Action kind it is started with. */
-  readonly kind: 'act' | 'use';
+  readonly kind: 'act' | 'use' | 'craft';
   /** Action index, or -1. */
   readonly action: number;
   /** Item index (of an item use), or -1. */
   readonly item: number;
+  /** Recipe index, or -1. */
+  readonly recipe: number;
   /** Verb shown in the UI. */
   readonly label: string;
   /** Text shown while in progress. */
@@ -39,6 +44,10 @@ export interface ActivitySource {
   readonly effects: readonly EffectDef[];
   /** Tile indices placed by the `set_tile` effects, in order. */
   readonly setTiles: readonly number[];
+  /** Items added to the actor at completion (overflow goes to the ground). */
+  readonly produce: readonly ItemCount[];
+  /** What a completion does, in order. */
+  readonly completion: readonly CompletionStep[];
 }
 
 /** An entity's in-progress activity. */
@@ -67,8 +76,14 @@ export interface ActivityHost {
   runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number } | null): void;
   /** Remove up to `count` units from `inv`; returns units removed. */
   removeItem(inv: Container, item: number, count: number): number;
-  /** Called whenever an activity starts, ends, or fails to start. */
-  record(e: Entity, source: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number): void;
+  /** Add `count` units to `e`'s inventory, the rest to the ground pile on its cell; returns units dropped. */
+  giveItem(e: Entity, item: number, count: number): number;
+  /**
+   * Called whenever an activity starts, ends, or fails to start. `moved` is
+   * the units produced (sources that produce) or consumed; `dropped` the
+   * produced units that went to the ground.
+   */
+  record(e: Entity, source: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number): void;
 }
 
 function setTilesOf(effects: readonly EffectDef[]): number[] {
@@ -77,12 +92,18 @@ function setTilesOf(effects: readonly EffectDef[]): number[] {
   return out;
 }
 
+/** Effects first, then the consumed items (pack actions and item uses). */
+const EFFECTS_THEN_CONSUME: readonly CompletionStep[] = ['effects', 'consume'];
+/** Consumed items leave before produced ones arrive, so a lighter load never fails for room. */
+const CONSUME_PRODUCE_EFFECTS: readonly CompletionStep[] = ['consume', 'produce', 'effects'];
+
 /** The source of a pack action. */
 export function actionSource(a: ActionDef): ActivitySource {
   return {
     kind: 'act',
     action: a.index,
     item: -1,
+    recipe: -1,
     label: a.label,
     progress: a.progress,
     filter: a.target ? a.target.match : null,
@@ -94,6 +115,8 @@ export function actionSource(a: ActionDef): ActivitySource {
     interruptFn: a.interruptFn,
     effects: a.effects,
     setTiles: setTilesOf(a.effects),
+    produce: [],
+    completion: EFFECTS_THEN_CONSUME,
   };
 }
 
@@ -105,6 +128,7 @@ export function useSource(item: ItemDef): ActivitySource | null {
     kind: 'use',
     action: -1,
     item: item.index,
+    recipe: -1,
     label: use.label,
     progress: use.label,
     filter: null,
@@ -116,6 +140,31 @@ export function useSource(item: ItemDef): ActivitySource | null {
     interruptFn: use.interruptFn,
     effects: use.effects,
     setTiles: [],
+    produce: [],
+    completion: EFFECTS_THEN_CONSUME,
+  };
+}
+
+/** The source of a recipe: its station (if any) is the target cell. */
+export function recipeSource(r: RecipeDef): ActivitySource {
+  return {
+    kind: 'craft',
+    action: -1,
+    item: -1,
+    recipe: r.index,
+    label: `${r.verb}: ${r.label}`,
+    progress: r.progress,
+    filter: r.station ? r.station.match : null,
+    whenFn: r.whenFn,
+    whenFailure: 'cannot_act',
+    requires: [...r.tools.map((item) => ({ item, count: 1 })), ...r.consume],
+    consume: r.consume,
+    duration: r.duration,
+    interruptFn: r.interruptFn,
+    effects: r.effects,
+    setTiles: [],
+    produce: r.produce,
+    completion: CONSUME_PRODUCE_EFFECTS,
   };
 }
 
@@ -177,7 +226,7 @@ export class ActivityRunner {
    */
   start(s: ActivitySource, e: Entity, x: number, y: number, tick: number): void {
     const failure = this.check(s, e, x, y);
-    if (failure) return this.host.record(e, s, isTimed(s) ? 'start' : 'complete', false, failure, 0);
+    if (failure) return this.host.record(e, s, isTimed(s) ? 'start' : 'complete', false, failure, 0, 0);
     let n = s.duration.ticks;
     if (s.duration.fn) {
       n = secondsToTicks(Number(s.duration.fn(this.bind(s, e, x, y))), this.host.ticksPerSecond);
@@ -189,7 +238,7 @@ export class ActivityRunner {
     e.pathPos = 0;
     e.then = null;
     e.intent = null;
-    this.host.record(e, s, 'start', true, null, 0);
+    this.host.record(e, s, 'start', true, null, 0, 0);
   }
 
   /** End `e`'s activity without effects (`cancelled` or `interrupted`). */
@@ -197,7 +246,7 @@ export class ActivityRunner {
     const a = e.activity;
     if (!a) return;
     e.activity = null;
-    this.host.record(e, a.source, 'complete', false, reason, 0);
+    this.host.record(e, a.source, 'complete', false, reason, 0, 0);
   }
 
   /**
@@ -216,24 +265,36 @@ export class ActivityRunner {
     if (tick < a.endTick) return;
     e.activity = null;
     const failure = this.check(s, e, a.x, a.y);
-    if (failure) return this.host.record(e, s, 'complete', false, failure, 0);
+    if (failure) return this.host.record(e, s, 'complete', false, failure, 0, 0);
     this.finish(e, s, a.x, a.y);
   }
 
-  /** Completion after the checks: `occupied`, then effects in order, then consumption. */
+  /** Completion after the checks: `occupied`, then the source's completion steps in order. */
   private finish(e: Entity, s: ActivitySource, x: number, y: number): void {
     const { tiles, entities } = this.host;
     for (const t of s.setTiles) {
       if (tiles[t]!.walkable) continue;
-      for (const o of entities) if (o.x === x && o.y === y) return this.host.record(e, s, 'complete', false, 'occupied', 0);
+      for (const o of entities) if (o.x === x && o.y === y) return this.host.record(e, s, 'complete', false, 'occupied', 0, 0);
     }
-    this.bind(s, e, x, y);
-    this.host.runEffects(e, s.effects, s.filter ? this.point : null);
-    this.unbind();
-    let moved = 0;
+    let consumed = 0;
+    let produced = 0;
+    let dropped = 0;
     const inv = e.inv;
-    if (inv) for (const c of s.consume) moved += this.host.removeItem(inv, c.item, c.count);
-    this.host.record(e, s, 'complete', true, null, moved);
+    for (const step of s.completion) {
+      if (step === 'effects') {
+        this.bind(s, e, x, y);
+        this.host.runEffects(e, s.effects, s.filter ? this.point : null);
+        this.unbind();
+      } else if (step === 'consume') {
+        if (inv) for (const c of s.consume) consumed += this.host.removeItem(inv, c.item, c.count);
+      } else {
+        for (const p of s.produce) {
+          produced += p.count;
+          dropped += this.host.giveItem(e, p.item, p.count);
+        }
+      }
+    }
+    this.host.record(e, s, 'complete', true, null, s.produce.length > 0 ? produced : consumed, dropped);
   }
 
   /** Fraction of `e`'s activity done at `tick`, in [0, 1], or null when idle. */
