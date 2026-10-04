@@ -58,8 +58,8 @@ const ITEMS = `items:
 `;
 
 const ARCHETYPES = `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, tags: [living], measurements: [hp, food], inventory: { capacity: 0.6, items: { pebble: 1 } } }
-  - { id: rock, label: Rock, glyph: o, color: gray }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, tags: [living], measurements: [hp, food], inventory: { capacity: 0.6, items: { pebble: 1 } } }
+  - { id: rock, label: Rock, glyph: o, color: gray, ticks_per_turn: 0 }
 `;
 const NO_INVENTORY = ', inventory: { capacity: 0.6, items: { pebble: 1 } }';
 

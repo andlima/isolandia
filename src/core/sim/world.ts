@@ -6,6 +6,7 @@
 import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
+import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
 import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
@@ -24,6 +25,8 @@ export interface Entity extends ExprEntity {
   readonly max: Float64Array;
   /** Ticks until the entity may step again. */
   moveCooldown: number;
+  /** Direction the entity faces; it turns toward a new direction before stepping. */
+  facing: Facing;
   /** Tile the current (or last) step started from; equals (x, y) before any step. */
   fromX: number;
   fromY: number;
@@ -178,6 +181,7 @@ export interface EntitySnapshot {
   archetype: string;
   x: number;
   y: number;
+  facing: Facing;
   fromX: number;
   fromY: number;
   stepTick: number;
@@ -380,6 +384,7 @@ export class World {
       max,
       tags: this.tagSets[archetype.index]!,
       moveCooldown: 0,
+      facing: DEFAULT_FACING,
       fromX: x,
       fromY: y,
       stepTick: 0,
@@ -724,15 +729,34 @@ export class World {
 
     if (p.moveCooldown > 0) p.moveCooldown--;
     if (p.moveCooldown > 0) return;
+    const w = this.grid.width;
+    let dx: number;
+    let dy: number;
+    if (p.intent?.kind === 'step') ({ dx, dy } = p.intent);
+    else if (p.path) {
+      const next = p.path[p.pathPos]!;
+      dx = (next % w) - p.x;
+      dy = Math.floor(next / w) - p.y;
+    } else return;
+
+    // Turn toward the step first; the intent and path stay pending meanwhile.
+    const want = facingOfStep(dx, dy);
+    if (want && p.facing !== want) {
+      if (p.archetype.ticksPerTurn > 0) {
+        p.facing = turnToward(p.facing, want);
+        p.moveCooldown = p.archetype.ticksPerTurn;
+        return;
+      }
+      p.facing = want;
+    }
+
     if (p.intent?.kind === 'step') {
-      const { dx, dy } = p.intent;
       p.intent = null;
       this.move(p, dx, dy);
     } else if (p.path) {
-      const next = p.path[p.pathPos++]!;
-      const w = this.grid.width;
+      p.pathPos++;
       if (p.pathPos >= p.path.length) p.path = null;
-      if (!this.move(p, (next % w) - p.x, Math.floor(next / w) - p.y)) p.path = null;
+      if (!this.move(p, dx, dy)) p.path = null;
     }
   }
 
@@ -796,7 +820,7 @@ export class World {
     return done(n);
   }
 
-  /** Take one step if allowed; records the render-facing step state. */
+  /** Take one step if allowed (the caller has already turned to face it); records the step for rendering. */
   private move(e: Entity, dx: number, dy: number): boolean {
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy)) return false;
     e.fromX = e.x;
@@ -851,6 +875,7 @@ export class World {
         archetype: e.archetype.id,
         x: e.x,
         y: e.y,
+        facing: e.facing,
         fromX: e.fromX,
         fromY: e.fromY,
         stepTick: e.stepTick,

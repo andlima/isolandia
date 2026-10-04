@@ -43,7 +43,7 @@ test('rate clamps to a constant max and to an expression max', () => {
     initial: 100
     rate: "1 + self.rage / 10"
 archetypes:
-  - { id: brute, label: Brute, glyph: B, color: red, measurements: [hp, rage, cap], initial: { hp: 8 } }
+  - { id: brute, label: Brute, glyph: B, color: red, ticks_per_turn: 0, measurements: [hp, rage, cap], initial: { hp: 8 } }
 `,
     'map.yaml': `maps:
   - id: room
@@ -98,8 +98,8 @@ test('movement: 8 directions, blocked by non-walkable tiles, ticks per step', ()
 test('movement: ticks_per_step is configurable per archetype', () => {
   const def = loadFixture({
     'archetypes.yaml': `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_step: 1 }
-  - { id: rock, label: Rock, glyph: o, color: gray }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, ticks_per_step: 1 }
+  - { id: rock, label: Rock, glyph: o, color: gray, ticks_per_turn: 0 }
 `,
   });
   const w = World.create(def, 1);
@@ -144,7 +144,7 @@ test('determinism: the seeded RNG feeds expressions', () => {
     'extra.yaml': `measurements:
   - { id: noise, label: Noise, max: 1000, initial: 500, rate: "random(-10, 10)" }
 archetypes:
-  - { id: walker, label: W, glyph: W, color: red, measurements: [noise] }
+  - { id: walker, label: W, glyph: W, color: red, ticks_per_turn: 0, measurements: [noise] }
 `,
     'map.yaml': `maps:
   - id: room
@@ -167,7 +167,7 @@ test('division by zero in a rate records a warning instead of crashing', () => {
     'extra.yaml': `measurements:
   - { id: odd, label: Odd, max: 10, initial: 1, rate: "1 / (self.hp - self.hp)" }
 archetypes:
-  - { id: walker, label: W, glyph: W, color: red, measurements: [hp, odd] }
+  - { id: walker, label: W, glyph: W, color: red, ticks_per_turn: 0, measurements: [hp, odd] }
 `,
     'map.yaml': `maps:
   - id: room

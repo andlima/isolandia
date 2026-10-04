@@ -138,14 +138,16 @@ Facings are named on the map compass (`n` = up-right on screen, `e` =
 down-right, `se` = toward the camera…; the full table is in
 [packs.md](packs.md#assets)).
 
-- **Entities face where they walk.** `facingOf(entity)` (core,
-  `sim/motion.ts`) is the direction of the current or last step,
-  `sign(x − fromX), sign(y − fromY)`, or `s` before the first step. It is
-  derived from the step data the world already keeps, so the simulation,
-  snapshots and hashes are unchanged; nothing in the sim reads it. The
-  facing turns the moment a step is taken, which is also when that step's
-  interpolation starts; an entity that stops keeps its last facing, and a
-  blocked step changes nothing.
+- **Entities turn, then walk.** Facing is simulation state
+  (`Entity.facing`, `s` at spawn, part of snapshots and hashes);
+  `facingOf(entity)` (core, `sim/motion.ts`) just returns it. To step in a
+  direction it is not facing, an entity first rotates one compass point
+  (45°) toward it per `ticks_per_turn` ticks (archetype field, default 1),
+  the short way round (clockwise on a reversal), and steps once it faces
+  that way. The pending step or path waits meanwhile. A blocked step still
+  turns the entity to face it; `ticks_per_turn: 0` turns and steps in the
+  same tick. Each turning beat is a discrete sprite switch (no turn
+  interpolation); an entity that stops keeps its last facing.
 - **Tiles** face their map cell's legend `facing` (default `s`); **ground
   piles** always face `s`.
 - **Mirroring.** A directional asset's missing facing uses its mirror

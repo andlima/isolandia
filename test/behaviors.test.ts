@@ -24,7 +24,7 @@ function files(o: Opts): Record<string, string> {
   return {
     'behaviors.yaml': `behaviors:\n${o.behaviors}`,
     'archetypes.yaml': `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, measurements: [hp, food]${o.hero ?? ', ticks_per_step: 1'} }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, measurements: [hp, food]${o.hero ?? ', ticks_per_step: 1'} }
 ${o.npcs}`,
     'map.yaml': `maps:
   - id: room
@@ -98,9 +98,9 @@ test('loader: a valid behavior resolves states, targets and ticks; short and qua
       rest:
         do: idle
 `,
-      npcs: `  - { id: npc, label: N, glyph: n, color: red, behavior: hunter }
-  - { id: npc2, label: N2, glyph: m, color: red, behavior: "t:hunter" }
-  - { id: plain, label: P, glyph: p, color: red }
+      npcs: `  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, behavior: hunter }
+  - { id: npc2, label: N2, glyph: m, color: red, ticks_per_turn: 0, behavior: "t:hunter" }
+  - { id: plain, label: P, glyph: p, color: red, ticks_per_turn: 0 }
 `,
       rows: ['#####', '#@..#', '#####'],
     }),
@@ -185,8 +185,8 @@ test('loader: behaviors reports every error class with its path', () => {
       a: { do: idle }
 `,
     'archetypes.yaml': `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, measurements: [hp, food] }
-  - { id: rock, label: Rock, glyph: o, color: gray, behavior: missing }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, measurements: [hp, food] }
+  - { id: rock, label: Rock, glyph: o, color: gray, ticks_per_turn: 0, behavior: missing }
 `,
   });
   const B = 'behaviors[0]';
@@ -218,7 +218,7 @@ test('loader: behaviors reports every error class with its path', () => {
 test('idle never moves; a world without behavior-driven entities draws no RNG while thinking', () => {
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: idle } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     rows: OPEN,
     legend: NPC_LEGEND,
   });
@@ -240,7 +240,7 @@ test('wander: stays within radius, respects walls and moves at ticks_per_step', 
   const rows = OPEN.map((r, y) => (y === 5 ? '#....##.....#' : r));
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: wander, radius: 2 } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 3, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 3, behavior: b }\n',
     rows,
     legend: NPC_LEGEND,
   });
@@ -291,7 +291,7 @@ test('transitions: first matching `on` wins, one transition per tick, timeout af
         on:
           - { when: false, to: b }
 `,
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, behavior: b }\n',
     rows: OPEN,
     legend: NPC_LEGEND,
   });
@@ -326,7 +326,7 @@ test('transitions: switching state clears the path and the pending intent', () =
       a: { do: idle, on: [{ when: "world.tick >= 1", to: b }] }
       b: { do: idle }
 `,
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     rows: OPEN,
     legend: NPC_LEGEND,
   });
@@ -351,7 +351,7 @@ test('pursue: reaches a moving target and re-plans at most once per repath windo
   const rows = ['####################', '#@.................#', '#..................#', '#..................#', '#.................n#', '####################'];
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: pursue, target: player, repath: 0.5 } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     hero: ', ticks_per_step: 3',
     rows,
     legend: NPC_LEGEND,
@@ -379,7 +379,7 @@ test('pursue: an unreachable target fails cleanly and waits for the next window'
   const rows = ['########', '#n..#@.#', '#...#..#', '########'];
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: pursue, target: player } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     rows,
     legend: NPC_LEGEND,
   });
@@ -404,7 +404,7 @@ test('flee: every step strictly increases the distance, and it stops when corner
   const rows = ['#########', '#.......#', '#.......#', '#@.n....#', '#.......#', '#.......#', '#########'];
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: flee, target: player } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     rows,
     legend: NPC_LEGEND,
   });
@@ -442,7 +442,7 @@ test('home: walks back to the spawn cell, then fires done; a failed home path al
       back: { do: home, done: rest }
       rest: { do: idle }
 `,
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 2, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 2, behavior: b }\n',
     rows: ['###########', '#@...n....#', '#.........#', '#.........#', '########.##', '#.......#.#', '###########'],
     legend: NPC_LEGEND,
   };
@@ -476,7 +476,7 @@ test('home: walks back to the spawn cell, then fires done; a failed home path al
 test('the player ignores a behavior on its archetype', () => {
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: wander } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     hero: ', ticks_per_step: 1, behavior: b',
     rows: OPEN,
     legend: NPC_LEGEND,
@@ -497,7 +497,7 @@ test('the player ignores a behavior on its archetype', () => {
 test('the think phase is skipped after defeat', () => {
   const w = world({
     behaviors: '  - { id: b, initial: s, states: { s: { do: wander, timeout: { after: 0.2, to: s } } } }\n',
-    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_step: 1, behavior: b }\n',
+    npcs: '  - { id: npc, label: N, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: b }\n',
     rows: OPEN,
     legend: NPC_LEGEND,
     start: '  defeat: { when: "self.food < 50" }\n',
@@ -557,7 +557,8 @@ test('vampire: a bat flees the vampire, then flies home and roosts', () => {
   for (let t = 0; t < 5 && stateOf(bat) !== 'flee'; t++) w.step();
   assert.equal(stateOf(bat), 'flee');
   const start = dist();
-  for (let t = 0; t < 20; t++) w.step();
+  // Short enough that the bat (turning before each new direction) is still fleeing.
+  for (let t = 0; t < 12; t++) w.step();
   assert.ok(dist() > start, `distance ${dist()} did not grow from ${start}`);
 
   // The vampire leaves for the cellar, out of range.

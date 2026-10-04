@@ -11,8 +11,8 @@ const XY = `measurements:
   - { id: q, label: Q, max: 100, initial: 50 }
 `;
 const HERO_XY = `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, tags: [living], measurements: [hp, food, p, q] }
-  - { id: rock, label: Rock, glyph: o, color: gray, measurements: [p] }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, tags: [living], measurements: [hp, food, p, q] }
+  - { id: rock, label: Rock, glyph: o, color: gray, ticks_per_turn: 0, measurements: [p] }
 `;
 
 function world(files: Record<string, string>, seed = 1): World {
