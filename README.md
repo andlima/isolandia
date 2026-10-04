@@ -33,8 +33,8 @@ http://localhost:5173/?packs=std,garden
 
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
 there. Right-click (or long-press) a tile for what you can do there, or
-press `E` for your own cell (see [docs/ui.md](docs/ui.md)). Space
-recenters the camera.
+press `E` for your own cell (see [docs/ui.md](docs/ui.md)). `C` opens the
+crafting panel. Space recenters the camera.
 
 ### Terminal
 

@@ -27,7 +27,7 @@ export interface MenuItem {
 /**
  * Menu items for (x, y), one per `interactionsAt` entry, in its order.
  * Disabled entries stay, with their reason as `hint`. Out of reach, tile
- * actions and `take all` walk there first (`approachIntent`; a `take all`
+ * actions, station recipes and `take all` walk there first (`approachIntent`; a `take all`
  * from afar takes the first stack on arrival and opens the loot panel for
  * the rest), and `open` walks up to the container and opens the panel once
  * it is in reach.
@@ -37,6 +37,7 @@ export function contextMenu(world: World, x: number, y: number): MenuItem[] {
     const base = e.ok ? { label: e.label, disabled: false } : { label: e.label, disabled: true, hint: reasonText(e) };
     switch (e.kind) {
       case 'act':
+      case 'craft':
         return { ...base, run: e.inReach ? { actions: [e.action!] } : { intent: world.approachIntent(e.action!)! } };
       case 'take_all':
         return {

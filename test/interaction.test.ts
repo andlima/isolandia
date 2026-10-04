@@ -379,6 +379,7 @@ test('reasonText: every reason', () => {
     no_inventory: 'No inventory',
     unknown_container: 'Not here',
     unknown_action: 'Unknown action',
+    unknown_recipe: 'Unknown recipe',
     invalid_target: "Can't do that here",
     cannot_act: 'Not now',
     occupied: 'Something is in the way',

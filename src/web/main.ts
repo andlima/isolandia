@@ -107,6 +107,7 @@ async function main(): Promise<void> {
       if (code === 'KeyH') hud.toggle();
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
+      if (code === 'KeyC') panels.toggleCrafting();
       if (code === 'KeyE') {
         const iso = playerIso(loop.alpha);
         const p = isoToScreen(iso.x, iso.y, rig.cam);

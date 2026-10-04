@@ -50,6 +50,15 @@ tiles:
     walkable: true
     raised: true                    # iso: drawn as furniture, depth-sorted
     tags: [bed]
+  # The kitchens' cooking station: recipes with `station: { tags: [heat] }`
+  # (recipes.yaml) are made next to it.
+  - id: stove
+    label: Stove
+    glyph: "S"
+    color: "#d2d4dc"
+    sprite: stove_img
+    walkable: false
+    tags: [heat]
   # Containers, filled by `distributions` (loot.yaml).
   - id: fridge
     label: Fridge

@@ -34,6 +34,7 @@ import {
   type MeasurementDef,
   type NumberTerm,
   type PackInfo,
+  type RecipeDef,
   type RoomDef,
   type RoomsDef,
   type SpawnDef,
@@ -75,6 +76,7 @@ const KIND_OF: Record<ListDomain, Kind> = {
   loot: 'loot',
   behaviors: 'behavior',
   actions: 'action',
+  recipes: 'recipe',
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
@@ -88,6 +90,8 @@ const DEFAULT_VICTORY_MESSAGE = 'Victory';
 const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius', set_tile: 'tile' };
 const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
+const DEFAULT_RECIPE_VERB = 'Craft';
+const DEFAULT_RECIPE_CATEGORY = 'General';
 const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home', 'investigate'];
 const DEFAULT_REPATH = 1;
 const always = (): boolean => true;
@@ -115,6 +119,7 @@ class Loader {
     loot: [],
     behaviors: [],
     actions: [],
+    recipes: [],
   };
   packs: { raw: RawPack; scope: Scope }[] = [];
   /** Every room tag used by a map, in first-seen order (collected before any expression compiles). */
@@ -142,6 +147,7 @@ class Loader {
     const systems = this.defined.systems.map((d) => this.system(d));
     const behaviors = this.defined.behaviors.map((d) => this.behavior(d));
     const actions = this.defined.actions.map((d) => this.action(d, tiles));
+    const recipes = this.defined.recipes.map((d) => this.recipe(d, tiles));
     const start = this.start(maps);
     const clock = this.clock();
     const lighting = this.lighting();
@@ -170,6 +176,7 @@ class Loader {
       loot,
       behaviors,
       actions,
+      recipes,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -187,6 +194,7 @@ class Loader {
         loot: ids(loot),
         behaviors: ids(behaviors),
         actions: ids(actions),
+        recipes: ids(recipes),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -1165,6 +1173,44 @@ class Loader {
     return { tiles: indices, tags, match };
   }
 
+  /** `tools`: a list of item ids, each listed once; `accept` may reject one (after reporting). */
+  private tools(f: Fields, scope: Scope, accept?: (item: number, src: Src, id: string) => boolean): number[] {
+    const tools: number[] = [];
+    (f.list('tools') ?? []).forEach((ref, i) => {
+      const r = this.symbols.ref('item', ref, scope, f.at('tools', i), this.sink);
+      if (!r) return;
+      if (tools.includes(r.index)) this.sink.add(f.at('tools', i), `tool '${r.id}' is listed twice`);
+      else if (!accept || accept(r.index, f.at('tools', i), r.id)) tools.push(r.index);
+    });
+    return tools;
+  }
+
+  /**
+   * A map of item id → integer count ≥ 1 (`consume`, `produce`), in written
+   * order; `required` makes it a required, non-empty field.
+   */
+  private itemCounts(f: Fields, key: string, scope: Scope, what: string, required = false): ItemCount[] {
+    const out: ItemCount[] = [];
+    const raw = f.mapping(key);
+    if (required && !raw) {
+      if (!f.has(key)) f.present(key);
+    } else if (required && Object.keys(raw!).length === 0) {
+      this.sink.add(f.at(key), `field '${key}' must list at least one item`);
+    }
+    for (const [ref, value] of Object.entries(raw ?? {})) {
+      const src = f.at(key, ref);
+      const r = this.symbols.ref('item', ref, scope, src, this.sink);
+      if (!r) continue;
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+        this.sink.add(src, `${what} count must be an integer ≥ 1, got ${JSON.stringify(value)}`);
+        continue;
+      }
+      if (out.some((c) => c.item === r.index)) this.sink.add(src, `item '${r.id}' is listed twice`);
+      else out.push({ item: r.index, count: value });
+    }
+    return out;
+  }
+
   private action(d: Defined, tiles: readonly TileDef[]): ActionDef {
     const f = new Fields(
       this.sink,
@@ -1189,34 +1235,48 @@ class Loader {
 
     const whenFn = this.condition(f, 'when', d.scope) ?? null;
     const unavailable = f.string('unavailable', false) ?? null;
-    const tools: number[] = [];
-    (f.list('tools') ?? []).forEach((ref, i) => {
-      const r = this.symbols.ref('item', ref, d.scope, f.at('tools', i), this.sink);
-      if (!r) return;
-      if (tools.includes(r.index)) this.sink.add(f.at('tools', i), `tool '${r.id}' is listed twice`);
-      else tools.push(r.index);
-    });
-    const consume: ItemCount[] = [];
-    const rawConsume = f.mapping('consume');
-    for (const [ref, value] of Object.entries(rawConsume ?? {})) {
-      const src = f.at('consume', ref);
-      const r = this.symbols.ref('item', ref, d.scope, src, this.sink);
-      if (!r) continue;
-      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-        this.sink.add(src, `consumed count must be an integer ≥ 1, got ${JSON.stringify(value)}`);
-        continue;
-      }
-      if (consume.some((c) => c.item === r.index)) this.sink.add(src, `item '${r.id}' is listed twice`);
-      else consume.push({ item: r.index, count: value });
-    }
+    const tools = this.tools(f, d.scope);
+    const consume = this.itemCounts(f, 'consume', d.scope, 'consumed');
+    const rawConsume = f.raw('consume');
     const duration = this.duration(f, d.scope);
     const interruptFn = this.condition(f, 'interrupt', d.scope) ?? null;
     const effects = this.effects(f, d.scope, { optional: true, setTile: tileTarget });
     const rawEffects = f.raw('effects');
-    if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && Object.keys(rawConsume ?? {}).length === 0) {
+    if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && !(isObject(rawConsume) && Object.keys(rawConsume).length > 0)) {
       this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
     }
     return { id: d.id, index: d.index, label, progress, target, whenFn, unavailable, tools, consume, duration, interruptFn, effects };
+  }
+
+  // ── Recipes ─────────────────────────────────────────────────────────────
+
+  private recipe(d: Defined, tiles: readonly TileDef[]): RecipeDef {
+    const f = new Fields(
+      this.sink,
+      d.entry.src,
+      d.entry.value,
+      ['id', 'label', 'verb', 'category', 'consume', 'tools', 'produce', 'station', 'when', 'unavailable', 'duration', 'interrupt', 'effects', 'progress'],
+      'recipe',
+    );
+    const label = f.string('label') ?? d.id;
+    const verb = f.string('verb', false) ?? DEFAULT_RECIPE_VERB;
+    const category = f.string('category', false) ?? DEFAULT_RECIPE_CATEGORY;
+    const progress = f.string('progress', false) ?? `${verb}: ${label}`;
+    const consume = this.itemCounts(f, 'consume', d.scope, 'consumed', true);
+    const produce = this.itemCounts(f, 'produce', d.scope, 'produced', true);
+    const tools = this.tools(f, d.scope, (item, src, id) => {
+      if (!consume.some((c) => c.item === item)) return true;
+      this.sink.add(src, `item '${id}' is both consumed and a tool; list it in 'consume' or 'tools', not both`);
+      return false;
+    });
+    const sv = f.raw('station');
+    const station = sv === undefined || sv === null ? null : this.tileFilter(sv, f.at('station'), d.scope, tiles);
+    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const unavailable = f.string('unavailable', false) ?? null;
+    const duration = this.duration(f, d.scope);
+    const interruptFn = this.condition(f, 'interrupt', d.scope) ?? null;
+    const effects = this.effects(f, d.scope, { optional: true });
+    return { id: d.id, index: d.index, label, verb, category, progress, tools, consume, produce, station, whenFn, unavailable, duration, interruptFn, effects };
   }
 
   /** `start.defeat` / `start.victory`: `{ when, message? }`. */

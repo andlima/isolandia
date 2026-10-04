@@ -13,6 +13,7 @@ assets:
   - { id: crate_img, file: assets/crate.svg }   # block
   - { id: window_img, file: assets/window.svg }   # block
   - { id: barricaded_window_img, file: assets/barricaded_window.svg }   # block
+  - { id: stove_img, file: assets/stove.svg }   # block
   - id: car_img           # 4-way: n and e are the mirrors of w and s
     directions: { s: assets/car_s.svg, w: assets/car_w.svg }
   - id: bed_img           # 4-way: n and e are the mirrors of w and s
@@ -58,6 +59,8 @@ assets:
   - { id: hammer_img, file: assets/hammer.svg, anchor: [0.5, 0.5] }
   - { id: plank_img, file: assets/plank.svg, anchor: [0.5, 0.5] }
   - { id: nails_img, file: assets/nails.svg, anchor: [0.5, 0.5] }
+  - { id: hot_beans_img, file: assets/hot_beans.svg, anchor: [0.5, 0.5] }
+  - { id: rag_img, file: assets/rag.svg, anchor: [0.5, 0.5] }
   - { id: alarm_clock_img, file: assets/alarm_clock.svg, anchor: [0.5, 0.5] }
   - { id: toaster_img, file: assets/toaster.svg, anchor: [0.5, 0.5] }
   - { id: lamp_img, file: assets/lamp.svg, anchor: [0.5, 0.5] }

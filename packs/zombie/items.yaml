@@ -11,6 +11,19 @@ items:
       label: Eat
       effects:
         - { type: apply, measurement: hunger, delta: -35 }
+  # Cooked on a stove (recipes.yaml): more filling than cold beans, and warming.
+  - id: hot_beans
+    label: Hot beans
+    glyph: "%"
+    color: "#d0602a"
+    sprite: hot_beans_img
+    weight: 0.4
+    tags: [food]
+    use:
+      label: Eat
+      effects:
+        - { type: apply, measurement: hunger, delta: -45 }
+        - { type: apply, measurement: fatigue, delta: -5 }
   - id: crackers
     label: Crackers
     glyph: "%"
@@ -90,6 +103,8 @@ items:
   - { id: hammer, label: Hammer, glyph: "T", color: "#a07242", weight: 1, tags: [tool], sprite: hammer_img }
   - { id: plank, label: Plank, glyph: "/", color: "#c89a5a", weight: 1, tags: [material], sprite: plank_img }
   - { id: nails, label: Nails, glyph: ";", color: "#a6a8b4", weight: 0.02, tags: [material], sprite: nails_img }
+  # Torn into bandages (recipes.yaml).
+  - { id: rag, label: Rag, glyph: "~", color: "#5a7aaa", weight: 0.1, tags: [material], sprite: rag_img }
   # Heavy junk: worth nothing, weighs a lot.
   - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3, tags: [junk], sprite: toaster_img }
   - { id: lamp, label: Desk lamp, glyph: "]", color: "#d8d070", weight: 2.5, tags: [junk], sprite: lamp_img }

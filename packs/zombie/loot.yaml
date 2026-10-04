@@ -20,6 +20,7 @@ loot:
     rolls: [1, 3]
     entries:
       - { item: bandage, weight: 4, count: [1, 2] }
+      - { item: rag, weight: 2, count: [1, 2] }
       - { item: coffee, weight: 1 }
       - { nothing: true, weight: 2 }
   - id: bedroom_stuff
@@ -33,6 +34,7 @@ loot:
       - { item: hammer, weight: 1 }
       - { item: plank, weight: 1, count: [1, 2] }
       - { item: nails, weight: 1, count: [2, 6] }
+      - { item: rag, weight: 2, count: [1, 3] }
       - { nothing: true, weight: 2 }
   - id: glovebox
     rolls: [0, 2]

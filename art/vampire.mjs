@@ -255,6 +255,8 @@ const K = { g: 'glass', r: 'blood', R: 'blood_lo', o: 'oak_hi', O: 'oak', c: 'ca
 const ITEMS = {
   blood_vial: ['.....oo.', '..gggoo.', '.grrrrg.', 'grrrrrg.', 'gRRRRg..', '.ggg....'],
   cloak: ['...cccc....', '.ccccccxc..', 'cccxxccccc.', 'ccccccxxccc', '.cccccccccC', '..CCCCCCC..'],
+  empty_vial: ['.....oo.', '..gggoo.', '.g...g..', 'g....g..', 'g...g...', '.ggg....'],
+  blood_wine: ['...........', 'GG.rrrrrrr.', 'rrrrllllrrr', '.rrrXXXXrrR', '...RRRRRRR.'],
   wine: ['...........', 'GG.bbbbbbb.', 'bbbbllllbbb', '.bbbxxxxbbb', '...bbbbbbb.'],
   tome: ['...tttttt..', '.ttttGtttt.', 'ttttGGGtttl', 'llllllllll.', '.TTTTTTTT..'],
   candle: ['..y..', '.yWy.', '..C..', '.WWW.', '.WWW.', '.WWW.', 'eeeee'],

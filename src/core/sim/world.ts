@@ -7,7 +7,7 @@ import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
-import { actionSource, ActivityRunner, isTimed, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
+import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
 import { add, countOf, createContainer, fits, GROUND_LABEL, remove, type Container, type ContainerKind } from './containers.ts';
@@ -67,7 +67,7 @@ export interface Entity extends ExprEntity {
   heardX: number;
   heardY: number;
   heardTick: number;
-  /** In-progress timed action or item use, or null. */
+  /** In-progress timed action, item use or recipe, or null. */
   activity: Activity | null;
 }
 
@@ -168,8 +168,21 @@ export interface ActAction {
   readonly y?: number;
 }
 
+/**
+ * Start a recipe (`recipes` domain). For a station recipe, `x`/`y` name the
+ * station cell (omitted: the first matching cell in reach, row-major); they
+ * are forbidden for recipes without a station.
+ */
+export interface CraftAction {
+  readonly kind: 'craft';
+  /** Qualified recipe id. */
+  readonly recipe: string;
+  readonly x?: number;
+  readonly y?: number;
+}
+
 /** A player action, queued with `queueAction` and applied after the movement intents. */
-export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction;
+export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction | CraftAction;
 
 export type ActionFailure =
   | 'out_of_reach'
@@ -179,6 +192,7 @@ export type ActionFailure =
   | 'no_inventory'
   | 'unknown_container'
   | 'unknown_action'
+  | 'unknown_recipe'
   | 'invalid_target'
   | 'cannot_act'
   | 'occupied'
@@ -197,12 +211,16 @@ export interface MissingItem {
 /** Outcome of the latest action, for shell feedback. */
 export interface ActionRecord {
   readonly kind: Action['kind'];
-  /** Qualified item id (take/put/drop/use); empty for `act`. */
+  /** Qualified item id (take/put/drop/use); empty for `act` and `craft`. */
   readonly item: string;
   /** Qualified action id (`act` only). */
   readonly action?: string;
-  /** Units moved (take/put/drop) or consumed (use/act). */
+  /** Qualified recipe id (`craft` only). */
+  readonly recipe?: string;
+  /** Units moved (take/put/drop), consumed (use/act) or produced (craft). */
   readonly moved: number;
+  /** Produced units that did not fit and went to the ground pile (`craft`, only when > 0). */
+  readonly dropped?: number;
   readonly ok: boolean;
   /**
    * `start` when a timed activity starts (or fails to); `complete` when an
@@ -235,11 +253,28 @@ export interface AvailableAction {
   readonly unavailable?: string;
 }
 
-export type InteractionKind = 'act' | 'open' | 'take_all' | 'walk';
+/** An entry of `world.availableRecipes()`. */
+export interface AvailableRecipe {
+  /** Qualified recipe id. */
+  readonly recipe: string;
+  readonly label: string;
+  readonly verb: string;
+  readonly category: string;
+  /** False when the station is out of reach, or items, the inventory or `when` fail now. */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  readonly missing?: readonly MissingItem[];
+  /** The recipe's `unavailable` text (reason `cannot_act`, when the pack sets one). */
+  readonly unavailable?: string;
+  /** The chosen station cell in reach (station recipes). */
+  readonly station?: { readonly x: number; readonly y: number };
+}
+
+export type InteractionKind = 'act' | 'craft' | 'open' | 'take_all' | 'walk';
 
 /** An entry of `world.interactionsAt(x, y)`. */
 export interface Interaction {
-  /** Stable within a query, e.g. `act:t:board_up`, `open:3`, `take_all:3`, `walk`. */
+  /** Stable within a query, e.g. `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `walk`. */
   readonly id: string;
   readonly label: string;
   readonly kind: InteractionKind;
@@ -248,7 +283,7 @@ export interface Interaction {
   readonly reason?: ActionFailure;
   readonly missing?: readonly MissingItem[];
   readonly unavailable?: string;
-  /** The action to queue: the `act`, or the first `take` of a `take_all`. */
+  /** The action to queue: the `act` or `craft`, or the first `take` of a `take_all`. */
   readonly action?: Action;
   /** Every `take` of a `take_all`, in stack order. */
   readonly actions?: readonly Action[];
@@ -267,9 +302,10 @@ export interface ActivityProgress {
 
 /** An activity in a snapshot (ids qualified). */
 export interface ActivitySnapshot {
-  kind: 'act' | 'use';
+  kind: 'act' | 'use' | 'craft';
   action?: string;
   item?: string;
+  recipe?: string;
   x: number;
   y: number;
   startTick: number;
@@ -402,6 +438,8 @@ export class World {
   private readonly actionSources: readonly ActivitySource[];
   /** Activity source per item index (null without a `use`). */
   private readonly useSources: readonly (ActivitySource | null)[];
+  /** Activity source per recipe index. */
+  private readonly recipeSources: readonly ActivitySource[];
   private readonly runner: ActivityRunner;
 
   constructor(
@@ -463,6 +501,7 @@ export class World {
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     this.actionSources = def.actions.map(actionSource);
     this.useSources = def.items.map(useSource);
+    this.recipeSources = def.recipes.map(recipeSource);
     this.runner = new ActivityRunner({
       grid: this.grid,
       tiles: def.tiles,
@@ -471,7 +510,8 @@ export class World {
       ticksPerSecond: def.ticksPerSecond,
       runEffects: (e, effects, target) => this.runEffects(e, effects, target),
       removeItem: (inv, item, count) => remove(inv, item, count, this.itemWeights[item]!),
-      record: (e, source, stage, ok, reason, moved) => this.recordActivity(e, source, stage, ok, reason, moved),
+      giveItem: (e, item, count) => this.giveItem(e, item, count),
+      record: (e, source, stage, ok, reason, moved, dropped) => this.recordActivity(e, source, stage, ok, reason, moved, dropped),
     });
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
@@ -553,6 +593,26 @@ export class World {
     const ids = this.cellContainers.get(cell);
     if (ids) ids.push(c.id);
     else this.cellContainers.set(cell, [c.id]);
+  }
+
+  /** The ground pile on a cell, created if missing. */
+  private groundPile(x: number, y: number): Container {
+    let pile = this.containersAt(x, y).find((c) => c.kind === 'ground');
+    if (!pile) {
+      pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x, y });
+      this.addContainer(pile);
+    }
+    return pile;
+  }
+
+  /** Add `count` units to `e`'s inventory, as many as fit, and the rest to the ground pile on its cell; returns units dropped. */
+  private giveItem(e: Entity, item: number, count: number): number {
+    const weight = this.itemWeights[item]!;
+    const fit = e.inv ? fits(e.inv, weight, count) : 0;
+    if (fit > 0) add(e.inv!, item, fit, weight);
+    const rest = count - fit;
+    if (rest > 0) add(this.groundPile(e.x, e.y), item, rest, weight);
+    return rest;
   }
 
   /** Remove a ground pile once it is empty. */
@@ -931,8 +991,9 @@ export class World {
   private unreachable(a: Action): ActionRecord {
     return {
       kind: a.kind,
-      item: a.kind === 'act' ? '' : a.item,
+      item: a.kind === 'act' || a.kind === 'craft' ? '' : a.item,
       ...(a.kind === 'act' ? { action: a.action } : {}),
+      ...(a.kind === 'craft' ? { recipe: a.recipe } : {}),
       moved: 0,
       ok: false,
       stage: 'complete',
@@ -954,14 +1015,16 @@ export class World {
   }
 
   /** Record of an activity source's start or end (the player's becomes `lastAction`). */
-  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number): void {
+  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number): void {
     if (ok && stage === 'complete') this.containerVersion++;
     if (e !== this.player) return;
     this.lastAction = {
       kind: s.kind,
       item: s.item >= 0 ? this.def.items[s.item]!.id : '',
       ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
+      ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
       moved,
+      ...(dropped > 0 ? { dropped } : {}),
       ok,
       stage,
       ...(reason ? { reason } : {}),
@@ -969,7 +1032,7 @@ export class World {
     };
   }
 
-  /** Apply one action; `act`/`use` that reach the activity runner record themselves (null). */
+  /** Apply one action; `act`/`use`/`craft` that reach the activity runner record themselves (null). */
   private applyAction(a: Action): ActionRecord | null {
     const tick = this.tick;
     const p = this.player;
@@ -985,6 +1048,30 @@ export class World {
       const hasXY = a.x !== undefined || a.y !== undefined;
       if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y)) : hasXY) return fail('invalid_target', stage);
       this.runner.start(s, p, s.filter ? a.x! : p.x, s.filter ? a.y! : p.y, tick);
+      return null;
+    }
+
+    if (a.kind === 'craft') {
+      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'craft', item: '', recipe: a.recipe, moved: 0, ok: false, stage, reason, tick });
+      const k = this.def.ids.recipes[a.recipe];
+      if (k === undefined) return fail('unknown_recipe', 'complete');
+      const s = this.recipeSources[k]!;
+      const stage = isTimed(s) ? 'start' : 'complete';
+      if (!inv) return fail('no_inventory', stage);
+      const hasXY = a.x !== undefined || a.y !== undefined;
+      if (!s.filter) {
+        if (hasXY) return fail('invalid_target', stage);
+        this.runner.start(s, p, p.x, p.y, tick);
+        return null;
+      }
+      if (!hasXY) {
+        const at = this.stationCell(s);
+        if (!at) return fail('out_of_reach', stage);
+        this.runner.start(s, p, at.x, at.y, tick);
+        return null;
+      }
+      if (!(Number.isInteger(a.x) && Number.isInteger(a.y))) return fail('invalid_target', stage);
+      this.runner.start(s, p, a.x!, a.y!, tick);
       return null;
     }
 
@@ -1011,13 +1098,8 @@ export class World {
     if (a.kind === 'drop') {
       const n = Math.min(want, countOf(inv, item));
       if (n === 0) return fail('missing');
-      let pile = this.containersAt(p.x, p.y).find((c) => c.kind === 'ground');
-      if (!pile) {
-        pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x: p.x, y: p.y });
-        this.addContainer(pile);
-      }
       remove(inv, item, n, weight);
-      add(pile, item, n, weight);
+      add(this.groundPile(p.x, p.y), item, n, weight);
       return done(n);
     }
 
@@ -1126,6 +1208,7 @@ export class World {
       kind: s.kind,
       ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
       ...(s.item >= 0 ? { item: this.def.items[s.item]!.id } : {}),
+      ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
       x: a.x,
       y: a.y,
       startTick: a.startTick,
@@ -1166,7 +1249,8 @@ export class World {
       }
       return { ok: false, reason, missing };
     }
-    const unavailable = reason === 'cannot_act' && s.action >= 0 ? this.def.actions[s.action]!.unavailable : null;
+    const unavailable =
+      reason !== 'cannot_act' ? null : s.action >= 0 ? this.def.actions[s.action]!.unavailable : s.recipe >= 0 ? this.def.recipes[s.recipe]!.unavailable : null;
     return unavailable ? { ok: false, reason, unavailable } : { ok: false, reason };
   }
 
@@ -1205,9 +1289,41 @@ export class World {
     });
   }
 
+  /** First cell in the player's reach (row-major) matching a station source's filter, or null. */
+  private stationCell(s: ActivitySource): { x: number; y: number } | null {
+    const { grid, player: p } = this;
+    for (let y = p.y - 1; y <= p.y + 1; y++) {
+      for (let x = p.x - 1; x <= p.x + 1; x++) {
+        if (grid.inBounds(x, y) && s.filter![grid.cells[y * grid.width + x]!] === 1) return { x, y };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Every recipe, in definition order, for the crafting panel. A station
+   * recipe is checked at its first matching cell in reach (row-major, as
+   * `station`); with none it is `ok: false, reason: 'out_of_reach'`. Pure,
+   * like `availableActions`.
+   */
+  availableRecipes(): AvailableRecipe[] {
+    const p = this.player;
+    return this.pure(() =>
+      this.recipeSources.map((s): AvailableRecipe => {
+        const r = this.def.recipes[s.recipe]!;
+        const base = { recipe: r.id, label: r.label, verb: r.verb, category: r.category };
+        if (!s.filter) return { ...base, ...this.verdict(s, p.x, p.y, false) };
+        const at = this.stationCell(s);
+        if (!at) return { ...base, ok: false, reason: p.inv ? 'out_of_reach' : 'no_inventory' };
+        return { ...base, ...this.verdict(s, at.x, at.y, false), station: at };
+      }),
+    );
+  }
+
   /**
    * What the player can choose at a cell, ignoring reach: the tile actions
-   * whose filter matches the cell's tile (definition order), `open` and
+   * whose filter matches the cell's tile (definition order), the recipes
+   * whose station matches it (definition order), `open` and
    * (when not empty) `take_all` per container on the cell, the `self`
    * actions on the player's own cell, then `walk` on any other walkable
    * cell. `[]` out of bounds or once the game has ended. Pure, like
@@ -1225,6 +1341,11 @@ export class World {
         if (!s.filter || s.filter[tile] !== 1) continue;
         const id = this.def.actions[s.action]!.id;
         out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id, x, y }, inReach });
+      }
+      for (const s of this.recipeSources) {
+        if (!s.filter || s.filter[tile] !== 1) continue;
+        const id = this.def.recipes[s.recipe]!.id;
+        out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, true), action: { kind: 'craft', recipe: id, x, y }, inReach });
       }
       for (const c of this.containersAt(x, y)) {
         const label = c.kind === 'tile' ? this.def.tiles[c.tile]!.label : GROUND_LABEL;
@@ -1251,8 +1372,9 @@ export class World {
 
   /**
    * The intent a shell should queue to do `action`, or null when it is
-   * already in reach or needs none (`self` acts, `use`, `drop`, and actions
-   * on unknown targets: the shell queues those directly). Otherwise a goto
+   * already in reach or needs none (`self` acts, recipes without a station
+   * or cell, `use`, `drop`, and actions on unknown targets: the shell queues
+   * those directly). Otherwise a goto
    * to the target cell (adjacent when it is not walkable) that queues the
    * action on arrival.
    */
@@ -1263,9 +1385,9 @@ export class World {
       const c = this.containers.get(action.container);
       if (!c || c.kind === 'inventory') return null;
       ({ x, y } = c);
-    } else if (action.kind === 'act') {
-      const k = this.def.ids.actions[action.action];
-      if (k === undefined || !this.actionSources[k]!.filter || !Number.isInteger(action.x) || !Number.isInteger(action.y)) return null;
+    } else if (action.kind === 'act' || action.kind === 'craft') {
+      const s = action.kind === 'act' ? this.actionSources[this.def.ids.actions[action.action] ?? -1] : this.recipeSources[this.def.ids.recipes[action.recipe] ?? -1];
+      if (!s?.filter || !Number.isInteger(action.x) || !Number.isInteger(action.y)) return null;
       x = action.x!;
       y = action.y!;
     } else return null;

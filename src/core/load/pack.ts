@@ -17,7 +17,7 @@ export interface PackSource {
   readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions', 'recipes'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
 export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting'];
 
@@ -130,7 +130,7 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     depends,
     manifest,
     otherFiles: new Set(source.otherFiles ?? []),
-    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [] },
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [], recipes: [] },
     distributions: [],
     starts: [],
     clocks: [],
