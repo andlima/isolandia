@@ -62,7 +62,17 @@ the view functions are pure and unit-tested) and turn button clicks into
 - the **loot panel** opens by itself whenever a container is within reach
   (the player's cell or the 8 around it). It lists each container's stacks
   with *Take* (one unit) and *Take all*, and a *Put* section to move
-  inventory stacks into a reachable container.
+  inventory stacks into a reachable container. It also opens when a pack
+  [action](packs.md#actions) can be started here: an **Actions** section
+  lists the self and tile actions of `world.availableActions()`, one button
+  each; actions that cannot start now are disabled, with the reason.
+- while the player is busy with a timed action or use, a **progress bar**
+  (`#activity`) shows its progress text and percentage; moving or starting
+  another action cancels it.
+
+A map edit (`set_tile`, e.g. a barricaded window) bumps
+`world.tileVersion`; the scene then rebuilds the render chunks with
+changed cells (their ground and raised blocks).
 
 Clicking a non-walkable container tile (a fridge) walks to the closest
 tile next to it (`goto` with `adjacent: true`). After defeat or

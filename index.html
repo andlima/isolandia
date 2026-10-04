@@ -19,6 +19,16 @@
       }
       #victory { color: #ffe27a; background: rgba(40, 90, 60, 0.85); border: 2px solid #ffe27a; }
       #defeat[hidden], #victory[hidden] { display: none; }
+      #activity {
+        position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); width: 240px; height: 18px;
+        background: rgba(0, 0, 0, 0.7); border: 1px solid #556; border-radius: 4px; overflow: hidden; pointer-events: none;
+      }
+      #activity[hidden] { display: none; }
+      #activity .activity-fill { height: 100%; width: 0; background: #4a8a4a; }
+      #activity .activity-label {
+        position: absolute; inset: 0; text-align: center;
+        font: 12px/18px ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+      }
       .panel {
         position: fixed; right: 8px; max-width: 340px; max-height: 45vh; overflow: auto; padding: 6px 8px;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;

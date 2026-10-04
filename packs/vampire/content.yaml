@@ -60,6 +60,14 @@ tiles:
     sprite: window_img
     walkable: false
     opaque: false                   # you can see through it, not walk through it
+  # A window after the `shutter` action (survival.yaml): no light, no view.
+  - id: shuttered_window
+    label: Shuttered window
+    glyph: "|"
+    color: "#8a6a3a"
+    sprite: shuttered_window_img
+    walkable: false
+    opaque: true
   - id: bookshelf
     label: Bookshelf
     glyph: "L"

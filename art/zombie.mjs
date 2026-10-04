@@ -97,6 +97,32 @@ function crate() {
   return c;
 }
 
+/**
+ * A house wall with a window on both visible faces; `boarded` nails planks
+ * over the glass (the `barricade` action's result).
+ */
+function windowWall(boarded) {
+  const { c, I } = blockTile();
+  const face = (lit) => (a, z) => {
+    const [A, Z] = [px(a), px(z)];
+    if (A >= 4 && A <= 11 && Z >= 4 && Z <= 12) {
+      if (A === 4 || A === 11 || Z === 4 || Z === 12) return lit ? 'wood' : 'wood_lo'; // frame
+      if (boarded) {
+        // Two planks across, each held by a nail at both ends.
+        const plank = Z === 6 || Z === 7 ? 0 : Z === 9 || Z === 10 ? 1 : -1;
+        if (plank >= 0) return (A === 5 || A === 10) && (Z === 6 || Z === 9) ? 'dark' : lit ? 'wood_hi' : 'wood';
+        return 'outline';
+      }
+      if (A === 7 || A === 8 || Z === 8) return lit ? 'white' : 'white_lo'; // muntins
+      return lit ? 'glass' : 'glass_lo';
+    }
+    if (Z % 4 === 3 || (A + (Math.floor(Z / 4) % 2) * 4) % 8 === 0) return lit ? 'white_lo' : 'khaki_lo'; // mortar
+    return lit ? 'white' : 'white_lo';
+  };
+  I.box(0, 0, 1, 1, 0, 1, { left: face(true), right: face(false), top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'white' : 'white_hi') });
+  return c;
+}
+
 function wheel(a, z, ac) {
   const d = facePx(a, z, ac, 0.12);
   return d < 1.2 ? 'white_lo' : d < 3.6 ? 'dark' : null;
@@ -319,6 +345,9 @@ const ITEMS = {
   lamp: ['..yyyy..', '.yyyyyo.', 'yyyyyyoo', '...dd...', '...dd...', '...dd...', '.dddddd.'],
   magazine: ['....pppp...', '..pppWWpp..', 'ppprrpWWpp.', '.pppppppppL', '...LLwwwL..'],
   car_battery: ['.r.....dd.', '.dddddddd.', 'dddddddddd', 'aaaaaaaadd', 'ayyaaaaadd', 'aaaaaaaad.'],
+  hammer: ['.dddd.....', 'ddaaddoooo', '.dd..onnnN', '.dd.......'],
+  plank: ['.......ooon', '....ooooonN', '.oooooonnN.', 'oooonnnN...', 'nnnNN......'],
+  nails: ['.L....L.', '.a..L.a.', '.a..a.a.', '.L..a.L.', '.a....a.', '..L.a...', '..a.a...'],
 };
 
 export function images() {
@@ -328,6 +357,8 @@ export function images() {
     { file: 'grass.svg', canvas: grass(), note: 'flat tile' },
     { file: 'glass.svg', canvas: glass(), note: 'flat tile' },
     { file: 'crate.svg', canvas: crate(), note: 'block' },
+    { file: 'window.svg', canvas: windowWall(false), note: 'block' },
+    { file: 'barricaded_window.svg', canvas: windowWall(true), note: 'block' },
     ...furn('car', (f) => car(f === 's' ? 'v' : 'u')),
     ...furn('bed', bed),
     ...furn('fridge', fridge),

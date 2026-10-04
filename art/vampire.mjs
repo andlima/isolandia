@@ -115,6 +115,24 @@ function windowBlock() {
   return c;
 }
 
+/** The gothic window with its oak shutters closed (the `shutter` action's result). */
+function shutteredWindow() {
+  const { c, I } = blockTile();
+  const face = (lit) => (a, z) => {
+    const [A, Z] = [px(a), px(z)];
+    const inArch = A >= 4 && A <= 11 && Z >= 2 && Z <= 13 - (A <= 4 || A >= 11 ? 1 : 0) - (A <= 5 || A >= 10 ? 1 : 0);
+    if (inArch) {
+      if (A === 7 || A === 8) return 'outline'; // the gap between the two leaves
+      if (Z === 5 || Z === 10) return lit ? 'oak_lo' : 'ebony'; // cross battens
+      return lit ? 'oak' : 'oak_lo';
+    }
+    if (Z % 4 === 3 || (A + (Math.floor(Z / 4) % 2) * 4) % 8 === 0) return lit ? 'stone_lo' : 'crypt';
+    return lit ? 'stone' : 'stone_lo';
+  };
+  I.box(0, 0, 1, 1, 0, 1, { left: face(true), right: face(false), top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'stone' : 'stone_hi') });
+  return c;
+}
+
 /**
  * Oriented furniture on a full-cell footprint, as in art/zombie.mjs:
  * `front(A, Z)`/`side(A, Z, lit)`/`back` get art-px face coordinates and
@@ -251,6 +269,7 @@ export function images() {
     { file: 'crypt.svg', canvas: crypt(), note: 'flat tile' },
     { file: 'font.svg', canvas: font(), note: 'flat tile' },
     { file: 'window.svg', canvas: windowBlock(), note: 'block' },
+    { file: 'shuttered_window.svg', canvas: shutteredWindow(), note: 'block' },
     ...furn('coffin', coffin),
     ...furn('bookshelf', bookshelf),
     ...furn('chest', chest),

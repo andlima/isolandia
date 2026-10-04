@@ -13,6 +13,7 @@ assets:
   - { id: crypt_img, file: assets/crypt.svg }
   - { id: font_img, file: assets/font.svg }
   - { id: window_img, file: assets/window.svg }   # block
+  - { id: shuttered_window_img, file: assets/shuttered_window.svg }   # block
   - id: coffin_img        # 4-way: n and e are the mirrors of w and s
     directions: { s: assets/coffin_s.svg, w: assets/coffin_w.svg }
   - id: bookshelf_img     # 4-way: n and e are the mirrors of w and s

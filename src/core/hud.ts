@@ -39,6 +39,17 @@ export interface HudModel {
   readonly nearbyLine: string | null;
   /** Short text for the latest action (e.g. `Took 2 Canned beans`, `Too heavy`), or null once it is stale. */
   readonly lastAction: string | null;
+  /** The player's in-progress activity, or null. */
+  readonly activity: HudActivity | null;
+}
+
+export interface HudActivity {
+  /** Progress text, e.g. `Barricading`. */
+  readonly label: string;
+  /** In [0, 1]. */
+  readonly fraction: number;
+  /** `Label [######----] 60%`. */
+  readonly text: string;
 }
 
 export interface HudStack {
@@ -96,6 +107,14 @@ function fmt(n: number): string {
 export const GROUND_LABEL = 'Ground';
 /** How long (sim seconds) the latest action stays in the HUD. */
 const ACTION_SECONDS = 3;
+/** Cells of the ASCII progress bar. */
+const BAR_CELLS = 10;
+
+/** `Label [######----] 60%`. */
+export function progressText(label: string, fraction: number): string {
+  const filled = Math.min(BAR_CELLS, Math.floor(fraction * BAR_CELLS + 1e-9));
+  return `${label} [${'#'.repeat(filled)}${'-'.repeat(BAR_CELLS - filled)}] ${Math.round(fraction * 100)}%`;
+}
 
 /**
  * HUD text lines shared by the shells: time, measurements, then — only when
@@ -106,6 +125,7 @@ export function hudLines(m: HudModel): string[] {
   if (m.inventory) lines.push(m.inventory.carrying, m.inventory.line);
   if (m.statusLine) lines.push(m.statusLine);
   if (m.nearbyLine) lines.push(m.nearbyLine);
+  if (m.activity) lines.push(m.activity.text);
   if (m.lastAction) lines.push(m.lastAction);
   if (m.defeat) lines.push(m.defeat.text);
   if (m.victory) lines.push(m.victory.text);
@@ -137,10 +157,53 @@ function containerLabel(world: World, c: Container): string {
   return c.kind === 'tile' ? world.def.tiles[c.tile]!.label : GROUND_LABEL;
 }
 
+/** `Barricading` → `barricading`, for the middle of a sentence. */
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** Short feedback text for an `act` record. */
+function actText(world: World, a: ActionRecord): string {
+  const k = world.def.ids.actions[a.action ?? ''];
+  const def = k === undefined ? null : world.def.actions[k]!;
+  const label = def?.label ?? a.action ?? '';
+  if (a.ok) return a.stage === 'start' ? `You start ${lower(def!.progress)}.` : `You finish ${lower(def!.progress)}.`;
+  switch (a.reason) {
+    case 'unknown_action':
+      return `Unknown action ${label}`;
+    case 'no_inventory':
+      return 'No inventory';
+    case 'out_of_reach':
+      return "You can't reach that.";
+    case 'invalid_target':
+      return `You can't ${lower(label)} that.`;
+    case 'missing': {
+      const items = world.def.items;
+      const need = [...def!.tools.map((t) => items[t]!.label), ...def!.consume.map((c) => `${items[c.item]!.label} x${c.count}`)];
+      return `You need ${need.join(', ')}.`;
+    }
+    case 'cannot_act':
+      return `You can't ${lower(label)} now.`;
+    case 'occupied':
+      return 'Something is in the way.';
+    case 'cancelled':
+      return `${label} cancelled.`;
+    case 'interrupted':
+      return `${label} interrupted.`;
+    default:
+      return `${label} failed.`;
+  }
+}
+
 /** Short feedback text for an action record. */
 export function actionText(world: World, a: ActionRecord): string {
+  if (a.kind === 'act') return actText(world, a);
   const idx = world.def.ids.items[a.item];
   const label = idx === undefined ? a.item : world.def.items[idx]!.label;
+  if (a.kind === 'use' && idx !== undefined && world.def.items[idx]!.use) {
+    const verb = world.def.items[idx]!.use!.label;
+    if (a.ok && a.stage === 'start') return `You start: ${verb} ${label}.`;
+    if (a.reason === 'cancelled') return `${verb} cancelled.`;
+    if (a.reason === 'interrupted') return `${verb} interrupted.`;
+  }
   if (a.ok) {
     switch (a.kind) {
       case 'take':
@@ -155,7 +218,7 @@ export function actionText(world: World, a: ActionRecord): string {
   }
   switch (a.reason) {
     case 'out_of_reach':
-      return 'Out of reach';
+      return "You can't reach that.";
     case 'too_heavy':
       return 'Too heavy';
     case 'cannot_use':
@@ -224,5 +287,11 @@ export function hudModel(world: World): HudModel {
     nearby,
     nearbyLine: nearby.length ? `Nearby: ${nearby.map((c) => c.text).join('; ')}` : null,
     lastAction: fresh ? actionText(world, a) : null,
+    activity: hudActivity(world),
   };
+}
+
+function hudActivity(world: World): HudActivity | null {
+  const p = world.activityProgress();
+  return p ? { ...p, text: progressText(p.label, p.fraction) } : null;
 }

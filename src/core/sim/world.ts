@@ -7,6 +7,7 @@ import { clockAt, type ClockTime } from '../clock.ts';
 import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
+import { actionSource, ActivityRunner, isTimed, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
 import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
@@ -64,6 +65,8 @@ export interface Entity extends ExprEntity {
   heardX: number;
   heardY: number;
   heardTick: number;
+  /** In-progress timed action or item use, or null. */
+  activity: Activity | null;
 }
 
 /** A noise emitted this tick by a `noise` effect. */
@@ -142,27 +145,91 @@ export interface DropAction {
   readonly count?: number;
 }
 
-/** Run the item's `use` on the player, then remove `consume` units. */
+/** Run the item's `use` on the player, then remove `consume` units (at completion when timed). */
 export interface UseAction {
   readonly kind: 'use';
   readonly item: string;
 }
 
-/** An instant player action, queued with `queueAction` and applied after the movement intent. */
-export type Action = TakeAction | PutAction | DropAction | UseAction;
+/** Start a pack action (`actions` domain); `x`/`y` are required for tile targets and forbidden for `self`. */
+export interface ActAction {
+  readonly kind: 'act';
+  /** Qualified action id. */
+  readonly action: string;
+  readonly x?: number;
+  readonly y?: number;
+}
 
-export type ActionFailure = 'out_of_reach' | 'too_heavy' | 'missing' | 'cannot_use' | 'no_inventory' | 'unknown_container';
+/** A player action, queued with `queueAction` and applied after the movement intents. */
+export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction;
+
+export type ActionFailure =
+  | 'out_of_reach'
+  | 'too_heavy'
+  | 'missing'
+  | 'cannot_use'
+  | 'no_inventory'
+  | 'unknown_container'
+  | 'unknown_action'
+  | 'invalid_target'
+  | 'cannot_act'
+  | 'occupied'
+  | 'cancelled'
+  | 'interrupted';
 
 /** Outcome of the latest action, for shell feedback. */
 export interface ActionRecord {
   readonly kind: Action['kind'];
+  /** Qualified item id (take/put/drop/use); empty for `act`. */
   readonly item: string;
-  /** Units moved (take/put/drop) or consumed (use). */
+  /** Qualified action id (`act` only). */
+  readonly action?: string;
+  /** Units moved (take/put/drop) or consumed (use/act). */
   readonly moved: number;
   readonly ok: boolean;
+  /**
+   * `start` when a timed activity starts (or fails to); `complete` when an
+   * action is applied instantly or an activity ends (completed, cancelled,
+   * interrupted, or failed its re-check).
+   */
+  readonly stage: ActivityStage;
   readonly reason?: ActionFailure;
   /** Tick at which the action was applied. */
   readonly tick: number;
+}
+
+/** An entry of `world.availableActions()`. */
+export interface AvailableAction {
+  readonly kind: 'act' | 'use';
+  /** Qualified action id (`act`). */
+  readonly action?: string;
+  /** Qualified item id (`use`). */
+  readonly item?: string;
+  /** Target cell of a tile-targeted action. */
+  readonly x?: number;
+  readonly y?: number;
+  readonly label: string;
+  /** False when tools, consumed items, the inventory or `when` fail now. */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+}
+
+/** `world.activityProgress()`: what is being done and how far along it is. */
+export interface ActivityProgress {
+  readonly label: string;
+  /** In [0, 1]. */
+  readonly fraction: number;
+}
+
+/** An activity in a snapshot (ids qualified). */
+export interface ActivitySnapshot {
+  kind: 'act' | 'use';
+  action?: string;
+  item?: string;
+  x: number;
+  y: number;
+  startTick: number;
+  endTick: number;
 }
 
 export interface ContainerSnapshot {
@@ -198,6 +265,7 @@ export interface EntitySnapshot {
   behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
   /** Last heard noise, or null if never. */
   heard: { x: number; y: number; tick: number } | null;
+  activity: ActivitySnapshot | null;
 }
 
 export interface WorldSnapshot {
@@ -212,6 +280,8 @@ export interface WorldSnapshot {
   entities: EntitySnapshot[];
   /** Every container, in id order. */
   containers: ContainerSnapshot[];
+  /** Cells whose tile differs from the map, as [cell index, qualified tile id], by cell index. */
+  tiles: [number, string][];
 }
 
 /** FNV-1a 32-bit over a string, as 8 hex chars. */
@@ -282,6 +352,11 @@ export class World {
   private readonly statusRates: (NumberTerm | undefined)[][];
   /** Scratch for the status update: next flags of every entity, row-major. */
   private statusNext = new Uint8Array(0);
+  /** Activity source per action index. */
+  private readonly actionSources: readonly ActivitySource[];
+  /** Activity source per item index (null without a `use`). */
+  private readonly useSources: readonly (ActivitySource | null)[];
+  private readonly runner: ActivityRunner;
 
   constructor(
     readonly def: Definition,
@@ -340,6 +415,18 @@ export class World {
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
+    this.actionSources = def.actions.map(actionSource);
+    this.useSources = def.items.map(useSource);
+    this.runner = new ActivityRunner({
+      grid: this.grid,
+      tiles: def.tiles,
+      ctx: this.ctx,
+      entities: this.entities,
+      ticksPerSecond: def.ticksPerSecond,
+      runEffects: (e, effects, target) => this.runEffects(e, effects, target),
+      removeItem: (inv, item, count) => remove(inv, item, count, this.itemWeights[item]!),
+      record: (e, source, stage, ok, reason, moved) => this.recordActivity(e, source, stage, ok, reason, moved),
+    });
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
   }
@@ -405,6 +492,7 @@ export class World {
       heardX: 0,
       heardY: 0,
       heardTick: -1,
+      activity: null,
     };
     this.entities.push(e);
     return e;
@@ -501,7 +589,7 @@ export class World {
     }
   }
 
-  /** Queue an instant player action (FIFO; applied after the movement intent). Ignored once the game has ended. */
+  /** Queue a player action (FIFO; applied after the movement intents). Ignored once the game has ended. */
   queueAction(action: Action): void {
     if (this.ended) return;
     this.actions.push(action);
@@ -530,6 +618,11 @@ export class World {
     return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
   }
 
+  /** Bumped on every map edit (`set_tile`), so renderers can redraw changed cells. */
+  get tileVersion(): number {
+    return this.grid.version;
+  }
+
   /** This tick's noises (after `step`, the last stepped tick's), in emission order. */
   get noises(): readonly Readonly<Noise>[] {
     return this.pending.slice(0, this.pendingCount);
@@ -537,8 +630,9 @@ export class World {
 
   /**
    * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
-   * (id order), every entity's movement intent (id order), player actions, drift,
-   * due systems, hearing, clamp, status update, defeat then victory check, `tick++`.
+   * (id order), every entity's movement intent (id order), player actions,
+   * activity work (id order), drift, due systems, hearing, clamp, status
+   * update, defeat then victory check, `tick++`.
    * A no-op once the game has ended.
    */
   step(): void {
@@ -551,6 +645,7 @@ export class World {
       else if (e.moveCooldown > 0) e.moveCooldown--;
     }
     if (this.actions.length > 0) this.applyActions();
+    for (const e of this.entities) if (e.activity) this.runner.advance(e, this.tick);
     this.drift();
     this.runSystems();
     if (this.pendingCount > 0) this.hear();
@@ -607,13 +702,20 @@ export class World {
     }
   }
 
-  /** Run effects on `e` (= `ctx.self`), in order; measurement effects skip measurements it lacks. */
-  private runEffects(e: Entity, effects: readonly EffectDef[]): void {
+  /**
+   * Run effects on `e` (= `ctx.self`), in order; measurement effects skip
+   * measurements it lacks. `set_tile` replaces the tile at `target`.
+   */
+  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number } | null = null): void {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
       if (eff.type === 'noise') {
         this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+        continue;
+      }
+      if (eff.type === 'set_tile') {
+        if (target) this.grid.setTile(target.y * this.grid.width + target.x, eff.tile);
         continue;
       }
       const idx = eff.measurement;
@@ -711,9 +813,13 @@ export class World {
     return k !== undefined && e.st[k] === 1;
   }
 
-  /** Resolve an entity's pending intent, count its cooldown down, then step or advance its path. */
+  /**
+   * Resolve an entity's pending intent (which cancels its activity), count
+   * its cooldown down, then step or advance its path.
+   */
   private applyIntent(p: Entity): void {
     const intent = p.intent;
+    if (intent && p.activity) this.runner.end(p, 'cancelled');
     if (intent?.kind === 'goto') {
       p.intent = null;
       this.pathfinder ??= new Pathfinder(this.grid);
@@ -760,21 +866,58 @@ export class World {
     }
   }
 
+  /** Each queued action first cancels the player's activity, then is applied (FIFO). */
   private applyActions(): void {
     const queue = this.actions;
     this.actions = [];
-    for (const a of queue) this.lastAction = this.applyAction(a);
+    this.ctx.tick = this.tick;
+    for (const a of queue) {
+      this.runner.end(this.player, 'cancelled');
+      const r = this.applyAction(a);
+      if (r) this.lastAction = r;
+    }
   }
 
-  private applyAction(a: Action): ActionRecord {
-    const tick = this.tick;
-    const fail = (reason: ActionFailure): ActionRecord => ({ kind: a.kind, item: a.item, moved: 0, ok: false, reason, tick });
-    const done = (moved: number): ActionRecord => {
-      this.containerVersion++;
-      return { kind: a.kind, item: a.item, moved, ok: true, tick };
+  /** Record of an activity source's start or end (the player's becomes `lastAction`). */
+  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number): void {
+    if (ok && stage === 'complete') this.containerVersion++;
+    if (e !== this.player) return;
+    this.lastAction = {
+      kind: s.kind,
+      item: s.item >= 0 ? this.def.items[s.item]!.id : '',
+      ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
+      moved,
+      ok,
+      stage,
+      ...(reason ? { reason } : {}),
+      tick: this.tick,
     };
+  }
+
+  /** Apply one action; `act`/`use` that reach the activity runner record themselves (null). */
+  private applyAction(a: Action): ActionRecord | null {
+    const tick = this.tick;
     const p = this.player;
     const inv = p.inv;
+
+    if (a.kind === 'act') {
+      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'act', item: '', action: a.action, moved: 0, ok: false, stage, reason, tick });
+      const k = this.def.ids.actions[a.action];
+      if (k === undefined) return fail('unknown_action', 'complete');
+      const s = this.actionSources[k]!;
+      const stage = isTimed(s) ? 'start' : 'complete';
+      if (s.requires.length > 0 && !inv) return fail('no_inventory', stage);
+      const hasXY = a.x !== undefined || a.y !== undefined;
+      if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y)) : hasXY) return fail('invalid_target', stage);
+      this.runner.start(s, p, s.filter ? a.x! : p.x, s.filter ? a.y! : p.y, tick);
+      return null;
+    }
+
+    const fail = (reason: ActionFailure): ActionRecord => ({ kind: a.kind, item: a.item, moved: 0, ok: false, stage: 'complete', reason, tick });
+    const done = (moved: number): ActionRecord => {
+      this.containerVersion++;
+      return { kind: a.kind, item: a.item, moved, ok: true, stage: 'complete', tick };
+    };
     if (!inv) return fail('no_inventory');
     const item = this.def.ids.items[a.item];
     if (item === undefined) return fail('missing');
@@ -783,14 +926,11 @@ export class World {
     if (!(want >= 1)) return fail('missing');
 
     if (a.kind === 'use') {
+      const s = this.useSources[item];
       if (countOf(inv, item) === 0) return fail('missing');
-      const use = this.def.items[item]!.use;
-      const ctx = this.ctx;
-      ctx.self = p;
-      ctx.tick = tick;
-      if (!use || (use.whenFn && !use.whenFn(ctx))) return fail('cannot_use');
-      this.runEffects(p, use.effects);
-      return done(remove(inv, item, use.consume, weight));
+      if (!s) return fail('cannot_use');
+      this.runner.start(s, p, p.x, p.y, tick);
+      return null;
     }
 
     if (a.kind === 'drop') {
@@ -892,6 +1032,7 @@ export class World {
           ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
           : null,
         heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
+        activity: e.activity ? this.activitySnapshot(e.activity) : null,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
@@ -899,7 +1040,73 @@ export class World {
         else out.cell = [c.x, c.y];
         return out;
       }),
+      tiles: [...this.grid.changed].sort((a, b) => a[0] - b[0]).map(([i, t]): [number, string] => [i, this.def.tiles[t]!.id]),
     };
+  }
+
+  private activitySnapshot(a: Activity): ActivitySnapshot {
+    const s = a.source;
+    return {
+      kind: s.kind,
+      ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
+      ...(s.item >= 0 ? { item: this.def.items[s.item]!.id } : {}),
+      x: a.x,
+      y: a.y,
+      startTick: a.startTick,
+      endTick: a.endTick,
+    };
+  }
+
+  /**
+   * Everything the player could start now: every `self` action, every tile
+   * action on each matching cell in reach (row-major), then each inventory
+   * stack with a `use`. Entries that match but fail on items, the inventory
+   * or `when` are included with `ok: false`. Pure: `random` in a `when` draws
+   * from a throwaway copy of the RNG, so `hash()` never changes.
+   */
+  availableActions(): AvailableAction[] {
+    const p = this.player;
+    const ctx = this.ctx;
+    const { random, warn } = ctx;
+    const rng = new Rng(this.rng.state);
+    ctx.random = () => rng.next();
+    ctx.warn = () => {};
+    ctx.tick = this.tick;
+    const out: AvailableAction[] = [];
+    const entry = (base: Omit<AvailableAction, 'ok' | 'reason'>, reason: ActionFailure | null): AvailableAction =>
+      reason ? { ...base, ok: false, reason } : { ...base, ok: true };
+    try {
+      for (const s of this.actionSources) {
+        if (s.filter) continue;
+        out.push(entry({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label }, this.runner.check(s, p, p.x, p.y)));
+      }
+      const { grid } = this;
+      for (const s of this.actionSources) {
+        if (!s.filter) continue;
+        for (let y = p.y - 1; y <= p.y + 1; y++) {
+          for (let x = p.x - 1; x <= p.x + 1; x++) {
+            if (!grid.inBounds(x, y) || s.filter[grid.cells[y * grid.width + x]!] !== 1) continue;
+            const reason = this.runner.check(s, p, x, y);
+            if (reason === 'out_of_reach' || reason === 'invalid_target') continue;
+            out.push(entry({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, label: s.label }, reason));
+          }
+        }
+      }
+      for (const st of p.inv?.stacks ?? []) {
+        const s = this.useSources[st.item];
+        if (s) out.push(entry({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label }, this.runner.check(s, p, p.x, p.y)));
+      }
+    } finally {
+      ctx.random = random;
+      ctx.warn = warn;
+    }
+    return out;
+  }
+
+  /** The entity's activity (the player's by default): its progress text and how far along it is, or null. */
+  activityProgress(e: Entity = this.player): ActivityProgress | null {
+    const fraction = ActivityRunner.fraction(e, this.tick);
+    return fraction === null ? null : { label: e.activity!.source.progress, fraction };
   }
 
   hash(): string {

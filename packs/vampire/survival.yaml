@@ -49,6 +49,13 @@ systems:
     when: "self.blood >= 30 and not self.has_status(\"starving\")"
     effects:
       - { type: apply, measurement: hp, delta: 1 }
+  # Noise: a bat that spots the vampire screeches (it wakes a resting one).
+  - id: screech
+    every: 1
+    for: 'self.has_tag("beast")'
+    when: 'self.has_status("alert")'
+    effects:
+      - { type: noise, radius: 8 }
   # Noise: old floorboards creak underfoot; bats hear it (behaviors).
   - id: creak
     every: 0.1
@@ -92,3 +99,25 @@ behaviors:
         done: roost
         on:
           - { when: 'self.has_status("alert")', to: flee }
+
+# Timed actions (docs/packs.md#actions): moving or acting cancels them.
+actions:
+  # Close a window's shutters before dawn; no tools needed.
+  - id: shutter
+    label: Close shutters
+    progress: Closing the shutters
+    target: { tiles: [window] }
+    duration: 2
+    effects:
+      - { type: set_tile, tile: shuttered_window }
+  # Lie down by a coffin on the crypt floor. Any noise wakes you early,
+  # and an interrupted rest restores nothing.
+  - id: rest
+    label: Rest
+    progress: Resting
+    target: self
+    when: 'tile.has_tag("crypt")'
+    duration: 10
+    interrupt: 'heard(self, 1)'
+    effects:
+      - { type: apply, measurement: hp, delta: 30 }
