@@ -109,7 +109,8 @@ Tiles and archetypes may reference an asset (`sprite:`; see
 [packs.md](packs.md#assets)). Tile sprites are anchored at the diamond's
 bottom vertex, archetype sprites at the tile's ground centre. All assets
 are loaded before the first frame; one that fails to load logs a warning
-and falls back to its placeholder.
+and falls back to its placeholder. SVG assets are rasterized at `MAX_ZOOM`
+resolution, so pixel art stays sharp at every zoom (see [art.md](art.md)).
 
 Without a sprite, a placeholder is generated lazily, at most once per
 definition entry and facing, from its `color`:

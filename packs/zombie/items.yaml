@@ -4,6 +4,7 @@ items:
     label: Canned beans
     glyph: "%"
     color: "#c9a227"
+    sprite: canned_beans_img
     weight: 0.4
     tags: [food]
     use:
@@ -14,6 +15,7 @@ items:
     label: Crackers
     glyph: "%"
     color: "#e0c080"
+    sprite: crackers_img
     weight: 0.2
     tags: [food]
     use:
@@ -25,6 +27,7 @@ items:
     label: Water bottle
     glyph: "!"
     color: "#3b8eea"
+    sprite: water_bottle_img
     weight: 0.5
     tags: [drink]
     use:
@@ -35,6 +38,7 @@ items:
     label: Soda can
     glyph: "!"
     color: "#d0402a"
+    sprite: soda_img
     weight: 0.35
     tags: [drink]
     use:
@@ -46,6 +50,7 @@ items:
     label: Instant coffee
     glyph: "!"
     color: "#6b4226"
+    sprite: coffee_img
     weight: 0.3
     use:
       label: Drink
@@ -56,6 +61,7 @@ items:
     label: Bandage
     glyph: "+"
     color: "#f0f0f0"
+    sprite: bandage_img
     weight: 0.1
     tags: [medical]
     use:
@@ -68,6 +74,7 @@ items:
     label: Alarm clock
     glyph: "o"
     color: "#d8c040"
+    sprite: alarm_clock_img
     weight: 0.5
     use:
       label: Wind up
@@ -75,7 +82,7 @@ items:
       effects:
         - { type: noise, radius: 20 }
   # Heavy junk: worth nothing, weighs a lot.
-  - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3, tags: [junk] }
-  - { id: lamp, label: Desk lamp, glyph: "]", color: "#d8d070", weight: 2.5, tags: [junk] }
-  - { id: magazine, label: Magazine, glyph: "?", color: "#c080c0", weight: 0.3, tags: [junk] }
-  - { id: car_battery, label: Car battery, glyph: "]", color: "#404040", weight: 8, tags: [junk] }
+  - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3, tags: [junk], sprite: toaster_img }
+  - { id: lamp, label: Desk lamp, glyph: "]", color: "#d8d070", weight: 2.5, tags: [junk], sprite: lamp_img }
+  - { id: magazine, label: Magazine, glyph: "?", color: "#c080c0", weight: 0.3, tags: [junk], sprite: magazine_img }
+  - { id: car_battery, label: Car battery, glyph: "]", color: "#404040", weight: 8, tags: [junk], sprite: car_battery_img }

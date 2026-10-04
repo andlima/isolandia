@@ -86,8 +86,8 @@ test('the loaded definition is deeply frozen', () => {
 test('zombie and vampire cannot load together without an explicit start choice', () => {
   // Both define `start`, `clock` and `lighting`: at most one of each is allowed.
   const errors = errorsOf([STD, NEEDS, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 101, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 104, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 110, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 113, message: /duplicate 'start': already defined in pack 'zmb'/ });
   expectError(errors, {
     pack: 'vamp',
     file: 'survival.yaml',
@@ -522,8 +522,8 @@ test('assets: the real genre packs load with their assets', () => {
     assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
     const def = r.definition;
     assert.ok(def.assets.length >= 2);
-    assert.ok(def.tiles.some((t) => t.sprite !== null) && def.tiles.some((t) => t.sprite === null));
-    assert.ok(def.archetypes.some((a) => a.sprite !== null) && def.archetypes.some((a) => a.sprite === null));
+    assert.ok(def.tiles.every((t) => t.sprite !== null));
+    assert.ok(def.archetypes.every((a) => a.sprite !== null));
   }
 });
 

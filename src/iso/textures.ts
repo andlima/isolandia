@@ -19,7 +19,7 @@ import {
   type TileDef,
 } from '../core/index.ts';
 import { luminance, parseColor, shade } from './colors.ts';
-import { BLOCK_H, TILE_H, TILE_W } from './projection.ts';
+import { BLOCK_H, MAX_ZOOM, TILE_H, TILE_W } from './projection.ts';
 
 /** A texture plus the normalized image point that goes on the sprite's anchor spot. */
 export interface AnchoredTexture {
@@ -39,6 +39,8 @@ const HW = TILE_W / 2;
 const HH = TILE_H / 2;
 /** Generated textures are rasterized at this resolution so zooming in stays crisp. */
 const BAKE_RESOLUTION = 3;
+/** SVG pack assets are rasterized at the maximum zoom, so pixel-art edges stay sharp at every zoom level. */
+const SVG_RESOLUTION = MAX_ZOOM;
 
 /**
  * Load every image of every asset referenced by a tile, archetype or item
@@ -61,7 +63,7 @@ export async function loadAssetTextures(def: Definition, urls: readonly (readonl
           }
           const svg = file.toLowerCase().endsWith('.svg');
           try {
-            return await Assets.load<Texture>({ src, parser: svg ? 'svg' : 'texture', data: svg ? { resolution: 2 } : undefined });
+            return await Assets.load<Texture>({ src, parser: svg ? 'svg' : 'texture', data: svg ? { resolution: SVG_RESOLUTION } : undefined });
           } catch (e) {
             console.warn(`asset ${a.id}: failed to load ${a.pack}/${file}; using a placeholder`, e);
             return null;

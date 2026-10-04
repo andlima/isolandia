@@ -3,14 +3,18 @@ tiles:
     label: Floor
     glyph: "."
     color: "#8a8a8a"
+    sprite: floor_img
     walkable: true
   - id: wall
     label: Wall
     glyph: "#"
     color: "#d0d0d0"
+    sprite: wall_img
     walkable: false
   - id: door
     label: Door
     glyph: "+"
     color: "#b5813d"
+    sprite: door_img
     walkable: true
+    raised: true                    # iso: a door in a wall-height frame
