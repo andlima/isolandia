@@ -107,7 +107,8 @@ measurements:
 
 Images used by the isometric renderer: a single image, or one image per
 direction (no spritesheets or animation yet). Asset ids are namespaced and
-referenced like any other id.
+referenced like any other id. For the conventions the shipped art follows,
+see [art.md](art.md).
 
 | Field        | Type                 | Default    | Notes |
 |--------------|----------------------|------------|-------|
@@ -187,7 +188,9 @@ tiles:
 ```
 
 Entries without a `sprite` get a placeholder generated from their `color`.
-The ASCII renderer ignores sprites.
+The ASCII renderer ignores sprites. The art of the shipped packs is pixel
+art on a 2 px grid; [art.md](art.md) is its style guide (sizes, anchors,
+shading, palettes and the generator).
 
 ### `tiles`
 
