@@ -1,0 +1,59 @@
+behaviors:
+  # A sleepy cat naps at home, strolls about, chases a bunny it spots in the
+  # open, goes to look at a crunch on the gravel, and soon gets bored.
+  - id: cat
+    initial: nap
+    states:
+      nap:
+        do: idle
+        on:
+          - { when: 'self.has_status("curious")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
+        timeout: { after: 20, to: stroll }
+      stroll:
+        do: wander
+        radius: 6
+        on:
+          - { when: 'self.has_status("curious")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
+        timeout: { after: 30, to: home }
+      chase:
+        do: pursue
+        target: player
+        on:
+          - { when: 'not self.has_status("curious")', to: home }
+        timeout: { after: 15, to: bored }   # yawns and wanders off
+      investigate:                          # sight beats sound
+        do: investigate
+        on:
+          - { when: 'self.has_status("curious")', to: chase }
+        done: home
+      home:
+        do: home
+        on:
+          - { when: 'self.has_status("curious")', to: chase }
+        done: nap
+      bored:                                # walks home, ignoring the bunny
+        do: home
+        done: nap
+
+  # Butterflies flutter over their flower bed, flit away from the bunny and
+  # drift back once it has gone.
+  - id: butterfly
+    initial: flutter
+    states:
+      flutter:
+        do: wander
+        radius: 2
+        on:
+          - { when: 'self.has_status("alert")', to: flit }
+      flit:
+        do: flee
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: return }
+      return:
+        do: home
+        done: flutter
+        on:
+          - { when: 'self.has_status("alert")', to: flit }

@@ -8,6 +8,7 @@ const STD = readPack('packs/std');
 const NEEDS = readPack('packs/std-needs');
 const ZOMBIE = readPack('packs/zombie');
 const VAMPIRE = readPack('packs/vampire');
+const GARDEN = readPack('packs/garden');
 
 function errorsOf(packs: PackSource[]): readonly LoadError[] {
   const r = loadPacks(packs);
@@ -68,6 +69,28 @@ test('loads std + vampire (no std-needs), with an expression max tied to std:hp'
   // A humanoid from std spawned via the vampire map legend.
   const humanoid = r.definition.ids.archetypes['std:humanoid'];
   assert.ok(r.definition.maps[0]!.spawns.some((s) => s.archetype === humanoid));
+});
+
+test('loads std + garden, with a start.victory and no defeat', () => {
+  const r = loadPacks([STD, GARDEN]);
+  assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+  const def = r.definition;
+  assert.deepEqual(
+    def.packs.map((p) => p.namespace),
+    ['std', 'gdn'],
+  );
+  assert.equal(def.archetypes[def.start.player]!.id, 'gdn:bunny');
+  assert.equal(def.maps[def.start.map]!.id, 'gdn:garden');
+  assert.equal(def.start.defeat, null);
+  assert.equal(def.start.victory!.message, 'You gathered all the carrots! Snack time!');
+  assert.equal(typeof def.start.victory!.when, 'function');
+  assert.equal(def.clock.start, 7 * 60);
+  // The goal item can never be eaten; the snacks can.
+  const item = (id: string) => def.items[def.ids.items[id]!]!;
+  assert.equal(item('gdn:carrot').use, null);
+  assert.ok(item('gdn:clover').use && item('gdn:strawberry').use);
+  // Nobody in the garden has health.
+  assert.ok(def.archetypes.filter((a) => a.id.startsWith('gdn:')).every((a) => !a.measurements.includes(def.ids.measurements['std:hp']!)));
 });
 
 test('the loaded definition is deeply frozen', () => {

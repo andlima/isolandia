@@ -571,12 +571,80 @@ test('vampire: a bat flees the vampire, then flies home and roosts', () => {
   assert.ok(cheb(bat.x, bat.y, 3, 6) <= 3);
 });
 
+test('garden: the cat chases a visible bunny and startles it, then gives up when it hides in a bush', () => {
+  const w = game('garden');
+  const cat = w.entities.find((e) => e.archetype.id === 'gdn:cat' && e.x === 14 && e.y === 4)!;
+  assert.ok(cat);
+  assert.equal(stateOf(cat), 'nap');
+  place(w.player, 11, 4);
+  let adjacent = -1;
+  for (let t = 0; t < 60 && adjacent < 0; t++) {
+    w.step();
+    if (stateOf(cat) === 'chase' && cheb(cat.x, cat.y, w.player.x, w.player.y) <= 1) adjacent = t;
+  }
+  assert.ok(adjacent >= 0, 'never reached the bunny');
+  let startled = false;
+  for (let t = 0; t < 15; t++) {
+    w.step();
+    startled ||= w.hasStatus(w.player, 'gdn:startled');
+  }
+  assert.ok(startled, 'a meow right next to the bunny startles it');
+  assert.equal(w.value(w.player, 'std:hp'), undefined, 'nothing to hurt');
+
+  // Into the bush: the cat loses interest, walks home and naps.
+  place(w.player, 12, 3);
+  const states: string[] = [];
+  for (let t = 0; t < 100; t++) {
+    w.step();
+    if (states[states.length - 1] !== stateOf(cat)) states.push(stateOf(cat));
+  }
+  assert.deepEqual(states, ['chase', 'home', 'nap']);
+  assert.deepEqual([cat.x, cat.y], [14, 4]);
+  assert.equal(w.hasStatus(w.player, 'gdn:startled'), false);
+});
+
+test('garden: a chase ends in boredom after a while, even with the bunny in plain view', () => {
+  const w = game('garden');
+  const cat = w.entities.find((e) => e.archetype.id === 'gdn:cat' && e.x === 14 && e.y === 4)!;
+  place(w.player, 11, 4);
+  const states: string[] = [];
+  for (let t = 0; t < 200; t++) {
+    w.step();
+    if (states[states.length - 1] !== stateOf(cat)) states.push(stateOf(cat));
+  }
+  assert.deepEqual(states.slice(0, 4), ['nap', 'chase', 'bored', 'nap']);
+});
+
+test('garden: a butterfly flits away from the bunny, then drifts home to its flowers', () => {
+  const w = game('garden');
+  const fly = w.entities.find((e) => e.archetype.id === 'gdn:butterfly' && e.x === 7 && e.y === 1)!;
+  assert.ok(fly);
+  assert.equal(stateOf(fly), 'flutter');
+  place(w.player, 5, 2);
+  const dist = () => Math.hypot(fly.x - w.player.x, fly.y - w.player.y);
+  for (let t = 0; t < 5 && stateOf(fly) !== 'flit'; t++) w.step();
+  assert.equal(stateOf(fly), 'flit');
+  const start = dist();
+  for (let t = 0; t < 10; t++) w.step();
+  assert.ok(dist() > start, `distance ${dist()} did not grow from ${start}`);
+  place(w.player, 3, 13);
+  const states: string[] = [];
+  for (let t = 0; t < 150; t++) {
+    w.step();
+    if (states[states.length - 1] !== stateOf(fly)) states.push(stateOf(fly));
+  }
+  assert.equal(states[states.length - 1], 'flutter', states.join(' → '));
+  assert.ok(states.includes('return'), states.join(' → '));
+  assert.ok(cheb(fly.x, fly.y, 7, 1) <= 2);
+});
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; visited: Set<string> } {
   const w = game(name, seed);
   // Start next to the NPCs so chases and flights happen.
   if (name === 'zombie') place(w.player, 22, 10);
+  else if (name === 'garden') place(w.player, 11, 5);
   else place(w.player, 4, 6);
   const input = new Rng(seed ^ 0xbe4a);
   const visited = new Set<string>();
@@ -593,8 +661,8 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
   return { w, visited };
 }
 
-test('determinism: behaviors on both genres ⇒ same hash and snapshot (1200 ticks)', () => {
-  for (const name of ['zombie', 'vampire'] as const) {
+test('determinism: behaviors on every genre ⇒ same hash and snapshot (1200 ticks)', () => {
+  for (const name of ['zombie', 'vampire', 'garden'] as const) {
     const a = run(name, 99, 1200);
     const b = run(name, 99, 1200);
     assert.equal(a.w.hash(), b.w.hash());

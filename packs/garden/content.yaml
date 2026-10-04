@@ -1,0 +1,126 @@
+# A gentle garden for little players: gather carrots, snack on clover and
+# strawberries, nap in the burrow. A sleepy cat and the butterflies roam
+# about (behaviors.yaml). Nothing ever gets hurt and there is no defeat.
+
+measurements:
+  - id: energy
+    label: Energy
+    min: 0
+    max: 100
+    initial: 80
+    # A slow drift: 0.06 per second by day, twice that at night.
+    rate: "-0.12 + 0.06 * world.is_day"
+
+tiles:
+  - id: grass
+    label: Grass
+    glyph: "."
+    color: "#8fd16a"
+    sprite: grass_img
+    walkable: true
+  - id: flowers
+    label: Flower bed
+    glyph: "*"
+    color: "#f29ac2"
+    sprite: flowers_img
+    walkable: true
+    tags: [flowers]
+  # Crunchy underfoot: a `hop` system makes noise (rules.yaml).
+  - id: gravel
+    label: Gravel path
+    glyph: ":"
+    color: "#c9b99a"
+    sprite: gravel_img
+    walkable: true
+    tags: [crunchy]
+  - id: burrow
+    label: Burrow
+    glyph: "O"
+    color: "#8a5a3a"
+    sprite: burrow_img
+    walkable: true
+    tags: [burrow]
+  - id: bush
+    label: Bush
+    glyph: "&"
+    color: "#3f9a4a"
+    sprite: bush_img
+    walkable: true
+    raised: true                    # a leafy dome to hop into
+    opaque: false
+    tags: [hiding]
+  - id: carrot_patch
+    label: Carrot patch
+    glyph: "v"
+    color: "#ff9a3c"
+    sprite: carrot_patch_img
+    walkable: true
+    container: { capacity: 1 }
+  - id: berry_bush
+    label: Berry bush
+    glyph: "B"
+    color: "#d8405a"
+    sprite: berry_bush_img
+    walkable: false
+    container: { capacity: 2 }
+  - id: wheelbarrow
+    label: Wheelbarrow
+    glyph: "W"
+    color: "#5aa0d8"
+    sprite: wheelbarrow_img
+    walkable: false
+    opaque: false                   # low: blocks the way, not the view
+    container: { capacity: 4 }
+  - id: pond
+    label: Pond
+    glyph: "~"
+    color: "#6ec6e8"
+    sprite: pond_img
+    walkable: false
+    raised: false                   # flat water
+    opaque: false
+  - id: fence
+    label: Fence
+    glyph: "|"
+    color: "#f4e8d0"
+    sprite: fence_img
+    walkable: false
+    opaque: false                   # low: you can see over it
+
+archetypes:
+  - id: bunny
+    label: Bunny
+    glyph: "@"
+    color: "#fff4fa"
+    sprite: bunny_img
+    tags: [bunny, critter]
+    measurements: [energy]
+    ticks_per_step: 1
+    inventory:
+      capacity: 5
+      items: { clover: 2 }
+  - id: cat
+    label: Sleepy cat
+    glyph: c
+    color: "#f2a65a"
+    sprite: cat_img
+    tags: [cat]
+    behavior: cat
+  - id: butterfly
+    label: Butterfly
+    glyph: b
+    color: "#b48af0"
+    sprite: butterfly_img
+    tags: [bug]
+    behavior: butterfly
+
+# The day begins with the morning dew.
+clock:
+  start: "07:00"
+
+start:
+  map: garden
+  player: bunny
+  victory:
+    when: 'self.count_item("carrot") >= 10'
+    message: "You gathered all the carrots! Snack time!"

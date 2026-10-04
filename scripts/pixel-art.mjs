@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { contactSheet, toSvg } from '../art/lib.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PACKS = ['std', 'zombie', 'vampire'];
+const PACKS = ['std', 'zombie', 'vampire', 'garden'];
 
 const args = process.argv.slice(2);
 const p = args.indexOf('--preview');
