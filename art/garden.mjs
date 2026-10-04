@@ -147,9 +147,9 @@ function onLawn(seed) {
 
 /** A round dome of leaves centred at (cx, cy) with radii (rx, ry), lit from the top-left. */
 function dome(c, cx, cy, rx, ry, seed) {
-  // Shadow at the base.
+  // Shade on the ground at the base.
   c.shade((x, y) => {
-    const dx = (x + 0.5 - cx) / (rx + 1);
+    const dx = (x + 0.5 - cx) / (rx - 1);
     const dy = (y + 0.5 - (cy + ry * 0.75)) / (ry * 0.45);
     return dx * dx + dy * dy < 1 ? 'leaf_lo' : null;
   });
@@ -320,9 +320,9 @@ const BUNNY = {
     '...WW....WWw....',
   ],
   w: [
-    '...ww..ww.......',
-    '..www..wwW......',
-    '..www..wwW......',
+    '..ww...ww.......',
+    '.www...wwW......',
+    '.www...wwW......',
     '..www..wwW......',
     '..www..wwW......',
     '...ww..wW.......',
