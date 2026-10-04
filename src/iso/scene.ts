@@ -10,7 +10,7 @@
  * Ground and objects are multiplied by the pack's day/night tint (if any);
  * markers are not.
  *
- * Entities face their current or last step (`facingOf`); a sprite's
+ * Entities show their simulation facing (`facingOf`); a sprite's
  * texture, anchor and mirroring are swapped only when the direction it shows
  * changes. Tiles face their cell's legend `facing`.
  *

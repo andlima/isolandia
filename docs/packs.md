@@ -235,6 +235,7 @@ Templates for entities (the player and everything else).
 | `measurements`   | list of measurement ids | `[]`  | Which measurements the entity has |
 | `initial`        | map id → number       |         | Overrides a measurement's `initial` |
 | `ticks_per_step` | positive integer      | `2`     | Movement speed (ticks per tile) |
+| `ticks_per_turn` | non-negative integer  | `1`     | Ticks per 45° turn before stepping in a new direction; `0` turns instantly (see [iso.md](iso.md#facing)) |
 | `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
 | `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
 | `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
@@ -295,7 +296,7 @@ legend character per orientation:
       "F": { tile: fridge, facing: s }   # against a north wall
 ```
 
-`facing` does not affect `spawn` or `player` (entities face their movement
+`facing` does not affect `spawn` or `player` (entities turn toward their movement
 direction, starting at `s`). It is static, render-only map data: not part
 of world snapshots or hashes, and ignored by walkability, opacity,
 containers, sight and the ASCII renderer.

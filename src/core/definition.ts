@@ -181,6 +181,8 @@ export interface ArchetypeDef {
   /** Initial value per entry of `measurements` (same order). */
   readonly initial: readonly number[];
   readonly ticksPerStep: number;
+  /** Ticks per 45° turn before stepping in a new direction (0 = instant). */
+  readonly ticksPerTurn: number;
   /** Asset index, or null for a generated placeholder. */
   readonly sprite: number | null;
   /** Every entity of this archetype gets an inventory; null for none. */

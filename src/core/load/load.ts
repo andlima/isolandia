@@ -73,6 +73,7 @@ const KIND_OF: Record<ListDomain, Kind> = {
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
+const DEFAULT_TICKS_PER_TURN = 1;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -500,7 +501,7 @@ class Loader {
       this.sink,
       d.entry.src,
       d.entry.value,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'sprite', 'inventory', 'behavior'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -534,10 +535,15 @@ class Loader {
       this.sink.add(f.at('ticks_per_step'), `field 'ticks_per_step' must be a positive integer`);
       ticksPerStep = DEFAULT_TICKS_PER_STEP;
     }
+    let ticksPerTurn = f.number('ticks_per_turn', false) ?? DEFAULT_TICKS_PER_TURN;
+    if (!Number.isInteger(ticksPerTurn) || ticksPerTurn < 0) {
+      this.sink.add(f.at('ticks_per_turn'), `field 'ticks_per_turn' must be a non-negative integer`);
+      ticksPerTurn = DEFAULT_TICKS_PER_TURN;
+    }
     const sprite = this.sprite(f, d);
     const inventory = this.inventory(f, d, items);
     const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scope, f.at('behavior'), this.sink)?.index ?? null) : null;
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, sprite, inventory, behavior };
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior };
   }
 
   private inventory(f: Fields, d: Defined, items: readonly ItemDef[]): InventorySpec | null {

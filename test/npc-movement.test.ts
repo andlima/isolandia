@@ -13,9 +13,9 @@ const ROWS = ['#########', '#@....#.#', '#.#...###', '#z....c.#', '#########'];
 function npcWorld(mapExtra = ''): World {
   const def = loadFixture({
     'archetypes.yaml': `archetypes:
-  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_step: 1, measurements: [hp, food] }
-  - { id: shambler, label: Shambler, glyph: z, color: green, ticks_per_step: 3 }
-  - { id: crawler, label: Crawler, glyph: c, color: red, ticks_per_step: 1 }
+  - { id: hero, label: Hero, glyph: "@", color: yellow, ticks_per_turn: 0, ticks_per_step: 1, measurements: [hp, food] }
+  - { id: shambler, label: Shambler, glyph: z, color: green, ticks_per_turn: 0, ticks_per_step: 3 }
+  - { id: crawler, label: Crawler, glyph: c, color: red, ticks_per_turn: 0, ticks_per_step: 1 }
 `,
     'map.yaml': `maps:
   - id: room

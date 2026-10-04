@@ -70,9 +70,9 @@ behaviors:
     measurements: [hp, food, vol]
     ticks_per_step: 1
     inventory: { capacity: 10, items: { bell: 1, whistle: 1 } }
-  - { id: ear, label: Ear, glyph: e, color: gray, measurements: [vol] }
-  - { id: npc, label: Npc, glyph: n, color: red, ticks_per_step: 1, behavior: curious }
-  - { id: eager, label: Eager, glyph: m, color: red, ticks_per_step: 1, behavior: eager }
+  - { id: ear, label: Ear, glyph: e, color: gray, ticks_per_turn: 0, measurements: [vol] }
+  - { id: npc, label: Npc, glyph: n, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: curious }
+  - { id: eager, label: Eager, glyph: m, color: red, ticks_per_turn: 0, ticks_per_step: 1, behavior: eager }
 `,
 };
 

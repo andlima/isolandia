@@ -42,10 +42,12 @@ export function fixture(files: Record<string, string> = {}): PackSource {
     color: yellow
     tags: [living]
     measurements: [hp, food]
+    ticks_per_turn: 0
   - id: rock
     label: Rock
     glyph: o
     color: gray
+    ticks_per_turn: 0
 `,
     'map.yaml': `maps:
   - id: room

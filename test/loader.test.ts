@@ -602,3 +602,26 @@ test('readPack lists non-YAML files', () => {
   assert.ok(ZOMBIE.otherFiles?.some((f) => f.endsWith('.svg')));
   assert.ok(!ZOMBIE.otherFiles?.some((f) => f.endsWith('.yaml')));
 });
+
+// ── ticks_per_turn ──────────────────────────────────────────────────────────
+
+test('ticks_per_turn: defaults to 1, accepts 0 and positive integers', () => {
+  const arch = (extra: string) => {
+    const r = loadPacks([fixture({ 'archetypes.yaml': `archetypes:\n  - { id: hero, label: H, glyph: "@", color: red${extra} }\n  - { id: rock, label: R, glyph: o, color: gray }\n` })]);
+    assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
+    return r.definition.archetypes[r.definition.ids.archetypes['t:hero']!]!;
+  };
+  assert.equal(arch('').ticksPerTurn, 1);
+  assert.equal(arch(', ticks_per_turn: 0').ticksPerTurn, 0);
+  assert.equal(arch(', ticks_per_turn: 3').ticksPerTurn, 3);
+});
+
+test('error: ticks_per_turn must be a non-negative integer', () => {
+  for (const bad of ['-1', '1.5', '"fast"']) {
+    const errors = errorsOf([fixture({ 'archetypes.yaml': `archetypes:\n  - { id: hero, label: H, glyph: "@", color: red, ticks_per_turn: ${bad} }\n  - { id: rock, label: R, glyph: o, color: gray }\n` })]);
+    assert.ok(
+      errors.some((e) => e.file === 'archetypes.yaml' && e.path === 'archetypes[0].ticks_per_turn' && /ticks_per_turn/.test(e.message)),
+      `${bad}: ${errors.map(formatError).join('\n')}`,
+    );
+  }
+});

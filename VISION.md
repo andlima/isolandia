@@ -167,7 +167,7 @@ table and `s0-bench.json` still need to be filled in (see
 only confirmed after that.
 
 ² Added after M1 (spec `iso-directional-sprites`): 4/8-way assets with
-mirroring, render-derived character facing, legend `facing` for tiles; see
+mirroring, character facing (simulation state since spec `turn-before-move`), legend `facing` for tiles; see
 §7.
 
 ## 6. Risks
@@ -325,10 +325,12 @@ mirroring, render-derived character facing, legend `facing` for tiles; see
   style of classic isometric games; **no real-time 3D** and no change to
   the projection. Assets take `directions` (4-way or 8-way) and
   **horizontal mirroring** fills the rest (5 drawings for 8 ways, 2 for 4).
-  Characters face their movement direction, **derived at render time**
-  from the last step (no sim state, snapshots and hashes unchanged); map
-  tiles get a static 4-way `facing` from the legend. Facing as simulation
-  state (turning in place, facing-aware actions) may be promoted in M5.
+  Characters face their movement direction. Facing is **simulation
+  state** (in snapshots and hashes): an entity turns 45° per
+  `ticks_per_turn` beat toward a new direction before it steps (spec
+  `turn-before-move`). Map tiles get a static 4-way `facing` from the
+  legend. Facing-aware actions (vision cones, interact with the faced
+  tile) may come in M5.
   Animation frames are a later step. See `docs/iso.md`.
 
 ## 8. Next step
