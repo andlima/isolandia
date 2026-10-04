@@ -606,6 +606,7 @@ shutters, resting.
 | `progress`  | string                       | `label`  | Text shown while in progress, e.g. `Barricading` |
 | `target`    | `self` or a tile filter      | required | See below |
 | `when`      | expression                   | `true`   | Checked at start and at completion |
+| `unavailable` | string                     | none     | UI text shown when `when` is falsy (default `Not now`), e.g. `Only in the crypt` |
 | `tools`     | list of item ids             | `[]`     | Held (≥ 1 unit) at start and at completion; never consumed |
 | `consume`   | map item id → integer ≥ 1    | `{}`     | Held at start and at completion; removed at completion |
 | `duration`  | number ≥ 0 or expression     | `0`      | Sim seconds (see below) |
@@ -699,6 +700,7 @@ actions:
     progress: Resting
     target: self
     when: 'tile.has_tag("crypt")'
+    unavailable: Only in the crypt
     duration: 10
     interrupt: 'heard(self, 1)'
     effects:
@@ -708,13 +710,35 @@ actions:
 `world.availableActions()` lists what the player could start right now:
 every `self` action, then every tile action on each matching cell in reach
 (row-major), then each inventory stack with a `use`. Each entry is
-`{ kind, action?, item?, x?, y?, label, ok, reason? }`; entries whose
-target matches but whose tools, consumed items, inventory or `when` fail
-are included with `ok: false` and the reason, and cells out of reach or
-not matching are omitted. It is pure: `random()` in a `when` draws from a
-throwaway copy of the RNG, so `hash()` never changes. The browser lists
-these in an **Actions** section of the loot panel; the terminal opens them
-with `x`.
+`{ kind, action?, item?, x?, y?, label, ok, reason?, missing?, unavailable? }`;
+entries whose target matches but whose tools, consumed items, inventory or
+`when` fail are included with `ok: false` and the reason, and cells out of
+reach or not matching are omitted. `missing` lists `{ item, label, count }`
+for each absent tool or consumed item (`count` = units still needed), and
+`unavailable` is the action's text when `when` fails. It is pure:
+`random()` in a `when` draws from a throwaway copy of the RNG, so `hash()`
+never changes. The terminal opens these with `x` (followed by `take all`
+for each reachable non-empty container).
+
+`world.interactionsAt(x, y)` lists what the player can choose at **any**
+cell, ignoring reach (the browser's [context menu](ui.md) is built from
+it). Entries, in order: every tile action whose filter matches the cell's
+tile (definition order); for each container on the cell (tile container,
+ground pile) an `open` entry, plus `take_all` when it is not empty; every
+`self` action when the cell is the player's own; and `walk` when the cell
+is walkable and not the player's. Each entry is
+`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, inReach }`:
+`ok`/`reason` use the same checks as `act` with reach left out (`take_all`
+fails with `no_inventory`, or `too_heavy` when no stack fits at all),
+`action` is the action to queue (the first `take` of a `take_all`, whose
+`actions` lists them all), and `inReach` says whether the player can do it
+without walking. It returns `[]` out of bounds or once the game has ended,
+and is pure like `availableActions()`.
+
+`reasonText(entry)` (in `src/core/hud.ts`) turns an entry's reason into
+short UI text: `Needs: Hammer, 2× Plank` for `missing`, the
+`unavailable` text or `Not now` for `cannot_act`, `Can't do that here` for
+`invalid_target`, `Can't get there` for `unreachable`, and so on.
 
 ### Containers
 
@@ -836,8 +860,9 @@ held (`missing`); `when` is truthy (`cannot_act`).
   activity ends (completed, cancelled, interrupted, or failed its
   re-check). `reason` is one of `out_of_reach`, `too_heavy`, `missing`,
   `cannot_use`, `no_inventory`, `unknown_container`, `unknown_action`,
-  `invalid_target`, `cannot_act`, `occupied`, `cancelled` or
-  `interrupted`. `lastAction` is written on start, on completion and on
+  `invalid_target`, `cannot_act`, `occupied`, `cancelled`,
+  `interrupted` or `unreachable` (a `goto.then` whose goto found no
+  path, see below). `lastAction` is written on start, on completion and on
   cancellation or interruption; `actionText` (in `src/core/hud.ts`) turns
   it into a message such as `You start barricading.` or
   `Barricade interrupted.`.
@@ -847,6 +872,31 @@ held (`missing`); `when` is truthy (`cannot_act`).
 A `goto` intent with `adjacent: true` ends on the reachable walkable tile
 8-adjacent to the goal (or the goal itself, if walkable) with the shortest
 path; the browser uses it when you click a non-walkable container.
+
+**Walk-then-act.** A player's `goto` may carry `then: <action>` (any
+action of the table above). When the path ends with the player standing on
+its last cell, `then` is appended to the action queue and applied in the
+same tick's action step (phase 1, step 2), exactly as if a shell had
+queued it, so every check runs as usual and it may still fail. A goto
+whose path is empty (already at the goal, or already adjacent with
+`adjacent: true`) queues it in the same tick.
+
+- If A* finds **no path**, `then` is dropped and `world.lastAction`
+  records `{ kind, item, action?, moved: 0, ok: false, stage: 'complete',
+  reason: 'unreachable', tick }` (`You can't get there.`).
+- If the path is cleared before arrival (a step fails because a cell
+  became unwalkable, a new intent replaces it, or a timed activity starts),
+  `then` is dropped silently; a new goto's own `then` replaces it.
+- The pending `then` is part of the entity snapshot (`then`) and of
+  `hash()`. Only the player's intents may carry it: `queueIntent` with
+  `then` for another entity throws.
+
+`world.approachIntent(action)` returns the intent a shell should queue for
+an action: `null` when it is already in reach or needs none (`self` acts,
+`use`, `drop`), so the shell queues the action directly; otherwise
+`{ kind: 'goto', x, y, adjacent: <target not walkable>, then: action }`
+targeting the action's cell (the container's cell for `take`/`put`, `x`/`y`
+for `act`).
 
 Movement intents (`step` and `goto`) are queued with
 `world.queueIntent(intent, entity?)`; `entity` defaults to the player, and

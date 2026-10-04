@@ -1,11 +1,11 @@
 /**
  * Inventory and loot panels for the browser. The views are pure functions
- * of `hudModel` and `world.availableActions()` (so they are testable without
- * a DOM); the `Panels` class only renders them and turns button clicks into
- * `world.queueAction`.
+ * of `hudModel` (so they are testable without a DOM); the `Panels` class
+ * only renders them and turns button clicks into `world.queueAction`.
+ * Pack actions live in the context menu (`menu.ts`).
  */
 
-import { hudModel, type Action, type ActionFailure, type AvailableAction, type GotoIntent, type HudModel, type World } from '../core/index.ts';
+import { hudModel, type Action, type GotoIntent, type HudModel, type World } from '../core/index.ts';
 
 export interface PanelButton {
   readonly label: string;
@@ -27,6 +27,8 @@ export interface InventoryView {
 }
 
 export interface LootSection {
+  /** Container id. */
+  readonly id: number;
   readonly title: string;
   readonly rows: readonly PanelRow[];
   /** Takes every stack of the container (as much as fits); null when empty. */
@@ -37,28 +39,6 @@ export interface LootView {
   readonly sections: readonly LootSection[];
   /** One row per inventory stack, with a Put button per reachable container. */
   readonly put: readonly PanelRow[];
-  /** One row per self or tile action that can be started here (disabled with the reason when it cannot). */
-  readonly actions: readonly PanelRow[];
-}
-
-/** Why an available action cannot start now, as panel text. */
-const REASON_TEXT: Partial<Record<ActionFailure, string>> = {
-  missing: 'missing items',
-  no_inventory: 'no inventory',
-  cannot_act: 'not now',
-  cannot_use: 'not now',
-};
-
-/** Rows for the self and tile actions of `world.availableActions()` (item uses stay in the inventory panel). */
-export function actionRows(world: World, available: readonly AvailableAction[], readOnly: boolean): PanelRow[] {
-  return available
-    .filter((a) => a.kind === 'act')
-    .map((a) => {
-      const where = a.x !== undefined && a.y !== undefined ? `${world.grid.tileAt(a.x, a.y)?.label ?? '?'} (${a.x}, ${a.y})` : 'Yourself';
-      const text = a.ok ? where : `${where}: ${REASON_TEXT[a.reason!] ?? a.reason}`;
-      const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! };
-      return { text, buttons: [button(a.label, action, readOnly || !a.ok)] };
-    });
 }
 
 const button = (label: string, action: Action | Action[], disabled: boolean): PanelButton => ({
@@ -82,11 +62,12 @@ export function inventoryView(m: HudModel, readOnly: boolean): InventoryView | n
   };
 }
 
-/** Loot panel: shown when at least one container is reachable or an action row exists (null otherwise). */
-export function lootView(m: HudModel, readOnly: boolean, actions: readonly PanelRow[] = []): LootView | null {
-  if (m.nearby.length === 0 && actions.length === 0) return null;
+/** Loot panel: shown when at least one container is reachable (null otherwise). */
+export function lootView(m: HudModel, readOnly: boolean): LootView | null {
+  if (m.nearby.length === 0) return null;
   const sections = m.nearby.map(
     (c): LootSection => ({
+      id: c.id,
       title: c.label,
       rows: c.stacks.map((s) => ({
         text: s.text,
@@ -105,7 +86,7 @@ export function lootView(m: HudModel, readOnly: boolean, actions: readonly Panel
     text: s.text,
     buttons: m.nearby.map((c) => button(`Put → ${c.label}`, { kind: 'put', container: c.id, item: s.item, count: 1 }, readOnly)),
   }));
-  return { sections, put: m.nearby.length ? put : [], actions };
+  return { sections, put };
 }
 
 /** Click-to-move: a non-walkable container tile is approached (`adjacent: true`) instead of entered. */
@@ -123,6 +104,8 @@ export class Panels {
   private lastTick = -1;
   private lastVersion = -1;
   private lastTileVersion = -1;
+  /** Container to bring into view once it is in reach (context menu `Open`), or null. */
+  private focus: number | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -148,6 +131,12 @@ export class Panels {
     this.invKey = '';
   }
 
+  /** Show container `id` in the loot panel now, or as soon as it is in reach. */
+  openLoot(id: number): void {
+    this.focus = id;
+    this.lastTick = -1;
+  }
+
   update(): void {
     const w = this.world;
     if (w.tick === this.lastTick && w.containerVersion === this.lastVersion && w.tileVersion === this.lastTileVersion) return;
@@ -166,7 +155,7 @@ export class Panels {
       }
     }
 
-    const lv = lootView(m, readOnly, actionRows(w, w.availableActions(), readOnly));
+    const lv = lootView(m, readOnly);
     this.loot.hidden = lv === null;
     if (lv) {
       const key = JSON.stringify(lv);
@@ -175,12 +164,20 @@ export class Panels {
         const parts: HTMLElement[] = [];
         for (const s of lv.sections) {
           const h = heading(s.title);
+          h.dataset['container'] = String(s.id);
           if (s.takeAll) h.append(' ', buttonEl(s.takeAll));
           parts.push(h, ...s.rows.map(row), ...(s.rows.length ? [] : [line('empty')]));
         }
         if (lv.put.length) parts.push(heading('Put'), ...lv.put.map(row));
-        if (lv.actions.length) parts.push(heading('Actions'), ...lv.actions.map(row));
         this.loot.replaceChildren(...parts);
+      }
+      const at = this.focus === null ? null : this.loot.querySelector<HTMLElement>(`[data-container="${this.focus}"]`);
+      if (at) {
+        this.focus = null;
+        at.scrollIntoView({ block: 'nearest' });
+        at.classList.remove('focus');
+        void at.offsetWidth; // restart the highlight animation
+        at.classList.add('focus');
       }
     }
   }

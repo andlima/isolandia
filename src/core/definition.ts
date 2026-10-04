@@ -155,6 +155,8 @@ export interface ActionDef {
   readonly target: TileFilterDef | null;
   /** Checked at start and at completion; null means always. */
   readonly whenFn: Compiled | null;
+  /** UI text shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
   /** Item indices that must be held (never consumed). */
   readonly tools: readonly number[];
   /** Items that must be held, removed at completion. */

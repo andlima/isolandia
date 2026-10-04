@@ -25,6 +25,9 @@ export {
   type ActionFailure,
   type ActionRecord,
   type AvailableAction,
+  type MissingItem,
+  type Interaction,
+  type InteractionKind,
   type ActivityProgress,
   type ActivitySnapshot,
 } from './sim/world.ts';
@@ -37,6 +40,8 @@ export {
   formatClock,
   hudLines,
   actionText,
+  reasonText,
+  needsText,
   progressText,
   GROUND_LABEL,
   type HudModel,

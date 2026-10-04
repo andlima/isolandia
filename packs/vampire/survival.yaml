@@ -117,6 +117,7 @@ actions:
     progress: Resting
     target: self
     when: 'tile.has_tag("crypt")'
+    unavailable: Only in the crypt
     duration: 10
     interrupt: 'heard(self, 1)'
     effects:

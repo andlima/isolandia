@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, type AvailableAction, type Intent, type World } from '../core/index.ts';
+import { hudModel, reasonText, type Action, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -92,31 +92,60 @@ export const KEYMAP: Readonly<Record<string, Intent>> = {
   n: d(1, 1),
 };
 
+/** An entry of the `x` list. */
+export interface ActEntry {
+  readonly label: string;
+  /** Target cell (tile actions and containers). */
+  readonly x?: number;
+  readonly y?: number;
+  readonly ok: boolean;
+  /** Why it cannot be done now (`reasonText`), or `''`. */
+  readonly hint: string;
+  /** Queued in order when chosen. */
+  readonly actions: readonly Action[];
+}
+
 /** Pending multi-key input (the `d` drop prefix and the `x` action list). */
 export interface KeyState {
   dropPending: boolean;
-  /** The open `x` list (self and tile actions, at most 9), or null/absent when closed. */
-  actions?: AvailableAction[] | null;
+  /** The open `x` list, or null/absent when closed. */
+  actions?: ActEntry[] | null;
 }
 
-/** The `x` list: self and tile actions that can be started here, at most 9. */
-export function actionMenu(world: World): AvailableAction[] {
-  return world
-    .availableActions()
-    .filter((a) => a.kind === 'act')
-    .slice(0, 9);
+/**
+ * The `x` list, at most 9 entries: the self and tile actions that can be
+ * started here (`availableActions`), then `take all` for each reachable
+ * non-empty container (`interactionsAt` over the reachable cells, row-major).
+ */
+export function actionMenu(world: World): ActEntry[] {
+  const out: ActEntry[] = [];
+  for (const a of world.availableActions()) {
+    if (a.kind !== 'act') continue;
+    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! };
+    out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y! } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
+  }
+  const { x: px, y: py } = world.player;
+  for (let y = py - 1; y <= py + 1; y++) {
+    for (let x = px - 1; x <= px + 1; x++) {
+      for (const e of world.interactionsAt(x, y)) {
+        if (e.kind === 'take_all') out.push({ label: e.label, x, y, ok: e.ok, hint: reasonText(e), actions: e.actions! });
+      }
+    }
+  }
+  return out.slice(0, 9);
 }
 
-/** `act: 1) Barricade (12,3)  2) Rest [missing]`, or a note when nothing can be done here. */
-export function actionMenuText(list: readonly AvailableAction[]): string {
+/** `act: 1) Barricade (12,3)  2) Rest [Not now]`, or a note when nothing can be done here. */
+export function actionMenuText(list: readonly ActEntry[]): string {
   if (list.length === 0) return 'no actions here (any key)';
-  const entry = (a: AvailableAction, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y})` : ''}${a.ok ? '' : ` [${a.reason}]`}`;
+  const entry = (a: ActEntry, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y})` : ''}${a.ok ? '' : ` [${a.hint}]`}`;
   return `act: ${list.map(entry).join('  ')}`;
 }
 
 /**
- * Apply one key to the world. `x` opens the list of pack actions that can
- * be started here (`1`–`9` start one, any other key closes it). With an
+ * Apply one key to the world. `x` opens the list of pack actions and
+ * `take all`s that can be done here (`1`–`9` start one, any other key
+ * closes it). With an
  * inventory, `g` takes everything that fits from every reachable container,
  * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
  * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
@@ -130,7 +159,7 @@ export function handleKey(world: World, key: string, state: KeyState): 'quit' | 
     state.actions = null;
     const a = /^[1-9]$/.test(key) ? list[Number(key) - 1] : undefined;
     if (a) {
-      world.queueAction(a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! });
+      for (const action of a.actions) world.queueAction(action);
       return;
     }
     if (/^[1-9]$/.test(key)) return;

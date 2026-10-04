@@ -62,10 +62,10 @@ the view functions are pure and unit-tested) and turn button clicks into
 - the **loot panel** opens by itself whenever a container is within reach
   (the player's cell or the 8 around it). It lists each container's stacks
   with *Take* (one unit) and *Take all*, and a *Put* section to move
-  inventory stacks into a reachable container. It also opens when a pack
-  [action](packs.md#actions) can be started here: an **Actions** section
-  lists the self and tile actions of `world.availableActions()`, one button
-  each; actions that cannot start now are disabled, with the reason.
+  inventory stacks into a reachable container. Pack
+  [actions](packs.md#actions) are in the **context menu** (right-click,
+  long-press or `E`; see [ui.md](ui.md)), which outlines its target cell
+  while open;
 - while the player is busy with a timed action or use, a **progress bar**
   (`#activity`) shows its progress text and percentage; moving or starting
   another action cancels it.

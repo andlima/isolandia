@@ -317,6 +317,21 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     simulation state (snapshot and hash). `world.availableActions()` is a
     pure query for the shells; the context menu (`m5-context-menu`) and
     recipes (`m5-recipes`) build on it.
+- ~~How does the player pick what to do, and how do far targets work?~~
+  **Decided (spec `m5-context-menu`, M5):**
+  - **Walk-then-act lives in the simulation**, as **`goto.then`**: a
+    player `goto` can carry an action that is queued when the path arrives
+    (in the same tick's action step), so it is deterministic, part of the
+    snapshot and hash, and every check runs as usual. No path records the
+    new `unreachable` reason; a path cleared before arrival drops it
+    silently. `world.approachIntent(action)` picks the goto for a shell.
+  - **Menus are built from a pure core query**, `world.interactionsAt(x,
+    y)` (tile actions, containers, self actions, walk here), shared by the
+    browser context menu (right-click, long-press, `E`) and the terminal's
+    `x` list. The DOM layer is thin over a pure `contextMenu` model.
+  - **Disabled entries are shown with reasons** (`Needs: Hammer, 2×
+    Plank`, a pack's `unavailable` text such as `Only in the crypt`), so
+    players learn what exists; `reasonText` is the one source of that text.
 - ~~How is sight represented?~~ **Decided (task `line-of-sight`, M4
   groundwork):** sight is **tile-based line of sight**. Tiles get an
   **`opaque`** flag (default `!walkable`; the vampire window is
@@ -361,7 +376,9 @@ M5 is in progress: **timed actions** are delivered (spec
 `m5-timed-actions`). Survivors barricade windows with a hammer, planks and
 nails while the dead hear the hammering, and bandaging takes a few
 seconds; the vampire closes shutters before dawn and rests on a crypt floor
-until a screeching bat wakes it. The context menu and recipes come next.
+until a screeching bat wakes it. The **context menu** is delivered too
+(spec `m5-context-menu`): right-click a window across the room and the
+survivor walks up and starts hammering. Recipes come next.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers

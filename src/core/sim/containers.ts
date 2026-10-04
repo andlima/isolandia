@@ -88,3 +88,6 @@ export function remove(c: Container, item: number, count: number, weight: number
   }
   return 0;
 }
+
+/** Label of a ground pile (engine-level, not pack data). */
+export const GROUND_LABEL = 'Ground';

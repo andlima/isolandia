@@ -18,7 +18,7 @@ import {
 } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { activityBar } from '../src/web/hud.ts';
-import { actionRows, lootView } from '../src/web/panels.ts';
+import { lootView } from '../src/web/panels.ts';
 import { fixture, GAMES } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
@@ -678,7 +678,19 @@ test('availableActions: self actions, tile actions × cells in reach, item uses;
   // Not ok: missing items are listed with the reason; out-of-reach cells are omitted.
   w.player.inv!.stacks.splice(0, w.player.inv!.stacks.length);
   const after = w.availableActions();
-  assert.deepEqual(after.find((a) => a.action === 't:board_up'), { kind: 'act', action: 't:board_up', x: 5, y: 1, label: 'Board up', ok: false, reason: 'missing' });
+  assert.deepEqual(after.find((a) => a.action === 't:board_up'), {
+    kind: 'act',
+    action: 't:board_up',
+    x: 5,
+    y: 1,
+    label: 'Board up',
+    ok: false,
+    reason: 'missing',
+    missing: [
+      { item: 't:saw', label: 'Saw', count: 1 },
+      { item: 't:board', label: 'Board', count: 2 },
+    ],
+  });
   moveTo(w.player, 1, 1);
   assert.ok(!w.availableActions().some((a) => a.x !== undefined));
 });
@@ -729,10 +741,11 @@ test('ascii: x opens the action list, 1-9 start one, any other key closes it', (
   handleKey(w, 'x', keys);
   assert.ok(keys.actions);
   assert.deepEqual(keys.actions, actionMenu(w));
-  assert.ok(keys.actions.every((a) => a.kind === 'act'));
+  assert.ok(keys.actions.every((a) => a.actions.every((x) => x.kind === 'act')), 'no container in reach: no take all');
   assert.match(actionMenuText(keys.actions), /^act: 1\) Nap {2}2\) Hum/);
   assert.match(actionMenuText(keys.actions), /\d\) Board up \(5,1\)/);
-  const k = keys.actions.findIndex((a) => a.action === 't:board_up') + 1;
+  assert.match(actionMenuText(keys.actions), /\d\) Wait \[Not now\]/);
+  const k = keys.actions.findIndex((a) => a.label === 'Board up') + 1;
   handleKey(w, String(k), keys);
   assert.equal(keys.actions, null);
   w.step();
@@ -757,26 +770,31 @@ test('ascii: the renderer shows a changed tile', () => {
   assert.equal(row(), '#...@H#  ');
 });
 
-test('panels: an Actions section lists self and tile actions, disabled with the reason', () => {
+test('ascii: the x list adds take all for reachable non-empty containers, after the actions', () => {
+  const w = world();
+  const bin = w.containersAt(1, 3)[0]!;
+  bin.stacks.push({ item: w.def.ids.items['t:salve']!, count: 1 });
+  moveTo(w.player, 2, 2);
+  const list = actionMenu(w);
+  const last = list[list.length - 1]!;
+  assert.equal(last.label, 'Take all from Bin');
+  assert.deepEqual([last.x, last.y], [1, 3]);
+  assert.deepEqual(last.actions, [{ kind: 'take', container: bin.id, item: 't:salve' }]);
+  assert.ok(list.slice(0, -1).every((a) => a.actions[0]!.kind === 'act'));
+  const keys: KeyState = { dropPending: false, actions: list };
+  handleKey(w, String(list.length), keys);
+  w.step();
+  assert.equal(count(w, 't:salve'), 3);
+});
+
+test('panels: the loot panel has no Actions section; it shows only with containers in reach', () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  const rows = actionRows(w, w.availableActions(), false);
-  const board = rows.find((r) => r.buttons[0]!.label === 'Board up')!;
-  assert.equal(board.text, 'Pane (5, 1)');
-  assert.deepEqual(board.buttons[0]!.actions, [{ kind: 'act', action: 't:board_up', x: 5, y: 1 }]);
-  assert.equal(board.buttons[0]!.disabled, false);
-  const wait = rows.find((r) => r.buttons[0]!.label === 'Wait')!;
-  assert.equal(wait.text, 'Yourself: not now');
-  assert.equal(wait.buttons[0]!.disabled, true);
-  assert.deepEqual(rows.find((r) => r.buttons[0]!.label === 'Nap')!.buttons[0]!.actions, [{ kind: 'act', action: 't:nap' }]);
-  assert.ok(!rows.some((r) => r.buttons[0]!.label === 'Apply'), 'item uses stay in the inventory panel');
-  // The loot panel shows with actions even without containers in reach.
-  const lv = lootView(hudModel(w), false, rows);
-  assert.ok(lv);
-  assert.equal(lv.sections.length, 0);
-  assert.equal(lv.actions, rows);
-  assert.equal(lootView(hudModel(w), false, []), null);
-  assert.ok(actionRows(w, w.availableActions(), true).every((r) => r.buttons[0]!.disabled));
+  assert.equal(lootView(hudModel(w), false), null);
+  moveTo(w.player, 2, 2);
+  const lv = lootView(hudModel(w), false)!;
+  assert.deepEqual(Object.keys(lv).sort(), ['put', 'sections']);
+  assert.equal(lv.sections[0]!.title, 'Bin');
 });
 
 // ── Two-genre scenarios ─────────────────────────────────────────────────────

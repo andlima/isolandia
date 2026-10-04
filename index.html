@@ -43,6 +43,20 @@
         border-radius: 3px; padding: 0 5px; margin: 1px 0; cursor: pointer;
       }
       .panel button:disabled { opacity: 0.4; cursor: default; }
+      .panel-title.focus { animation: focus 1s ease-out; }
+      @keyframes focus { from { background: rgba(255, 210, 63, 0.4); } to { background: transparent; } }
+      #menu {
+        right: auto; z-index: 10; min-width: 160px; max-width: min(300px, calc(100vw - 8px)); max-height: calc(100vh - 8px);
+        box-sizing: border-box; padding: 4px; background: rgba(15, 17, 22, 0.94); border: 1px solid #556;
+      }
+      #menu .panel-title { margin: 0 4px 4px; }
+      #menu .menu-item {
+        display: block; width: 100%; text-align: left; font-size: 13px; padding: 4px 8px; margin: 0;
+        background: transparent; border: 1px solid transparent;
+      }
+      #menu .menu-item.selected { background: #333a44; border-color: #556; }
+      #menu .menu-item.disabled { color: #8a8f99; cursor: default; }
+      #menu .menu-hint { display: block; font-size: 11px; color: #c9a25a; }
       #errors {
         margin: 0; padding: 16px; height: 100%; box-sizing: border-box; overflow: auto;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; white-space: pre-wrap;
