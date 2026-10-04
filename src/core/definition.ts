@@ -314,11 +314,16 @@ export interface LightingDef {
   readonly tint: readonly TintKeyframe[];
 }
 
-/** `start.defeat`: the game ends when `when` (with `self` = player) is truthy. */
-export interface DefeatDef {
+/** `start.defeat` / `start.victory`: the game ends when `when` (with `self` = player) is truthy. */
+export interface OutcomeDef {
   readonly when: Compiled;
   readonly message: string;
 }
+
+/** `start.defeat`: the game is lost when `when` holds. */
+export type DefeatDef = OutcomeDef;
+/** `start.victory`: the game is won when `when` holds. */
+export type VictoryDef = OutcomeDef;
 
 export interface Definition {
   readonly ticksPerSecond: number;
@@ -336,7 +341,12 @@ export interface Definition {
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
-  readonly start: { readonly map: number; readonly player: number; readonly defeat: DefeatDef | null };
+  readonly start: {
+    readonly map: number;
+    readonly player: number;
+    readonly defeat: DefeatDef | null;
+    readonly victory: VictoryDef | null;
+  };
   /** In-game calendar; engine defaults when no pack defines `clock`. */
   readonly clock: ClockDef;
   /** Day/night tint; null when no pack defines `lighting` (no tint). */

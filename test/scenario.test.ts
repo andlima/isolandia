@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
+import { clockAt, formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES } from './helpers.ts';
 import { Looter, type LooterOptions } from './looter.ts';
@@ -107,6 +107,74 @@ for (const name of ['zombie', 'vampire']) {
     }
   });
 }
+
+// ── Garden: no defeat, a collecting game won by gathering carrots ─────────
+
+const GARDEN_BOT: LooterOptions = {
+  needs: [
+    { measurement: 'gdn:energy', below: 50, items: ['gdn:strawberry', 'gdn:clover'], stock: 2 },
+    { items: ['gdn:carrot'], stock: 10 },
+  ],
+};
+
+test('scenario (garden): an idle bunny gets sleepy on day 1, is never defeated and does not win within 2 days', () => {
+  const def = genre('garden');
+  const sleepy = def.ids.statuses['gdn:sleepy']!;
+  for (const seed of SEEDS) {
+    const w = World.create(def, seed);
+    let firstSleepy = -1;
+    while (!w.ended && w.tick < 2 * DAY_TICKS) {
+      w.step();
+      if (firstSleepy < 0 && w.player.st[sleepy] === 1) firstSleepy = w.tick;
+    }
+    assert.equal(w.defeat, null, `seed ${seed}: defeated`);
+    assert.equal(w.victory, null, `seed ${seed}: won while idle`);
+    assert.equal(w.tick, 2 * DAY_TICKS);
+    assert.ok(firstSleepy >= 0, `seed ${seed}: never sleepy`);
+    assert.equal(clockAt(def.clock, firstSleepy, def.ticksPerSecond).day, 1, `seed ${seed}: sleepy at tick ${firstSleepy}`);
+    assert.equal(w.value(w.player, 'std:hp'), undefined, 'the bunny has no health to lose');
+  }
+});
+
+test('scenario (garden): every seed holds enough carrots for the win', () => {
+  const def = genre('garden');
+  const carrot = def.ids.items['gdn:carrot']!;
+  for (const seed of [...SEEDS, 6, 7, 8, 9, 10]) {
+    const w = World.create(def, seed);
+    let n = 0;
+    for (const c of w.containers.values()) if (c.kind === 'tile') n += c.stacks.find((s) => s.item === carrot)?.count ?? 0;
+    assert.ok(n >= 10, `seed ${seed}: only ${n} carrots`);
+  }
+});
+
+test('scenario (garden): a collecting bunny wins within 1 in-game day with goto/take/use only', () => {
+  const def = genre('garden');
+  for (const seed of SEEDS) {
+    const w = World.create(def, seed);
+    const bot = new Looter(w, GARDEN_BOT);
+    const kinds = new Set<string>();
+    const queue = w.queueAction.bind(w);
+    w.queueAction = (a) => (kinds.add(a.kind), queue(a));
+    const intents = new Set<string>();
+    const queueIntent = w.queueIntent.bind(w);
+    w.queueIntent = (i, e) => (intents.add(i.kind), queueIntent(i, e));
+    while (!w.ended && w.tick < DAY_TICKS) {
+      if (w.tick % 10 === 0) bot.think();
+      w.step();
+    }
+    assert.equal(w.defeat, null);
+    assert.ok(w.victory, `seed ${seed}: did not win (carrots: ${w.player.inv!.stacks.map((s) => `${def.items[s.item]!.id} x${s.count}`).join(', ')})`);
+    assert.equal(w.victory.message, 'You gathered all the carrots! Snack time!');
+    assert.ok(w.victory.tick < DAY_TICKS);
+    assert.ok([...kinds].every((k) => k === 'take' || k === 'use'), `seed ${seed}: action kinds ${[...kinds].join(', ')}`);
+    assert.deepEqual([...intents], ['goto']);
+    // Frozen once won.
+    const hash = w.hash();
+    bot.think();
+    w.step();
+    assert.equal(w.hash(), hash);
+  }
+});
 
 test('genre packs use every M2 and M3 primitive', () => {
   for (const name of ['zombie', 'vampire']) {

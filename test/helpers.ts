@@ -9,6 +9,7 @@ export function pack(label: string, files: Record<string, string>): PackSource {
 export const GAMES = {
   zombie: ['packs/std', 'packs/std-needs', 'packs/zombie'],
   vampire: ['packs/std', 'packs/vampire'],
+  garden: ['packs/std', 'packs/garden'],
 } as const;
 
 export const MANIFEST_T = 'namespace: t\nname: Test\nversion: 1.0.0\n';

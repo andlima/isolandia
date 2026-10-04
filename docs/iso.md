@@ -48,7 +48,8 @@ player's measurements, from the same `hudModel` as
 the ASCII HUD, plus a `Status: …` line while the player has active
 statuses. When the pack's `start.defeat` condition is met, the HUD adds the
 defeat message and a centred banner covers the canvas; the camera still
-pans and zooms, but movement input is ignored.
+pans and zooms, but movement input is ignored. `start.victory` works the
+same way with its own, gold-on-green banner (`#victory`).
 
 ## Inventory and loot panels
 
@@ -64,8 +65,8 @@ the view functions are pure and unit-tested) and turn button clicks into
   inventory stacks into a reachable container.
 
 Clicking a non-walkable container tile (a fridge) walks to the closest
-tile next to it (`goto` with `adjacent: true`). After defeat the panels
-stay visible but read-only.
+tile next to it (`goto` with `adjacent: true`). After defeat or
+victory the panels stay visible but read-only.
 
 ## Day/night tint
 

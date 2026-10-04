@@ -287,6 +287,75 @@ test('defeat: without start.defeat the game never ends', () => {
   assert.equal(w.def.start.defeat, null);
 });
 
+// ── Victory ─────────────────────────────────────────────────────────────────
+
+const withStart = (extra: string) => loadFixtureMap().replace('  player: hero\n', `  player: hero\n${extra}`);
+
+test('victory: loads with and without start.victory; default message', () => {
+  assert.equal(world({}).def.start.victory, null);
+  const w = world({ 'map.yaml': withStart('  victory: { when: "self.food <= 49.75" }\n') });
+  assert.equal(w.def.start.victory!.message, 'Victory');
+  assert.equal(w.def.start.defeat, null);
+  const m = world({ 'map.yaml': withStart('  victory: { when: "true", message: "Well done!" }\n') });
+  assert.equal(m.def.start.victory!.message, 'Well done!');
+});
+
+test('victory: freezes the world; step, intents and actions are ignored; snapshot and hash include it', () => {
+  const w = world({ 'map.yaml': withStart('  victory: { when: "self.food <= 49.75" }\n') });
+  for (let i = 0; i < 10; i++) w.step();
+  assert.deepEqual(w.victory, { tick: 2, message: 'Victory' }); // food 49.7 after tick 2
+  assert.equal(w.defeat, null);
+  assert.equal(w.ended, true);
+  assert.equal(w.tick, 3);
+  const before = w.hash();
+  w.queueIntent({ kind: 'step', dx: 1, dy: 1 });
+  w.queueAction({ kind: 'drop', item: 't:pebble' });
+  w.step();
+  assert.equal(w.tick, 3);
+  assert.equal(w.hash(), before);
+  const snap = w.snapshot();
+  assert.equal(snap.entities[0]!.intent, null);
+  assert.deepEqual(snap.actions, []);
+  assert.deepEqual(snap.victory, { tick: 2, message: 'Victory' });
+  assert.equal(snap.defeat, null);
+  // The victory record is hashed: the same state without it hashes differently.
+  w.victory = null;
+  assert.notEqual(w.hash(), before);
+});
+
+test('victory: defeat takes precedence on the same tick; at most one outcome', () => {
+  const w = world({
+    'map.yaml': withStart('  defeat: { when: "self.food <= 49.75" }\n  victory: { when: "self.food <= 49.75", message: "Won" }\n'),
+  });
+  for (let i = 0; i < 10; i++) w.step();
+  assert.deepEqual(w.defeat, { tick: 2, message: 'Game over' });
+  assert.equal(w.victory, null);
+  const v = world({
+    'map.yaml': withStart('  defeat: { when: "self.food <= 49.65" }\n  victory: { when: "self.food <= 49.75", message: "Won" }\n'),
+  });
+  for (let i = 0; i < 10; i++) v.step();
+  assert.deepEqual(v.victory, { tick: 2, message: 'Won' });
+  assert.equal(v.defeat, null);
+});
+
+test('victory: HUD model text and ASCII line', () => {
+  const w = world({ 'map.yaml': withStart('  victory: { when: "self.food <= 48.95", message: "Hooray!" }\n') });
+  assert.equal(hudModel(w).victory, null);
+  for (let i = 0; i < 20; i++) w.step();
+  const m = hudModel(w);
+  assert.equal(m.defeat, null);
+  assert.deepEqual(m.victory, { message: 'Hooray!', clock: 'Day 1 08:01', text: 'Hooray! (Day 1 08:01)' });
+  assert.equal(renderAscii(w, { width: 5, height: 3 }).hud.at(-1), 'Hooray! (Day 1 08:01)');
+});
+
+test('error: start.victory unknown field, missing when, non-boolean-ish condition', () => {
+  expectError(errorsOf({ 'map.yaml': withStart('  victory: { when: "true", bogus: 1 }\n') }), 'map.yaml', 'start.victory.bogus', /unknown victory field 'bogus'/);
+  expectError(errorsOf({ 'map.yaml': withStart('  victory: { message: "hi" }\n') }), 'map.yaml', 'start.victory', /missing required field 'when'/);
+  expectError(errorsOf({ 'map.yaml': withStart('  victory: { when: self }\n') }), 'map.yaml', 'start.victory.when', /got entity/);
+  expectError(errorsOf({ 'map.yaml': withStart('  victory: { when: tile }\n') }), 'map.yaml', 'start.victory.when', /got tile/);
+  expectError(errorsOf({ 'map.yaml': withStart('  victory: { when: "true", message: 3 }\n') }), 'map.yaml', 'start.victory.message', /string/);
+});
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 test('determinism: statuses and random systems give equal hashes for equal seeds', () => {

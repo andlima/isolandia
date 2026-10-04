@@ -9,8 +9,9 @@ import { readPack } from '../src/node/read-pack.ts';
 const STACKS = [
   ['std', 'std-needs', 'zombie'],
   ['std', 'vampire'],
+  ['std', 'garden'],
 ];
-const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack'];
+const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow'];
 const MAX_COLOURS = 32;
 
 function load(dirs: string[]): { def: Definition; dirOf: Map<string, string> } {

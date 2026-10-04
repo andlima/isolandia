@@ -1,6 +1,6 @@
 # Pixel art
 
-Every image in the shipped packs (`std`, `zombie`, `vampire`) is pixel art,
+Every image in the shipped packs (`std`, `zombie`, `vampire`, `garden`) is pixel art,
 drawn by a small generator and stored as SVG. This guide gives the
 conventions. Asset fields, anchors and the facing table are documented in
 [packs.md](packs.md#assets); projection and depth sorting are in
@@ -154,3 +154,33 @@ the pack's `assets.yaml`.
 | `stone_lo` | `#4e4860` | `bat` | `#7a5c8a` |
 | `crypt` | `#3e3650` | `bat_lo` | `#563e66` |
 | `blood` | `#c0182c` | `wax` | `#f0e8c0` |
+
+### `garden` (30 colours)
+
+A bright pastel palette for a cute look: round shapes, big eyes, a soft
+plum `outline` instead of near-black. The night tint is a light
+blue-violet, so these colours stay readable after dark.
+
+| Name | Colour | Name | Colour |
+|------|--------|------|--------|
+| `outline` | `#4a3848` | `water` | `#8ad4f0` |
+| `shadow` | `#000000` at 0.25 opacity | `water_lo` | `#5ab0d8` |
+| `grass_hi` | `#b4e88a` | `pink` | `#ffb4d2` |
+| `grass` | `#8fd16a` | `pink_lo` | `#e87cac` |
+| `grass_lo` | `#6ab450` | `yellow` | `#ffe27a` |
+| `leaf_hi` | `#74c466` | `orange` | `#ff9a3c` |
+| `leaf` | `#4fa858` | `orange_lo` | `#d8742a` |
+| `leaf_lo` | `#3a8448` | `red` | `#ff5a70` |
+| `soil_hi` | `#c08a60` | `white` | `#fffaf4` |
+| `soil` | `#9a6a48` | `white_lo` | `#e0d8ea` |
+| `soil_lo` | `#74503a` | `cream` | `#f6deb4` |
+| `gravel_hi` | `#f2eada` | `lilac` | `#c8a4f6` |
+| `gravel` | `#d8cbb0` | `lilac_lo` | `#9a78d4` |
+| `gravel_lo` | `#b4a68a` | `blue` | `#7ab8f2` |
+| `water_hi` | `#d0f2fc` | `blue_lo` | `#5288c8` |
+
+The bunny, the cat and the butterfly are drawn in `art/garden.mjs` as
+their own 16×24 text grids (not the shared humanoid body). The butterfly
+hovers above its shadow, like the vampire pack's bat. The fence is a single
+image whose rails run along both map axes, so neighbouring fence tiles join
+up whichever way the fence line runs.

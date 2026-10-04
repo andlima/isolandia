@@ -107,6 +107,7 @@ console.log('|---|---|---|---|');
 const variants: [string, () => PackSource[]][] = [
   ['std+std-needs+zombie', () => ['packs/std', 'packs/std-needs', 'packs/zombie'].map(readPack)],
   ['std+vampire', () => ['packs/std', 'packs/vampire'].map(readPack)],
+  ['std+garden', () => ['packs/std', 'packs/garden'].map(readPack)],
   ['stress plain', () => [stressPack(false)]],
   ['stress survival', () => [stressPack(true)]],
 ];

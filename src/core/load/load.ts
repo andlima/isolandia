@@ -16,7 +16,7 @@ import {
   type BehaviorDef,
   type BehaviorStateDef,
   type ContainerSpec,
-  type DefeatDef,
+  type OutcomeDef,
   type DistributionDef,
   type InventorySpec,
   type ItemCount,
@@ -78,6 +78,7 @@ const ASSET_EXT_RE = /\.(svg|png)$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
+const DEFAULT_VICTORY_MESSAGE = 'Victory';
 const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius' };
 const DEFAULT_USE_LABEL = 'Use';
 const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home', 'investigate'];
@@ -249,7 +250,7 @@ class Loader {
   }
 
   /**
-   * A condition field (`for`/`when`/`until`/`defeat.when`): an expression or
+   * A condition field (`for`/`when`/`until`/`defeat.when`/`victory.when`): an expression or
    * a boolean literal. Returns undefined when absent, null after an error.
    */
   private condition(f: Fields, key: string, scope: Scope, required = false): Compiled | null | undefined {
@@ -1072,12 +1073,13 @@ class Loader {
     return effects;
   }
 
-  private defeat(f: Fields, scope: Scope): DefeatDef | null {
-    const raw = f.mapping('defeat');
+  /** `start.defeat` / `start.victory`: `{ when, message? }`. */
+  private outcome(f: Fields, key: 'defeat' | 'victory', scope: Scope, defaultMessage: string): OutcomeDef | null {
+    const raw = f.mapping(key);
     if (!raw) return null;
-    const df = new Fields(this.sink, f.at('defeat'), raw, ['when', 'message'], 'defeat');
+    const df = new Fields(this.sink, f.at(key), raw, ['when', 'message'], key);
     const when = this.condition(df, 'when', scope, true);
-    const message = df.string('message', false) ?? DEFAULT_DEFEAT_MESSAGE;
+    const message = df.string('message', false) ?? defaultMessage;
     return when ? { when, message } : null;
   }
 
@@ -1098,8 +1100,9 @@ class Loader {
       this.sink.add(extra.entry.src, `duplicate 'start': already defined in pack '${s.source.pack}' (${s.source.file})`);
     }
     const { entry, scope } = first!;
-    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat'], 'start');
-    const defeat = this.defeat(f, scope);
+    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat', 'victory'], 'start');
+    const defeat = this.outcome(f, 'defeat', scope, DEFAULT_DEFEAT_MESSAGE);
+    const victory = this.outcome(f, 'victory', scope, DEFAULT_VICTORY_MESSAGE);
     const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), scope, f.at('map'), this.sink) : f.string('map');
     const player = f.has('player') ? this.symbols.ref('archetype', f.raw('player'), scope, f.at('player'), this.sink) : f.string('player');
     if (!map || typeof map !== 'object' || !player || typeof player !== 'object') return null;
@@ -1108,7 +1111,7 @@ class Loader {
       this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (a legend entry with 'player: true')`);
       return null;
     }
-    return { map: map.index, player: player.index, defeat };
+    return { map: map.index, player: player.index, defeat, victory };
   }
 
   private clock(): ClockDef {

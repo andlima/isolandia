@@ -175,3 +175,38 @@ test('vampire: the window is see-through, and a bat spots the vampire through it
   assert.equal(w.grid.tileAt(1, 8)!.id, 'std:wall');
   assert.equal(lineOfSight(w.grid, 1, 7, 1, 9), false);
 });
+
+test('garden: the cat gets curious about a bunny in the open, and loses interest once it hides in a bush', () => {
+  const w = game('garden');
+  const cat = w.entities.find((e) => e.archetype.id === 'gdn:cat' && e.x === 14 && e.y === 4)!;
+  assert.ok(cat);
+  const tile = (id: string) => w.def.tiles.find((t) => t.id === id)!;
+  assert.equal(tile('gdn:bush').walkable, true);
+  assert.equal(tile('gdn:bush').opaque, false, 'bushes hide through a status, not by blocking sight');
+  assert.ok(tile('gdn:bush').tags.includes('hiding'));
+  assert.equal(tile('gdn:fence').opaque, false);
+  assert.equal(tile('gdn:pond').opaque, false);
+  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
+  // In the open, 3 tiles away.
+  place(w.player, 11, 4);
+  w.step();
+  assert.equal(w.hasStatus(cat, 'gdn:curious'), true);
+  assert.equal(w.hasStatus(w.player, 'gdn:hidden'), false);
+  // Into the bush next door: hidden at once, and the cat notices one tick later.
+  assert.equal(w.grid.tileAt(12, 3)!.id, 'gdn:bush');
+  place(w.player, 12, 3);
+  w.step();
+  assert.equal(w.hasStatus(w.player, 'gdn:hidden'), true);
+  w.step();
+  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
+  assert.ok(Math.hypot(cat.x - 12, cat.y - 3) <= 5, 'still close by, yet not curious');
+  // Out again, in plain view: curious again.
+  place(w.player, 11, 4);
+  w.step();
+  w.step();
+  assert.equal(w.hasStatus(cat, 'gdn:curious'), true);
+  // Far away (past 8 tiles): it loses interest.
+  place(w.player, 2, 13);
+  w.step();
+  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
+});

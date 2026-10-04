@@ -1,14 +1,15 @@
 /**
  * A scripted looting player for the headless genre scenarios: it only ever
  * queues `goto` intents and `take`/`use` actions, reading the world like a
- * (omniscient) player would.
+ * (omniscient) player would. A need without a measurement just gathers its
+ * items (e.g. the goal items of a collecting game).
  */
 
 import { countOf, World, type Container } from '../src/core/index.ts';
 
-/** Use an item when a measurement crosses a threshold. */
+/** Use an item when a measurement crosses a threshold; without `measurement` the items are only gathered. */
 export interface Need {
-  readonly measurement: string;
+  readonly measurement?: string;
   /** Use when the value is ≥ `above` (or ≤ `below`). */
   readonly above?: number;
   readonly below?: number;
@@ -43,6 +44,7 @@ export class Looter {
     const w = this.w;
     const p = w.player;
     for (const n of this.opts.needs) {
+      if (n.measurement === undefined) continue;
       const v = w.value(p, n.measurement)!;
       const due = (n.above !== undefined && v >= n.above) || (n.below !== undefined && v <= n.below);
       if (!due) continue;
