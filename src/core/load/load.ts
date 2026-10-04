@@ -1170,7 +1170,7 @@ class Loader {
       this.sink,
       d.entry.src,
       d.entry.value,
-      ['id', 'label', 'progress', 'target', 'when', 'tools', 'consume', 'duration', 'interrupt', 'effects'],
+      ['id', 'label', 'progress', 'target', 'when', 'unavailable', 'tools', 'consume', 'duration', 'interrupt', 'effects'],
       'action',
     );
     const label = f.string('label') ?? d.id;
@@ -1188,6 +1188,7 @@ class Loader {
     }
 
     const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const unavailable = f.string('unavailable', false) ?? null;
     const tools: number[] = [];
     (f.list('tools') ?? []).forEach((ref, i) => {
       const r = this.symbols.ref('item', ref, d.scope, f.at('tools', i), this.sink);
@@ -1215,7 +1216,7 @@ class Loader {
     if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && Object.keys(rawConsume ?? {}).length === 0) {
       this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
     }
-    return { id: d.id, index: d.index, label, progress, target, whenFn, tools, consume, duration, interruptFn, effects };
+    return { id: d.id, index: d.index, label, progress, target, whenFn, unavailable, tools, consume, duration, interruptFn, effects };
   }
 
   /** `start.defeat` / `start.victory`: `{ when, message? }`. */

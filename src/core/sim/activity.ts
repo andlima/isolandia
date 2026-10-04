@@ -149,12 +149,13 @@ export class ActivityRunner {
   /**
    * Checks 2–5 (inventory, reach and filter, held items, `when`) for `e`
    * acting on (x, y). Returns the first failure, or null when all pass.
+   * `skipReach` leaves out the reach check (the cell must still be in bounds).
    */
-  check(s: ActivitySource, e: Entity, x: number, y: number): ActionFailure | null {
+  check(s: ActivitySource, e: Entity, x: number, y: number, skipReach = false): ActionFailure | null {
     if (s.requires.length > 0 && !e.inv) return 'no_inventory';
     if (s.filter) {
       const { grid } = this.host;
-      if (!grid.inBounds(x, y) || Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) > 1) return 'out_of_reach';
+      if (!grid.inBounds(x, y) || (!skipReach && Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) > 1)) return 'out_of_reach';
       const tile = grid.cells[y * grid.width + x]!;
       if (s.filter[tile] !== 1) return 'invalid_target';
       if (s.setTiles.length > 0 && this.host.tiles[tile]!.container) return 'invalid_target';
@@ -172,7 +173,7 @@ export class ActivityRunner {
   /**
    * Start `s` for `e` on (x, y) at `tick`: check, evaluate the duration once,
    * then complete at once (0 ticks) or begin an activity, which clears the
-   * entity's path and pending intent. Records the outcome.
+   * entity's path (and its pending `then`) and pending intent. Records the outcome.
    */
   start(s: ActivitySource, e: Entity, x: number, y: number, tick: number): void {
     const failure = this.check(s, e, x, y);
@@ -186,6 +187,7 @@ export class ActivityRunner {
     e.activity = { source: s, action: s.action, x, y, startTick: tick, endTick: tick + n };
     e.path = null;
     e.pathPos = 0;
+    e.then = null;
     e.intent = null;
     this.host.record(e, s, 'start', true, null, 0);
   }

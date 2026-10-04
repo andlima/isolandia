@@ -4,8 +4,10 @@
  */
 
 import { clockAt, type ClockTime } from './clock.ts';
-import type { Container } from './sim/containers.ts';
-import type { ActionRecord, OutcomeRecord, World } from './sim/world.ts';
+import { GROUND_LABEL, type Container } from './sim/containers.ts';
+
+export { GROUND_LABEL };
+import type { ActionFailure, ActionRecord, MissingItem, OutcomeRecord, World } from './sim/world.ts';
 
 export interface HudMeasurement {
   readonly label: string;
@@ -103,8 +105,6 @@ function fmt(n: number): string {
   return n.toFixed(1);
 }
 
-/** Label of a ground pile (engine-level, not pack data). */
-export const GROUND_LABEL = 'Ground';
 /** How long (sim seconds) the latest action stays in the HUD. */
 const ACTION_SECONDS = 3;
 /** Cells of the ASCII progress bar. */
@@ -160,6 +160,43 @@ function containerLabel(world: World, c: Container): string {
 /** `Barricading` → `barricading`, for the middle of a sentence. */
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
+const UNREACHABLE_TEXT = "You can't get there.";
+
+/** `Needs: Hammer, 2× Plank`. */
+export function needsText(missing: readonly MissingItem[]): string {
+  return `Needs: ${missing.map((m) => (m.count > 1 ? `${m.count}× ${m.label}` : m.label)).join(', ')}`;
+}
+
+/** Short UI text per failure reason (`missing` and `cannot_act` have richer text, see `reasonText`). */
+const REASON_TEXT: Record<ActionFailure, string> = {
+  out_of_reach: 'Too far',
+  too_heavy: 'Too heavy',
+  missing: 'Missing items',
+  cannot_use: 'Not now',
+  no_inventory: 'No inventory',
+  unknown_container: 'Not here',
+  unknown_action: 'Unknown action',
+  invalid_target: "Can't do that here",
+  cannot_act: 'Not now',
+  occupied: 'Something is in the way',
+  cancelled: 'Cancelled',
+  interrupted: 'Interrupted',
+  unreachable: "Can't get there",
+};
+
+/**
+ * Why an entry (of `interactionsAt` or `availableActions`) is disabled, as
+ * short UI text: `Needs: Hammer, 2× Plank`, the action's `unavailable` text
+ * or `Not now`, `Can't do that here`…; `''` when it has no reason.
+ */
+export function reasonText(entry: { readonly reason?: ActionFailure; readonly missing?: readonly MissingItem[]; readonly unavailable?: string }): string {
+  const { reason } = entry;
+  if (!reason) return '';
+  if (reason === 'missing' && entry.missing?.length) return needsText(entry.missing);
+  if (reason === 'cannot_act' && entry.unavailable) return entry.unavailable;
+  return REASON_TEXT[reason];
+}
+
 /** Short feedback text for an `act` record. */
 function actText(world: World, a: ActionRecord): string {
   const k = world.def.ids.actions[a.action ?? ''];
@@ -188,6 +225,8 @@ function actText(world: World, a: ActionRecord): string {
       return `${label} cancelled.`;
     case 'interrupted':
       return `${label} interrupted.`;
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
     default:
       return `${label} failed.`;
   }
@@ -227,6 +266,8 @@ export function actionText(world: World, a: ActionRecord): string {
       return 'No inventory';
     case 'unknown_container':
       return 'No such container';
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
     default:
       return `No ${label}`;
   }

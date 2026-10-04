@@ -1,6 +1,6 @@
 /**
- * DOM input wiring: pointer gestures and wheel on the canvas, keyboard on
- * the window. Movement keys are tracked while held; `beforeTick` re-queues
+ * DOM input wiring: pointer gestures, right-click and wheel on the canvas,
+ * keyboard on the window. Movement keys are tracked while held; `beforeTick` re-queues
  * the held direction so the player keeps walking at a constant pace.
  */
 
@@ -11,24 +11,34 @@ import { heldDirection, MOVE_KEYS } from './keys.ts';
 export interface InputHandlers extends GestureHandlers {
   /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
   key(code: string): void;
+  /** Right-click on the canvas (the browser's own menu is suppressed there only). */
+  menu(sx: number, sy: number): void;
+  /** Offered every key press first (auto-repeat included); true consumes it (e.g. an open menu). */
+  captureKey?(code: string): boolean;
 }
 
 export class Input {
   private readonly held = new Set<string>();
+  private readonly gestures: Gestures;
 
   constructor(
     el: HTMLElement,
     private readonly world: World,
     on: InputHandlers,
   ) {
-    const gestures = new Gestures(on);
+    const gestures = (this.gestures = new Gestures(on));
     el.style.touchAction = 'none';
-    el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    el.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      // Touch browsers fire contextmenu on a long-press too; Gestures handles that one.
+      if ((ev as PointerEvent).pointerType === 'touch') return;
+      on.menu(ev.clientX, ev.clientY);
+    });
     el.addEventListener('pointerdown', (ev) => {
       // Only the primary mouse button pans/clicks; touch and pen always count.
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       el.setPointerCapture(ev.pointerId);
-      gestures.down(ev.pointerId, ev.clientX, ev.clientY);
+      gestures.down(ev.pointerId, ev.clientX, ev.clientY, ev.pointerType !== 'mouse');
     });
     el.addEventListener('pointermove', (ev) => gestures.move(ev.pointerId, ev.clientX, ev.clientY));
     el.addEventListener('pointerup', (ev) => gestures.up(ev.pointerId, ev.clientX, ev.clientY));
@@ -44,6 +54,10 @@ export class Input {
 
     window.addEventListener('keydown', (ev) => {
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (on.captureKey?.(ev.code)) {
+        ev.preventDefault();
+        return;
+      }
       if (MOVE_KEYS[ev.code]) {
         ev.preventDefault();
         this.held.add(ev.code);
@@ -55,6 +69,11 @@ export class Input {
     });
     window.addEventListener('keyup', (ev) => this.held.delete(ev.code));
     window.addEventListener('blur', () => this.held.clear());
+  }
+
+  /** Call once per frame: fires a pending long-press. */
+  frame(now: number): void {
+    this.gestures.tick(now);
   }
 
   /**

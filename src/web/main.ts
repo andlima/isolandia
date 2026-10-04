@@ -6,13 +6,14 @@
 import { Application } from 'pixi.js';
 import { loadPacks, renderPosition, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
-import { groundCentreIso, pickTile } from '../iso/projection.ts';
+import { groundCentreIso, isoToScreen, pickTile } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
 import { Hud } from './hud.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
+import { ContextMenu } from './menu-dom.ts';
 import { assetUrls, buildPackSources } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
@@ -61,10 +62,16 @@ async function main(): Promise<void> {
 
   const hud = new Hud(document.body);
   const panels = new Panels(document.body, world);
+  const menu = new ContextMenu(document.body, world, (id) => panels.openLoot(id));
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
     const r = renderPosition(world.player, world.tick, alpha);
     return groundCentreIso(r.x, r.y);
+  };
+  const tileAt = (sx: number, sy: number) => pickTile(sx, sy, rig.cam, (x, y) => world.grid.tileAt(x, y)?.raised ?? false);
+  const openMenu = (sx: number, sy: number) => {
+    const t = tileAt(sx, sy);
+    menu.open(t.x, t.y, sx, sy);
   };
 
   const loop = new FixedTickLoop(
@@ -76,30 +83,52 @@ async function main(): Promise<void> {
   );
 
   const input = new Input(app.canvas, world, {
-    pan: (dx, dy) => rig.pan(dx, dy),
-    zoom: (sx, sy, f) => rig.zoom(sx, sy, f, playerIso(loop.alpha), app.screen.width, app.screen.height),
+    pan: (dx, dy) => {
+      menu.close();
+      rig.pan(dx, dy);
+    },
+    zoom: (sx, sy, f) => {
+      menu.close();
+      rig.zoom(sx, sy, f, playerIso(loop.alpha), app.screen.width, app.screen.height);
+    },
     click: (sx, sy) => {
-      const t = pickTile(sx, sy, rig.cam, (x, y) => world.grid.tileAt(x, y)?.raised ?? false);
+      // A press outside an open menu only closes it.
+      if (menu.dismissed) {
+        menu.dismissed = false;
+        return;
+      }
+      const t = tileAt(sx, sy);
       world.queueIntent(clickIntent(world, t.x, t.y));
     },
+    longPress: openMenu,
+    menu: openMenu,
+    captureKey: (code) => menu.key(code),
     key: (code) => {
       if (code === 'KeyH') hud.toggle();
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
+      if (code === 'KeyE') {
+        const iso = playerIso(loop.alpha);
+        const p = isoToScreen(iso.x, iso.y, rig.cam);
+        menu.open(world.player.x, world.player.y, p.x, p.y);
+      }
     },
   });
 
   let last = performance.now();
   let lastGoto: GotoRecord | null = null;
   const frame = (now: number) => {
+    input.frame(now);
     loop.advance(Math.min(now - last, 1000));
     last = now;
+    if (world.ended) menu.close();
     if (world.lastGoto !== lastGoto) {
       lastGoto = world.lastGoto;
       if (lastGoto && !lastGoto.ok) scene.flashUnreachable(lastGoto.x, lastGoto.y, now);
     }
     const { width, height } = app.screen;
     const cam = rig.update(playerIso(loop.alpha), width, height);
+    scene.markMenuTarget(menu.target);
     scene.update(cam, width, height, loop.alpha, now);
     hud.update(world);
     panels.update();

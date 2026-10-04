@@ -4,7 +4,7 @@ import { hudModel, loadPacks, World } from '../src/core/index.ts';
 import { CameraRig } from '../src/iso/camera.ts';
 import { cameraAt, isoToScreen } from '../src/iso/projection.ts';
 import { errorReport } from '../src/web/errors.ts';
-import { Gestures } from '../src/web/gestures.ts';
+import { Gestures, LONG_PRESS_MS } from '../src/web/gestures.ts';
 import { heldDirection } from '../src/web/keys.ts';
 import { FixedTickLoop } from '../src/web/loop.ts';
 import { assetUrls, availablePacks, buildPackSources } from '../src/web/packs.ts';
@@ -111,13 +111,70 @@ test('loop: 10 ticks/s from an accumulator, max 5 per frame, backlog dropped', (
 
 function recorder() {
   const log: string[] = [];
-  const g = new Gestures({
-    pan: (dx, dy) => log.push(`pan ${dx},${dy}`),
-    zoom: (x, y, f) => log.push(`zoom ${x},${y},${f.toFixed(2)}`),
-    click: (x, y) => log.push(`click ${x},${y}`),
-  });
-  return { g, log };
+  const clock = { now: 0 };
+  const g = new Gestures(
+    {
+      pan: (dx, dy) => log.push(`pan ${dx},${dy}`),
+      zoom: (x, y, f) => log.push(`zoom ${x},${y},${f.toFixed(2)}`),
+      click: (x, y) => log.push(`click ${x},${y}`),
+      longPress: (x, y) => log.push(`long ${x},${y}`),
+    },
+    () => clock.now,
+  );
+  return { g, log, clock };
 }
+
+test('gestures: a press held still for LONG_PRESS_MS long-presses once and never clicks', () => {
+  const { g, log, clock } = recorder();
+  g.down(1, 100, 100);
+  clock.now = LONG_PRESS_MS - 1;
+  g.tick(clock.now);
+  assert.deepEqual(log, []);
+  g.move(1, 104, 103); // within the drag threshold
+  clock.now = LONG_PRESS_MS;
+  g.tick(clock.now);
+  g.tick(clock.now + 100);
+  g.up(1, 104, 103);
+  assert.deepEqual(log, ['long 104,103']);
+  // Released after the hold without a frame in between: still a long-press, not a click.
+  const r = recorder();
+  r.g.down(1, 5, 5);
+  r.clock.now = 600;
+  r.g.up(1, 5, 5);
+  assert.deepEqual(r.log, ['long 5,5']);
+  // A short press stays a click.
+  const c = recorder();
+  c.g.down(1, 5, 5);
+  c.clock.now = 200;
+  c.g.tick(200);
+  c.g.up(1, 5, 5);
+  assert.deepEqual(c.log, ['click 5,5']);
+});
+
+test('gestures: a drag or a second pointer cancels the long-press', () => {
+  const { g, log, clock } = recorder();
+  g.down(1, 100, 100);
+  g.move(1, 120, 100);
+  clock.now = 1000;
+  g.tick(clock.now);
+  g.up(1, 120, 100);
+  assert.deepEqual(log, ['pan 20,0']);
+  const r = recorder();
+  r.g.down(1, 100, 100);
+  r.g.down(2, 200, 100);
+  r.g.up(2, 200, 100);
+  r.clock.now = 1000;
+  r.g.tick(r.clock.now);
+  r.g.up(1, 100, 100);
+  assert.deepEqual(r.log, []);
+  // A press marked as not long-pressable (a mouse) only clicks.
+  const m = recorder();
+  m.g.down(1, 5, 5, false);
+  m.clock.now = 1000;
+  m.g.tick(m.clock.now);
+  m.g.up(1, 5, 5);
+  assert.deepEqual(m.log, ['click 5,5']);
+});
 
 test('gestures: a press without movement is a click', () => {
   const { g, log } = recorder();

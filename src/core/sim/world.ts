@@ -10,7 +10,7 @@ import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing
 import { actionSource, ActivityRunner, isTimed, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
-import { add, countOf, createContainer, fits, remove, type Container, type ContainerKind } from './containers.ts';
+import { add, countOf, createContainer, fits, GROUND_LABEL, remove, type Container, type ContainerKind } from './containers.ts';
 import { Grid } from './grid.ts';
 import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
@@ -40,6 +40,8 @@ export interface Entity extends ExprEntity {
   path: Int32Array | null;
   /** Index of the next cell of `path` to step onto. */
   pathPos: number;
+  /** Action queued when the current path arrives (player only, from `GotoIntent.then`), or null. */
+  then: Action | null;
   /** Active statuses, indexed by status index (1 = active). */
   readonly st: Uint8Array;
   /** The entity's inventory (from its archetype's `inventory`), or null. */
@@ -106,6 +108,12 @@ export interface GotoIntent {
    * walkable) with the shortest path, e.g. to walk up to a fridge.
    */
   readonly adjacent?: boolean;
+  /**
+   * Player only: queued as an action when the path ends on its last cell
+   * (at once when the path is empty); dropped when no path is found or the
+   * path is cleared first.
+   */
+  readonly then?: Action;
 }
 
 export type Intent = StepIntent | GotoIntent;
@@ -175,7 +183,16 @@ export type ActionFailure =
   | 'cannot_act'
   | 'occupied'
   | 'cancelled'
-  | 'interrupted';
+  | 'interrupted'
+  | 'unreachable';
+
+/** An item the player lacks for an action: its id and label, and how many more units are needed. */
+export interface MissingItem {
+  /** Qualified item id. */
+  readonly item: string;
+  readonly label: string;
+  readonly count: number;
+}
 
 /** Outcome of the latest action, for shell feedback. */
 export interface ActionRecord {
@@ -212,6 +229,33 @@ export interface AvailableAction {
   /** False when tools, consumed items, the inventory or `when` fail now. */
   readonly ok: boolean;
   readonly reason?: ActionFailure;
+  /** Absent tools and consumed items (reason `missing`). */
+  readonly missing?: readonly MissingItem[];
+  /** The action's `unavailable` text (reason `cannot_act`, when the pack sets one). */
+  readonly unavailable?: string;
+}
+
+export type InteractionKind = 'act' | 'open' | 'take_all' | 'walk';
+
+/** An entry of `world.interactionsAt(x, y)`. */
+export interface Interaction {
+  /** Stable within a query, e.g. `act:t:board_up`, `open:3`, `take_all:3`, `walk`. */
+  readonly id: string;
+  readonly label: string;
+  readonly kind: InteractionKind;
+  /** Whether it can be done (ignoring reach). */
+  readonly ok: boolean;
+  readonly reason?: ActionFailure;
+  readonly missing?: readonly MissingItem[];
+  readonly unavailable?: string;
+  /** The action to queue: the `act`, or the first `take` of a `take_all`. */
+  readonly action?: Action;
+  /** Every `take` of a `take_all`, in stack order. */
+  readonly actions?: readonly Action[];
+  /** Container id (`open`, `take_all`). */
+  readonly container?: number;
+  /** Whether the player can do it without walking. */
+  readonly inReach: boolean;
 }
 
 /** `world.activityProgress()`: what is being done and how far along it is. */
@@ -266,6 +310,8 @@ export interface EntitySnapshot {
   /** Last heard noise, or null if never. */
   heard: { x: number; y: number; tick: number } | null;
   activity: ActivitySnapshot | null;
+  /** Action queued when the current path arrives. */
+  then: Action | null;
 }
 
 export interface WorldSnapshot {
@@ -477,6 +523,7 @@ export class World {
       stepTick: 0,
       path: null,
       pathPos: 0,
+      then: null,
       st: new Uint8Array(this.def.statuses.length),
       inv,
       intent: null,
@@ -601,6 +648,7 @@ export class World {
    */
   queueIntent(intent: Intent, entity: Entity = this.player): void {
     if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
+    if (intent.kind === 'goto' && intent.then && entity !== this.player) throw new Error(`only the player's goto may carry 'then' (entity ${entity.id})`);
     if (this.ended) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     entity.intent = intent;
@@ -829,8 +877,12 @@ export class World {
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
       p.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+      p.then = path ? (intent.then ?? null) : null;
+      if (!path && intent.then) this.lastAction = this.unreachable(intent.then);
+      if (p.then && !p.path) this.arrive(p);
     } else if (intent?.kind === 'step') {
       p.path = null;
+      p.then = null;
     }
 
     if (p.moveCooldown > 0) p.moveCooldown--;
@@ -862,8 +914,31 @@ export class World {
     } else if (p.path) {
       p.pathPos++;
       if (p.pathPos >= p.path.length) p.path = null;
-      if (!this.move(p, dx, dy)) p.path = null;
+      if (!this.move(p, dx, dy)) {
+        p.path = null;
+        p.then = null;
+      } else if (!p.path && p.then) this.arrive(p);
     }
+  }
+
+  /** The path is done: queue its `then` (applied in this tick's action step). */
+  private arrive(p: Entity): void {
+    this.actions.push(p.then!);
+    p.then = null;
+  }
+
+  /** Record of a `then` dropped because its goto found no path. */
+  private unreachable(a: Action): ActionRecord {
+    return {
+      kind: a.kind,
+      item: a.kind === 'act' ? '' : a.item,
+      ...(a.kind === 'act' ? { action: a.action } : {}),
+      moved: 0,
+      ok: false,
+      stage: 'complete',
+      reason: 'unreachable',
+      tick: this.tick,
+    };
   }
 
   /** Each queued action first cancels the player's activity, then is applied (FIFO). */
@@ -1033,6 +1108,7 @@ export class World {
           : null,
         heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
         activity: e.activity ? this.activitySnapshot(e.activity) : null,
+        then: e.then,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
@@ -1058,6 +1134,43 @@ export class World {
   }
 
   /**
+   * Run a query without side effects: `random` draws from a throwaway copy
+   * of the RNG and warnings are dropped, so `hash()` never changes.
+   */
+  private pure<T>(fn: () => T): T {
+    const ctx = this.ctx;
+    const { random, warn } = ctx;
+    const rng = new Rng(this.rng.state);
+    ctx.random = () => rng.next();
+    ctx.warn = () => {};
+    ctx.tick = this.tick;
+    try {
+      return fn();
+    } finally {
+      ctx.random = random;
+      ctx.warn = warn;
+    }
+  }
+
+  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y). */
+  private verdict(s: ActivitySource, x: number, y: number, skipReach: boolean): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
+    const p = this.player;
+    const reason = this.runner.check(s, p, x, y, skipReach);
+    if (!reason) return { ok: true };
+    if (reason === 'missing') {
+      const items = this.def.items;
+      const missing: MissingItem[] = [];
+      for (const r of s.requires) {
+        const lack = r.count - countOf(p.inv!, r.item);
+        if (lack > 0) missing.push({ item: items[r.item]!.id, label: items[r.item]!.label, count: lack });
+      }
+      return { ok: false, reason, missing };
+    }
+    const unavailable = reason === 'cannot_act' && s.action >= 0 ? this.def.actions[s.action]!.unavailable : null;
+    return unavailable ? { ok: false, reason, unavailable } : { ok: false, reason };
+  }
+
+  /**
    * Everything the player could start now: every `self` action, every tile
    * action on each matching cell in reach (row-major), then each inventory
    * stack with a `use`. Entries that match but fail on items, the inventory
@@ -1066,19 +1179,11 @@ export class World {
    */
   availableActions(): AvailableAction[] {
     const p = this.player;
-    const ctx = this.ctx;
-    const { random, warn } = ctx;
-    const rng = new Rng(this.rng.state);
-    ctx.random = () => rng.next();
-    ctx.warn = () => {};
-    ctx.tick = this.tick;
-    const out: AvailableAction[] = [];
-    const entry = (base: Omit<AvailableAction, 'ok' | 'reason'>, reason: ActionFailure | null): AvailableAction =>
-      reason ? { ...base, ok: false, reason } : { ...base, ok: true };
-    try {
+    return this.pure(() => {
+      const out: AvailableAction[] = [];
       for (const s of this.actionSources) {
         if (s.filter) continue;
-        out.push(entry({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label }, this.runner.check(s, p, p.x, p.y)));
+        out.push({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
       }
       const { grid } = this;
       for (const s of this.actionSources) {
@@ -1086,21 +1191,87 @@ export class World {
         for (let y = p.y - 1; y <= p.y + 1; y++) {
           for (let x = p.x - 1; x <= p.x + 1; x++) {
             if (!grid.inBounds(x, y) || s.filter[grid.cells[y * grid.width + x]!] !== 1) continue;
-            const reason = this.runner.check(s, p, x, y);
-            if (reason === 'out_of_reach' || reason === 'invalid_target') continue;
-            out.push(entry({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, label: s.label }, reason));
+            const v = this.verdict(s, x, y, false);
+            if (v.reason === 'out_of_reach' || v.reason === 'invalid_target') continue;
+            out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, label: s.label, ...v });
           }
         }
       }
       for (const st of p.inv?.stacks ?? []) {
         const s = this.useSources[st.item];
-        if (s) out.push(entry({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label }, this.runner.check(s, p, p.x, p.y)));
+        if (s) out.push({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
       }
-    } finally {
-      ctx.random = random;
-      ctx.warn = warn;
-    }
-    return out;
+      return out;
+    });
+  }
+
+  /**
+   * What the player can choose at a cell, ignoring reach: the tile actions
+   * whose filter matches the cell's tile (definition order), `open` and
+   * (when not empty) `take_all` per container on the cell, the `self`
+   * actions on the player's own cell, then `walk` on any other walkable
+   * cell. `[]` out of bounds or once the game has ended. Pure, like
+   * `availableActions`.
+   */
+  interactionsAt(x: number, y: number): Interaction[] {
+    const { grid, player: p } = this;
+    if (!grid.inBounds(x, y) || this.ended) return [];
+    const inReach = Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1;
+    const own = x === p.x && y === p.y;
+    return this.pure(() => {
+      const out: Interaction[] = [];
+      const tile = grid.cells[y * grid.width + x]!;
+      for (const s of this.actionSources) {
+        if (!s.filter || s.filter[tile] !== 1) continue;
+        const id = this.def.actions[s.action]!.id;
+        out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id, x, y }, inReach });
+      }
+      for (const c of this.containersAt(x, y)) {
+        const label = c.kind === 'tile' ? this.def.tiles[c.tile]!.label : GROUND_LABEL;
+        out.push({ id: `open:${c.id}`, label: `Open ${label}`, kind: 'open', ok: true, container: c.id, inReach });
+        if (c.stacks.length === 0) continue;
+        const actions = c.stacks.map((st): Action => ({ kind: 'take', container: c.id, item: this.def.items[st.item]!.id }));
+        const inv = p.inv;
+        const reason: ActionFailure | null = !inv ? 'no_inventory' : c.stacks.some((st) => fits(inv, this.itemWeights[st.item]!, 1) > 0) ? null : 'too_heavy';
+        const base = { id: `take_all:${c.id}`, label: `Take all from ${label}`, kind: 'take_all' as const, action: actions[0]!, actions, container: c.id, inReach };
+        out.push(reason ? { ...base, ok: false, reason } : { ...base, ok: true });
+      }
+      if (own) {
+        for (const s of this.actionSources) {
+          if (s.filter) continue;
+          const id = this.def.actions[s.action]!.id;
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id }, inReach: true });
+        }
+      } else if (grid.walkable(x, y)) {
+        out.push({ id: 'walk', label: 'Walk here', kind: 'walk', ok: true, inReach: false });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * The intent a shell should queue to do `action`, or null when it is
+   * already in reach or needs none (`self` acts, `use`, `drop`, and actions
+   * on unknown targets: the shell queues those directly). Otherwise a goto
+   * to the target cell (adjacent when it is not walkable) that queues the
+   * action on arrival.
+   */
+  approachIntent(action: Action): GotoIntent | null {
+    let x: number;
+    let y: number;
+    if (action.kind === 'take' || action.kind === 'put') {
+      const c = this.containers.get(action.container);
+      if (!c || c.kind === 'inventory') return null;
+      ({ x, y } = c);
+    } else if (action.kind === 'act') {
+      const k = this.def.ids.actions[action.action];
+      if (k === undefined || !this.actionSources[k]!.filter || !Number.isInteger(action.x) || !Number.isInteger(action.y)) return null;
+      x = action.x!;
+      y = action.y!;
+    } else return null;
+    const p = this.player;
+    if (Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1) return null;
+    return { kind: 'goto', x, y, adjacent: !this.grid.walkable(x, y), then: action };
   }
 
   /** The entity's activity (the player's by default): its progress text and how far along it is, or null. */

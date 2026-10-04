@@ -3,7 +3,7 @@
  *
  *   root (camera transform)
  *     ground   — flat tiles, one container per 16×16 render chunk (culled)
- *     markers  — path target outline, unreachable flash
+ *     markers  — path target outline, unreachable flash, context-menu target
  *     objects  — one container per diagonal (x + y); raised tiles, ground
  *                piles and entities, depth-sorted inside their diagonal only
  *
@@ -44,6 +44,7 @@ const CULL_MARGIN = 96;
 const FLASH_MS = 600;
 const TARGET_COLOR = 0xffd23f;
 const INVALID_COLOR = 0xff3355;
+const MENU_COLOR = 0xffffff;
 
 interface Chunk {
   readonly cx: number;
@@ -102,6 +103,8 @@ export class IsoScene {
   private readonly target: Sprite;
   private readonly invalid: Sprite;
   private invalidUntil = 0;
+  /** Steady outline on the open context menu's cell. */
+  private readonly menuMark: Sprite;
   private tint = 0xffffff;
   /** Tile index per cell as drawn (to find the cells a map edit changed). */
   private readonly drawn: Uint16Array;
@@ -146,8 +149,9 @@ export class IsoScene {
 
     this.target = sprite(textures.outline(TARGET_COLOR));
     this.invalid = sprite(textures.outline(INVALID_COLOR));
-    this.target.visible = this.invalid.visible = false;
-    this.markers.addChild(this.target, this.invalid);
+    this.menuMark = sprite(textures.outline(MENU_COLOR));
+    this.target.visible = this.invalid.visible = this.menuMark.visible = false;
+    this.markers.addChild(this.target, this.invalid, this.menuMark);
   }
 
   /** Create the tile sprites of a chunk: flat tiles in its ground container, raised ones in the object buckets. */
@@ -233,6 +237,15 @@ export class IsoScene {
     this.invalid.position.set(p.x, p.y);
     this.invalid.visible = true;
     this.invalidUntil = now + FLASH_MS;
+  }
+
+  /** Outline a cell while the context menu is open for it (null hides it). */
+  markMenuTarget(cell: { x: number; y: number } | null): void {
+    this.menuMark.visible = cell !== null;
+    if (cell) {
+      const p = tileAnchorIso(cell.x, cell.y);
+      this.menuMark.position.set(p.x, p.y);
+    }
   }
 
   /** Applies the camera, culls chunks and entities, interpolates and re-buckets entities. */
