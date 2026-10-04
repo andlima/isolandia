@@ -33,7 +33,7 @@ packs/zombie/
   pack.yaml            # manifest (required)
   archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
-  assets/car.svg       # images referenced by the `assets` domain
+  assets/car_s.svg     # images referenced by the `assets` domain
   maps/town.yaml
   start.yaml
   clock.yaml
@@ -105,14 +105,19 @@ measurements:
 
 ### `assets`
 
-Single images used by the isometric renderer (no spritesheets or
-animation yet). Asset ids are namespaced and referenced like any other id.
+Images used by the isometric renderer: a single image, or one image per
+direction (no spritesheets or animation yet). Asset ids are namespaced and
+referenced like any other id.
 
-| Field    | Type                 | Default    | Notes |
-|----------|----------------------|------------|-------|
-| `id`     | id                   | required   | |
-| `file`   | path                 | required   | Relative to the pack root; must exist in the pack and end in `.svg` or `.png` |
-| `anchor` | `[ax, ay]`           | `[0.5, 1]` | Normalized image point (each in `[0, 1]`) placed on the entry's anchor spot |
+| Field        | Type                 | Default    | Notes |
+|--------------|----------------------|------------|-------|
+| `id`         | id                   | required   | |
+| `file`       | path                 | —          | Relative to the pack root; must exist in the pack and end in `.svg` or `.png` |
+| `directions` | facing → path or `{ file, anchor? }` | — | One image per drawn facing (see below) |
+| `anchor`     | `[ax, ay]`           | `[0.5, 1]` | Normalized image point (each in `[0, 1]`) placed on the entry's anchor spot; shared by every direction |
+
+An asset has **either** `file` **or** `directions` (both, or neither, is a
+load error).
 
 **Anchor conventions** (on the 64×32 tile diamond, see [iso.md](iso.md)):
 
@@ -123,14 +128,58 @@ animation yet). Asset ids are namespaced and referenced like any other id.
   with `[0.5, 1]` a character stands on the bottom edge of its image; use
   e.g. `[0.5, 0.92]` to put the feet a little higher (on a drop shadow).
 
+**Facings.** Directions are named on the map compass (maps are drawn
+north-up; `x` grows east, `y` grows south). On screen:
+
+| Facing | Map step `(dx, dy)` | Screen direction | Mirror partner |
+|--------|---------------------|------------------|----------------|
+| `n`    | `( 0, −1)`          | up-right         | `w`            |
+| `ne`   | `( 1, −1)`          | right            | `sw`           |
+| `e`    | `( 1,  0)`          | down-right       | `s`            |
+| `se`   | `( 1,  1)`          | down (toward the camera) | itself |
+| `s`    | `( 0,  1)`          | down-left        | `e`            |
+| `sw`   | `(−1,  1)`          | left             | `ne`           |
+| `w`    | `(−1,  0)`          | up-left          | `n`            |
+| `nw`   | `(−1, −1)`          | up (away from the camera) | itself |
+
+The 4-way set is `n`, `e`, `s`, `w` (the four faces of the tile diamond);
+the default facing is `s`.
+
+**Directional assets.** `directions` maps facings to images. A value is a
+path, or `{ file, anchor? }` whose `anchor` overrides the entry's. Every
+file follows the `file` rules.
+
+- If any diagonal (`ne`, `se`, `sw`, `nw`) is listed the asset is
+  **8-way**, otherwise **4-way**.
+- A missing facing uses its **mirror partner**'s image, flipped
+  horizontally around the anchor spot; a listed facing is never mirrored.
+  So the set must be complete under mirroring: a 4-way asset needs one of
+  `n`/`w` and one of `e`/`s` (2 drawings); an 8-way asset also needs `se`,
+  `nw` and one of `ne`/`sw` (5 drawings). Otherwise the load error names
+  the facings that cannot be produced.
+- Unknown keys and an empty mapping are load errors.
+
+Which facing is shown depends on what references the asset: **tiles** use
+their map cell's legend [`facing`](#maps) (so an 8-way asset on a tile only
+shows `n`/`e`/`s`/`w`), **archetypes** face their movement direction, and
+**ground piles** always show `s`. A 4-way asset showing a diagonal facing
+snaps to a neighbouring cardinal (see [iso.md](iso.md#facing)).
+
 ```yaml
 # packs/zombie/assets.yaml
 assets:
-  - id: car_img
-    file: assets/car.svg       # 64×64 block
-  - id: shambler_img
-    file: assets/shambler.svg  # 32×48 character
-    anchor: [0.5, 0.92]
+  - id: car_img                # 4-way: n and e are mirrors of w and s
+    directions:
+      s: assets/car_s.svg      # 64×64 block
+      w: assets/car_w.svg
+  - id: shambler_img           # 8-way: n, e and sw are mirrored
+    anchor: [0.5, 0.92]        # shared by every direction
+    directions:
+      s:  assets/shambler_s.svg
+      se: assets/shambler_se.svg
+      ne: assets/shambler_ne.svg
+      w:  assets/shambler_w.svg
+      nw: { file: assets/shambler_nw.svg, anchor: [0.5, 0.92] }
 
 # packs/zombie/tiles.yaml
 tiles:
@@ -212,7 +261,7 @@ ASCII maps are a fixture format for M0 (larger worlds will use Tiled).
 | Field    | Type                         | Notes |
 |----------|------------------------------|-------|
 | `id`     | id                           | |
-| `legend` | map char → `{ tile, spawn?, player? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map) |
+| `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map); `facing`: orientation of the cell's tile (see below) |
 | `rows`   | list of equal-length strings | every character must be in the legend |
 | `rooms`  | list of `{ rect: [x, y, w, h], tags: [...] }` | optional; see below |
 
@@ -229,6 +278,23 @@ maps:
       - "#.@Z#"
       - "#####"
 ```
+
+**Facing.** A legend entry may set `facing: n | e | s | w` (default `s`;
+diagonals and other values are load errors) to orient the **tile** of its
+cells in the iso view: a directional [asset](#assets) shows that facing,
+and a placeholder draws a darker stripe on the edge it faces. Use one
+legend character per orientation:
+
+```yaml
+      "&": { tile: car, facing: e }
+      "%": { tile: car, facing: w }
+      "F": { tile: fridge, facing: s }   # against a north wall
+```
+
+`facing` does not affect `spawn` or `player` (entities face their movement
+direction, starting at `s`). It is static, render-only map data: not part
+of world snapshots or hashes, and ignored by walkability, opacity,
+containers, sight and the ASCII renderer.
 
 **Rooms** are rectangles of cells with room tags (`kitchen`, `cellar`…).
 A cell's room tags are the union of the tags of every rect that contains

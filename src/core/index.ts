@@ -1,6 +1,7 @@
 export * from './definition.ts';
 export * from './clock.ts';
 export * from './lighting.ts';
+export * from './facing.ts';
 export * from './load/index.ts';
 export {
   World,
@@ -23,7 +24,7 @@ export {
 } from './sim/world.ts';
 export { add, remove, fits, load, countOf, createContainer, type Container, type ContainerKind, type Stack } from './sim/containers.ts';
 export { Pathfinder, octile } from './sim/astar.ts';
-export { renderPosition } from './sim/motion.ts';
+export { renderPosition, facingOf } from './sim/motion.ts';
 export {
   hudModel,
   formatClock,

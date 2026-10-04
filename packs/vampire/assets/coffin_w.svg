@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- facing w (up-left): head end away from the camera, cross near it, handles on the left face -->
   <polygon points="0,36 32,52 32,64 0,48" fill="#3a281d"/>
   <polygon points="32,52 64,36 64,48 32,64" fill="#2a1d15"/>
   <polygon points="32,20 64,36 32,52 0,36" fill="#4a3426"/>
-  <path d="M26 33l12 6M32 30v12" stroke="#c9a227" stroke-width="2"/>
+  <path d="M18.8 29.4L33.2 36.6M18.9 33.4l8-4" stroke="#c9a227" stroke-width="2"/>
+  <path d="M5.8 44.9l4.4 2.2M21.8 52.9l4.4 2.2" stroke="#c9a227" stroke-width="1.5"/>
 </svg>

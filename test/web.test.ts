@@ -56,8 +56,8 @@ test('web packs: glob results → ordered PackSources with YAML text and other f
     r.definition.packs.map((p) => p.namespace),
     w.urls,
   );
-  assert.deepEqual(urls, ['data:image/svg+xml,floor', '/assets/p-3.png']);
-  assert.deepEqual(assetUrls(r.definition.assets, ['nope'], w.urls), [null, null]);
+  assert.deepEqual(urls, [['data:image/svg+xml,floor'], ['/assets/p-3.png']]);
+  assert.deepEqual(assetUrls(r.definition.assets, ['nope'], w.urls), [[null], [null]]);
 });
 
 test('web packs: unknown pack names are reported like load errors', () => {
@@ -221,4 +221,25 @@ test('hudModel: clock and player measurements, shared with the ASCII HUD', () =>
   );
   assert.ok(Math.abs(m.measurements[1]!.value - 47.5) < 1e-9);
   assert.equal(m.measurements[1]!.max, 100);
+});
+
+test('web packs: a directional asset resolves one URL per distinct image', () => {
+  const yaml = {
+    '/packs/d/pack.yaml': 'namespace: d\nname: D\nversion: 1\n',
+    '/packs/d/m.yaml': `tiles:
+  - { id: floor, label: F, glyph: ".", color: white, walkable: true }
+archetypes:
+  - { id: p, label: P, glyph: p, color: red, sprite: p_img }
+assets:
+  - { id: p_img, directions: { s: s.svg, w: w.svg, n: { file: s.svg, anchor: [0.5, 0.5] } } }
+maps:
+  - { id: m, legend: { ".": { tile: floor, player: true } }, rows: ["."] }
+start: { map: m, player: p }
+`,
+  };
+  const files = { '/packs/d/s.svg': '/u/s.svg', '/packs/d/w.svg': '/u/w.svg' };
+  const w = buildPackSources(yaml, files, ['d']);
+  const r = loadPacks(w.sources);
+  assert.ok(r.ok, r.ok ? '' : JSON.stringify(r.errors));
+  assert.deepEqual(assetUrls(r.definition.assets, ['d'], w.urls), [['/u/s.svg', '/u/w.svg', '/u/s.svg']]);
 });

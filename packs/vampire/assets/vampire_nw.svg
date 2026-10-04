@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
+  <!-- facing nw (away from the camera): back view, high collar and cape -->
+  <ellipse cx="16" cy="44" rx="10" ry="4" fill="#000" opacity="0.3"/>
+  <path d="M3 42L9 15h14l6 27z" fill="#1a1024" stroke="#8b1e2d"/>
+  <path d="M16 18v22" stroke="#3a2448"/>
+  <path d="M7 19l2-6h14l2 6-9 2z" fill="#8b1e2d"/>
+  <circle cx="16" cy="11" r="7" fill="#e0e0ff" stroke="#1a1024"/>
+  <path d="M9 10a7 7 0 0 1 14 0l-1 5a8 8 0 0 1-12 0z" fill="#1a1024"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- facing w (up-left): side and wheels on the left face, taillights on the right -->
+  <polygon points="0,28 32,44 32,64 0,48" fill="#7a2a1f"/>
+  <polygon points="32,44 64,28 64,48 32,64" fill="#5c1f17"/>
+  <polygon points="32,12 64,28 32,44 0,28" fill="#a33a2a"/>
+  <polygon points="6.4,31.2 38.4,15.2 44.8,18.4 12.8,34.4" fill="#6fa8dc" opacity="0.85"/>
+  <polygon points="24,40 56,24 59.2,25.6 27.2,41.6" fill="#6fa8dc" opacity="0.6"/>
+  <polygon points="6,34 26,44 26,49 6,39" fill="#6fa8dc" opacity="0.5"/>
+  <circle cx="6.4" cy="49" r="4" fill="#222"/>
+  <circle cx="25.6" cy="58.6" r="4" fill="#222"/>
+  <rect x="35" y="49" width="6" height="3" transform="rotate(-26.6 38 50.5)" fill="#ff3b30"/>
+  <rect x="54.6" y="39.7" width="6" height="3" transform="rotate(-26.6 57.6 41.2)" fill="#ff3b30"/>
+</svg>

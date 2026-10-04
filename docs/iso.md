@@ -111,16 +111,52 @@ bottom vertex, archetype sprites at the tile's ground centre. All assets
 are loaded before the first frame; one that fails to load logs a warning
 and falls back to its placeholder.
 
-Without a sprite, a placeholder is generated once per definition entry from
-its `color`:
+Without a sprite, a placeholder is generated lazily, at most once per
+definition entry and facing, from its `color`:
 
 - **flat tile** — a 64×32 diamond in the color;
 - **raised tile** — a 32 px block: the top face in the color, the left and
   right faces darkened to 72 % and 55 %;
+- a tile whose legend sets **`facing`** explicitly also gets a front-edge
+  cue: a darker stripe along the diamond edge it faces (on the top face for
+  raised blocks). Cells without an explicit `facing` look unchanged;
 - **entity** — an upright rounded marker in the color with a drop shadow and
-  the archetype's `glyph` drawn on it (dark or light text by luminance);
+  the archetype's `glyph` drawn on it (dark or light text by luminance),
+  plus a dark **wedge** on the shadow pointing in the entity's facing
+  (screen direction; drawn over the body so `nw`/`n`/`w` stay visible);
 - **ground pile** — a small sack in the colour of the pile's first item
   (or that item's `sprite`, anchored at the ground centre). Piles are
   tinted by day/night like other objects.
 
 Colors are `#rrggbb` or the terminal color names (`bright_yellow`, …).
+
+## Facing
+
+Facings are named on the map compass (`n` = up-right on screen, `e` =
+down-right, `se` = toward the camera…; the full table is in
+[packs.md](packs.md#assets)).
+
+- **Entities face where they walk.** `facingOf(entity)` (core,
+  `sim/motion.ts`) is the direction of the current or last step,
+  `sign(x − fromX), sign(y − fromY)`, or `s` before the first step. It is
+  derived from the step data the world already keeps, so the simulation,
+  snapshots and hashes are unchanged; nothing in the sim reads it. The
+  facing turns the moment a step is taken, which is also when that step's
+  interpolation starts; an entity that stops keeps its last facing, and a
+  blocked step changes nothing.
+- **Tiles** face their map cell's legend `facing` (default `s`); **ground
+  piles** always face `s`.
+- **Mirroring.** A directional asset's missing facing uses its mirror
+  partner's image with `scale.x = −1`, which flips it around the anchor
+  spot. The loader normalizes every asset to a list of distinct images
+  plus a per-facing `{ image, mirrored }` table, so the renderer never
+  re-derives it; each image is loaded once.
+- **Snapping.** A diagonal facing shown with a 4-way asset snaps to one of
+  its two neighbouring cardinals: the one this sprite showed last if it is
+  one of them (so walking diagonally after a straight step does not flip),
+  otherwise the clockwise one (`ne→e`, `se→s`, `sw→w`, `nw→n`). The
+  last-shown facing is renderer state only (`resolveFacing` in
+  `core/facing.ts` is the pure rule).
+- The scene checks each visible entity's facing every frame but swaps the
+  texture, anchor and mirroring only when the direction it shows changes.
+  Depth sorting, culling and the day/night tint are unaffected.

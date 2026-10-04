@@ -484,9 +484,10 @@ test('assets: happy path with sprites, anchors, namespaces and raised defaults',
   ]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const def = r.definition;
+  const plain = Array.from({ length: 8 }, () => ({ image: 0, mirrored: false }));
   assert.deepEqual(def.assets, [
-    { id: 't:floor_img', index: 0, pack: 't', file: 'art/floor.svg', anchor: [0.5, 1] },
-    { id: 't:hero_img', index: 1, pack: 't', file: 'art/hero.png', anchor: [0.5, 0.9] },
+    { id: 't:floor_img', index: 0, pack: 't', images: [{ file: 'art/floor.svg', anchor: [0.5, 1] }], ways: 1, byFacing: plain },
+    { id: 't:hero_img', index: 1, pack: 't', images: [{ file: 'art/hero.png', anchor: [0.5, 0.9] }], ways: 1, byFacing: plain },
   ]);
   assert.deepEqual(def.ids.assets, { 't:floor_img': 0, 't:hero_img': 1 });
   const tile = (id: string) => def.tiles[def.ids.tiles[id]!]!;

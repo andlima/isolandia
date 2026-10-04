@@ -10,13 +10,17 @@
  * Ground and objects are multiplied by the pack's day/night tint (if any);
  * markers are not.
  *
+ * Entities face their current or last step (`facingOf`); a sprite's
+ * texture, anchor and mirroring are swapped only when the direction it shows
+ * changes. Tiles face their cell's legend `facing`.
+ *
  * Only a bucket whose contents moved gets re-sorted (Pixi sorts a
  * `sortableChildren` container only when one of its children's zIndex
  * changed), so a still scene costs no sorting at all.
  */
 
 import { Container, Sprite } from 'pixi.js';
-import { renderPosition, type Entity, type World } from '../core/index.ts';
+import { facingOf, renderPosition, type Entity, type Facing, type World } from '../core/index.ts';
 import { depthKey, diagonalOf, Layer } from './depth.ts';
 import {
   BLOCK_H,
@@ -28,7 +32,7 @@ import {
   type Bounds,
   type CameraState,
 } from './projection.ts';
-import type { AnchoredTexture, TextureBank } from './textures.ts';
+import type { AnchoredTexture, FacedTexture, TextureBank } from './textures.ts';
 import { sceneTint } from './tint.ts';
 
 export const CHUNK = 16;
@@ -55,6 +59,10 @@ interface EntityView {
   readonly entity: Entity;
   readonly sprite: Sprite;
   bucket: number;
+  /** Facing derived last frame (`facingOf`). */
+  facing: Facing;
+  /** Facing the sprite shows (after snapping to a 4-way asset). */
+  shown: Facing;
 }
 
 export interface SceneStats {
@@ -65,8 +73,15 @@ export interface SceneStats {
 
 function sprite(t: AnchoredTexture): Sprite {
   const s = new Sprite(t.texture);
-  s.anchor.set(t.anchorX, t.anchorY);
+  apply(s, t);
   return s;
+}
+
+/** Texture, anchor and mirroring (a flip around the anchor spot). */
+function apply(s: Sprite, t: AnchoredTexture): void {
+  s.texture = t.texture;
+  s.anchor.set(t.anchorX, t.anchorY);
+  s.scale.x = t.mirrored ? -1 : 1;
 }
 
 export class IsoScene {
@@ -90,6 +105,7 @@ export class IsoScene {
   ) {
     this.root.addChild(this.ground, this.markers, this.objects);
     const { grid } = world;
+    const { facings } = world.def.maps[world.def.start.map]!;
 
     for (let d = 0; d <= grid.width + grid.height; d++) {
       const b = new Container();
@@ -105,7 +121,7 @@ export class IsoScene {
         for (let y = cy; y < Math.min(cy + CHUNK, grid.height); y++) {
           for (let x = cx; x < Math.min(cx + CHUNK, grid.width); x++) {
             const tile = grid.tileAt(x, y)!;
-            const s = sprite(textures.tile(tile));
+            const s = sprite(textures.tile(tile, facings[y * grid.width + x] ?? null));
             const p = tileAnchorIso(x, y);
             s.position.set(p.x, p.y);
             if (tile.raised) {
@@ -125,10 +141,12 @@ export class IsoScene {
     }
 
     for (const entity of world.entities) {
-      const s = sprite(textures.archetype(entity.archetype));
+      const facing = facingOf(entity);
+      const t: FacedTexture = textures.archetype(entity.archetype, facing, null);
+      const s = sprite(t);
       const bucket = diagonalOf(entity.x, entity.y);
       this.buckets[bucket]!.addChild(s);
-      this.entities.push({ entity, sprite: s, bucket });
+      this.entities.push({ entity, sprite: s, bucket, facing, shown: t.facing });
     }
 
     this.target = sprite(textures.outline(TARGET_COLOR));
@@ -157,9 +175,7 @@ export class IsoScene {
         v = { sprite: s, item };
         this.piles.set(c.id, v);
       } else if (v.item !== item) {
-        const t = this.textures.item(world.def.items[item]!);
-        v.sprite.texture = t.texture;
-        v.sprite.anchor.set(t.anchorX, t.anchorY);
+        apply(v.sprite, this.textures.item(world.def.items[item]!));
         v.item = item;
       }
     }
@@ -215,6 +231,15 @@ export class IsoScene {
       if (!vis) continue;
       visibleEntities++;
       if (s.x !== p.x || s.y !== p.y) s.position.set(p.x, p.y);
+      const facing = facingOf(v.entity);
+      if (facing !== v.facing) {
+        v.facing = facing;
+        const t = this.textures.archetype(v.entity.archetype, facing, v.shown);
+        if (t.facing !== v.shown) {
+          v.shown = t.facing;
+          apply(s, t);
+        }
+      }
       const bucket = diagonalOf(r.x, r.y);
       if (bucket !== v.bucket) {
         this.buckets[bucket]!.addChild(s); // reparents
