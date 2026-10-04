@@ -12,12 +12,13 @@
         font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
         background: rgba(0, 0, 0, 0.6); border-radius: 4px; pointer-events: none;
       }
-      #defeat {
+      #defeat, #victory {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 16px 28px;
         font: bold 22px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; text-align: center;
         background: rgba(0, 0, 0, 0.75); border-radius: 6px; pointer-events: none;
       }
-      #defeat[hidden] { display: none; }
+      #victory { color: #ffe27a; background: rgba(40, 90, 60, 0.85); border: 2px solid #ffe27a; }
+      #defeat[hidden], #victory[hidden] { display: none; }
       .panel {
         position: fixed; right: 8px; max-width: 340px; max-height: 45vh; overflow: auto; padding: 6px 8px;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;

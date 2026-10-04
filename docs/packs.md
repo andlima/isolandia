@@ -1,13 +1,14 @@
 # Packs
 
 A **pack** is a directory of YAML files that defines game content. The
-engine has no genre knowledge: the zombie and vampire mini-games under
-`packs/` are pure data on top of the same code.
+engine has no genre knowledge: the zombie, vampire and garden mini-games
+under `packs/` are pure data on top of the same code.
 
 ```sh
 npm run check -- packs/std packs/std-needs packs/zombie   # validate only
 npm run play  -- packs/std packs/std-needs packs/zombie   # play in the terminal
 npm run play  -- packs/std packs/vampire --seed 7
+npm run play  -- packs/std packs/garden
 ```
 
 `check` also accepts a *library* stack with no `start` (e.g.
@@ -676,8 +677,8 @@ intents, so looting never cancels walking.
   `{ kind, item, moved, ok, reason?, tick }`, where `reason` is one of
   `out_of_reach`, `too_heavy`, `missing`, `cannot_use`, `no_inventory` or
   `unknown_container`.
-- Pending actions and `lastAction` are part of `snapshot()`. After defeat
-  `queueAction` ignores its input.
+- Pending actions and `lastAction` are part of `snapshot()`. Once the game
+  has ended (after defeat or victory) `queueAction` ignores its input.
 
 A `goto` intent with `adjacent: true` ends on the reachable walkable tile
 8-adjacent to the goal (or the goal itself, if walkable) with the shortest
@@ -709,7 +710,8 @@ are driven by their archetype's [behavior](#behaviors).
 5. clamp every measurement to `[min, max]`;
 6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
-7. defeat check (see `start.defeat`);
+7. outcome check: defeat first (see `start.defeat`), then victory (see
+   `start.victory`) only if defeat did not trigger on this tick;
 8. `tick++`.
 
 Statuses are also evaluated once when the world is created, after the
@@ -726,6 +728,9 @@ start:
   defeat:             # optional
     when: "self.hp <= 0"
     message: "You did not survive the outbreak."
+  victory:            # optional
+    when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+    message: "You got the car running!"
 ```
 
 Exactly one `start` must exist across all loaded packs. Typically the last
@@ -737,6 +742,18 @@ each tick with `self` = the player. When it becomes truthy the world
 records the defeat (tick and `message`, which defaults to `"Game over"`),
 the HUD shows it, and from then on the simulation is frozen and player
 input is ignored. Without `defeat` the game never ends.
+
+`victory` has the same shape and validation as `defeat` (`when` with
+`self` = the player, optional `message`; unknown fields and conditions that
+evaluate to an entity or tile are load errors). It is checked in the same
+phase, right after defeat: when defeat triggers on a tick, victory is not
+checked on that tick. When `when` becomes truthy the world records the
+victory (tick and `message`, which defaults to `"Victory"`), the HUD shows
+it, and the world is frozen exactly as after defeat: `step()` is a no-op,
+queued intents and actions are ignored, and the browser panels become
+read-only. `victory` is part of `snapshot()` and `hash()`, and a world has
+at most one of the two outcomes. A pack may define either, both or
+neither.
 
 ### `clock`
 
@@ -856,7 +873,7 @@ unsupported extensions, malformed or out-of-range anchors, and unknown
 positive or not a whole number of ticks; empty `effects`; unknown effect
 types or fields; effects missing `measurement`/`delta`/`value`; unknown
 measurements in effects or `rates` keys (with suggestions); conditions
-(`for`/`when`/`until`/`defeat.when`) that evaluate to an entity or tile;
+(`for`/`when`/`until`/`defeat.when`/`victory.when`) that evaluate to an entity or tile;
 non-numeric `delta`/`value`/`rates`; `has_status` with a non-literal or
 unknown id; malformed tile tags; and `lighting` problems (empty `tint`,
 malformed times or colours, duplicate `at`, a second pack defining it).

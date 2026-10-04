@@ -16,7 +16,7 @@ export interface AsciiFrame {
   readonly lines: readonly string[];
   /** Color per map cell (`null` for empty space), same shape as `lines`. */
   readonly colors: readonly (readonly (string | null)[])[];
-  /** HUD: clock line, one line per player measurement, then inventory/status/nearby/action/defeat lines if any. */
+  /** HUD: clock line, one line per player measurement, then inventory/status/nearby/action/defeat/victory lines if any. */
   readonly hud: readonly string[];
 }
 

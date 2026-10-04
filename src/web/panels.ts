@@ -10,7 +10,7 @@ export interface PanelButton {
   readonly label: string;
   /** Queued in order when clicked. */
   readonly actions: readonly Action[];
-  /** True after defeat: the panels are read-only. */
+  /** True once the game has ended (defeat or victory): the panels are read-only. */
   readonly disabled: boolean;
 }
 
@@ -130,7 +130,7 @@ export class Panels {
     this.lastTick = w.tick;
     this.lastVersion = w.containerVersion;
     const m = hudModel(w);
-    const readOnly = w.defeat !== null;
+    const readOnly = w.ended;
 
     const iv = inventoryView(m, readOnly);
     if (iv && !this.inv.hidden) {

@@ -142,7 +142,7 @@ export interface TerminalIO {
 export function runTerminal(world: World, io: TerminalIO): Promise<void> {
   const { stdin, stdout } = io;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, carrying/inventory, status, nearby, action and defeat lines, blank line, help line.
+  // Clock, measurements, carrying/inventory, status, nearby, action and defeat/victory lines, blank line, help line.
   const HUD_ROWS = 2 + world.player.archetype.measurements.length + 6 + 2;
   const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop' : 'q: quit';
   const keys: KeyState = { dropPending: false };

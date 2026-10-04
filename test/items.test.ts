@@ -321,6 +321,19 @@ test('actions: ignored after defeat, like intents', () => {
   assert.equal(w.hash(), before);
 });
 
+test('actions: ignored after victory too; the world reports it has ended (panels read-only)', () => {
+  const w = world({ 'map.yaml': MAP.replace('start: { map: room, player: hero }', 'start: { map: room, player: hero, victory: { when: "true" } }') });
+  assert.equal(w.ended, false);
+  w.step();
+  assert.deepEqual(w.victory, { tick: 0, message: 'Victory' });
+  assert.equal(w.ended, true);
+  const before = w.hash();
+  w.queueAction({ kind: 'drop', item: 't:pebble' });
+  w.step();
+  assert.deepEqual(w.snapshot().actions, []);
+  assert.equal(w.hash(), before);
+});
+
 test('determinism: same seed, intents and actions ⇒ same hashes; containers are hashed', () => {
   const run = (seed: number) => {
     const w = world({ 'loot.yaml': 'loot:\n  - { id: p, rolls: [0, 9], entries: [{ item: pebble }, { item: coin, count: [1, 5] }] }\ndistributions:\n  - { container: crate, table: p }\n' }, seed);

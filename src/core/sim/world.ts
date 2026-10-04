@@ -72,11 +72,16 @@ export interface Noise {
   source: number;
 }
 
-/** Recorded when the pack's `start.defeat` condition becomes true. */
-export interface DefeatRecord {
+/** Recorded when the pack's `start.defeat` or `start.victory` condition becomes true. */
+export interface OutcomeRecord {
   readonly tick: number;
   readonly message: string;
 }
+
+/** Recorded when the pack's `start.defeat` condition becomes true. */
+export type DefeatRecord = OutcomeRecord;
+/** Recorded when the pack's `start.victory` condition becomes true. */
+export type VictoryRecord = OutcomeRecord;
 
 /** One-tile move in a direction (keyboard); cancels any active path. */
 export interface StepIntent {
@@ -199,6 +204,7 @@ export interface WorldSnapshot {
   actions: Action[];
   lastAction: ActionRecord | null;
   defeat: DefeatRecord | null;
+  victory: VictoryRecord | null;
   entities: EntitySnapshot[];
   /** Every container, in id order. */
   containers: ContainerSnapshot[];
@@ -239,6 +245,8 @@ export class World {
 
   /** Set once the defeat condition holds; the world is frozen from then on. */
   defeat: DefeatRecord | null = null;
+  /** Set once the victory condition holds (and defeat did not); the world is frozen from then on. */
+  victory: VictoryRecord | null = null;
   /** Result of the most recent action (a new object each time). */
   lastAction: ActionRecord | null = null;
   /** Every container by id (tile containers, inventories, ground piles), in id order. */
@@ -488,9 +496,9 @@ export class World {
     }
   }
 
-  /** Queue an instant player action (FIFO; applied after the movement intent). Ignored after defeat. */
+  /** Queue an instant player action (FIFO; applied after the movement intent). Ignored once the game has ended. */
   queueAction(action: Action): void {
-    if (this.defeat) return;
+    if (this.ended) return;
     this.actions.push(action);
   }
 
@@ -500,9 +508,14 @@ export class World {
    */
   queueIntent(intent: Intent, entity: Entity = this.player): void {
     if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
-    if (this.defeat) return;
+    if (this.ended) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     entity.intent = intent;
+  }
+
+  /** True once the game has ended (defeat or victory): the world is frozen. */
+  get ended(): boolean {
+    return this.defeat !== null || this.victory !== null;
   }
 
   /** Goal tile of an entity's active path, or null. */
@@ -520,11 +533,11 @@ export class World {
   /**
    * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
    * (id order), every entity's movement intent (id order), player actions, drift,
-   * due systems, hearing, clamp, status update, defeat check, `tick++`. A no-op
-   * once defeated.
+   * due systems, hearing, clamp, status update, defeat then victory check, `tick++`.
+   * A no-op once the game has ended.
    */
   step(): void {
-    if (this.defeat) return;
+    if (this.ended) return;
     this.ctx.tick = this.tick;
     this.pendingCount = 0;
     this.think();
@@ -538,7 +551,7 @@ export class World {
     if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
-    this.checkDefeat();
+    this.checkOutcome();
     this.tick++;
   }
 
@@ -678,11 +691,13 @@ export class World {
     }
   }
 
-  private checkDefeat(): void {
-    const d = this.def.start.defeat;
-    if (!d) return;
+  /** Phase 7: defeat first; victory only when defeat did not trigger. */
+  private checkOutcome(): void {
+    const { defeat, victory } = this.def.start;
+    if (!defeat && !victory) return;
     this.ctx.self = this.player;
-    if (d.when(this.ctx)) this.defeat = { tick: this.tick, message: d.message };
+    if (defeat && defeat.when(this.ctx)) this.defeat = { tick: this.tick, message: defeat.message };
+    else if (victory && victory.when(this.ctx)) this.victory = { tick: this.tick, message: victory.message };
   }
 
   /** Whether an entity has a status (by qualified id). */
@@ -830,6 +845,7 @@ export class World {
       actions: [...this.actions],
       lastAction: this.lastAction,
       defeat: this.defeat,
+      victory: this.victory,
       entities: this.entities.map((e) => ({
         id: e.id,
         archetype: e.archetype.id,

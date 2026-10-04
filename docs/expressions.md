@@ -2,7 +2,7 @@
 
 A small, pure expression language used in pack fields such as a
 measurement's `max` and `rate`, system and status conditions, effect
-values, status `rates` and `start.defeat.when`. Ported from rogue-engine, with three
+values, status `rates`, `start.defeat.when` and `start.victory.when`. Ported from rogue-engine, with three
 changes: expressions are **compiled at load time**, identifiers can be
 **namespaced**, and `/` is **float** division.
 

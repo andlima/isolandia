@@ -5,7 +5,7 @@
 
 import { clockAt, type ClockTime } from './clock.ts';
 import type { Container } from './sim/containers.ts';
-import type { ActionRecord, World } from './sim/world.ts';
+import type { ActionRecord, OutcomeRecord, World } from './sim/world.ts';
 
 export interface HudMeasurement {
   readonly label: string;
@@ -29,6 +29,8 @@ export interface HudModel {
   readonly statusLine: string | null;
   /** Set once the world is defeated. */
   readonly defeat: HudDefeat | null;
+  /** Set once the world is won. */
+  readonly victory: HudVictory | null;
   /** The player's inventory, or null when the player has none. */
   readonly inventory: HudInventory | null;
   /** Containers the player can reach now, in id order (never the player's own inventory). */
@@ -75,13 +77,16 @@ export interface HudContainer {
   readonly text: string;
 }
 
-export interface HudDefeat {
+export interface HudOutcome {
   readonly message: string;
-  /** In-game clock at the defeat tick, `Day D HH:MM`. */
+  /** In-game clock at the defeat/victory tick, `Day D HH:MM`. */
   readonly clock: string;
   /** `message (Day D HH:MM)`. */
   readonly text: string;
 }
+
+export type HudDefeat = HudOutcome;
+export type HudVictory = HudOutcome;
 
 function fmt(n: number): string {
   return n.toFixed(1);
@@ -94,7 +99,7 @@ const ACTION_SECONDS = 3;
 
 /**
  * HUD text lines shared by the shells: time, measurements, then — only when
- * present — carrying/inventory, status, nearby, latest action and defeat.
+ * present — carrying/inventory, status, nearby, latest action and defeat/victory.
  */
 export function hudLines(m: HudModel): string[] {
   const lines = [m.time, ...m.measurements.map((x) => x.text)];
@@ -103,6 +108,7 @@ export function hudLines(m: HudModel): string[] {
   if (m.nearbyLine) lines.push(m.nearbyLine);
   if (m.lastAction) lines.push(m.lastAction);
   if (m.defeat) lines.push(m.defeat.text);
+  if (m.victory) lines.push(m.victory.text);
   return lines;
 }
 
@@ -200,8 +206,11 @@ export function hudModel(world: World): HudModel {
   });
   const a = world.lastAction;
   const fresh = a !== null && world.tick - a.tick <= ACTION_SECONDS * world.def.ticksPerSecond;
-  const d = world.defeat;
-  const defeatClock = d ? formatClock(clockAt(world.def.clock, d.tick, world.def.ticksPerSecond)) : '';
+  const outcome = (r: OutcomeRecord | null): HudOutcome | null => {
+    if (!r) return null;
+    const at = formatClock(clockAt(world.def.clock, r.tick, world.def.ticksPerSecond));
+    return { message: r.message, clock: at, text: `${r.message} (${at})` };
+  };
   return {
     clock,
     tick: world.tick,
@@ -209,7 +218,8 @@ export function hudModel(world: World): HudModel {
     measurements,
     statuses,
     statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,
-    defeat: d ? { message: d.message, clock: defeatClock, text: `${d.message} (${defeatClock})` } : null,
+    defeat: outcome(world.defeat),
+    victory: outcome(world.victory),
     inventory,
     nearby,
     nearbyLine: nearby.length ? `Nearby: ${nearby.map((c) => c.text).join('; ')}` : null,
