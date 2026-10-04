@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, type Intent, type World } from '../core/index.ts';
+import { hudModel, type AvailableAction, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -92,20 +92,52 @@ export const KEYMAP: Readonly<Record<string, Intent>> = {
   n: d(1, 1),
 };
 
-/** Pending multi-key input (the `d` drop prefix). */
+/** Pending multi-key input (the `d` drop prefix and the `x` action list). */
 export interface KeyState {
   dropPending: boolean;
+  /** The open `x` list (self and tile actions, at most 9), or null/absent when closed. */
+  actions?: AvailableAction[] | null;
+}
+
+/** The `x` list: self and tile actions that can be started here, at most 9. */
+export function actionMenu(world: World): AvailableAction[] {
+  return world
+    .availableActions()
+    .filter((a) => a.kind === 'act')
+    .slice(0, 9);
+}
+
+/** `act: 1) Barricade (12,3)  2) Rest [missing]`, or a note when nothing can be done here. */
+export function actionMenuText(list: readonly AvailableAction[]): string {
+  if (list.length === 0) return 'no actions here (any key)';
+  const entry = (a: AvailableAction, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y})` : ''}${a.ok ? '' : ` [${a.reason}]`}`;
+  return `act: ${list.map(entry).join('  ')}`;
 }
 
 /**
- * Apply one key to the world. With an inventory, `g` takes everything that
- * fits from every reachable container, `1`–`9` use inventory stack N and
- * `d` then `1`–`9` drops stack N (so digits and `d` stop moving; arrows,
- * `hjklyubn`, `wsa` and the numpad with NumLock off still do). Returns
+ * Apply one key to the world. `x` opens the list of pack actions that can
+ * be started here (`1`–`9` start one, any other key closes it). With an
+ * inventory, `g` takes everything that fits from every reachable container,
+ * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
+ * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
+ * NumLock off still do, and cancel what the player is doing). Returns
  * `'quit'` for `q`/Ctrl-C.
  */
 export function handleKey(world: World, key: string, state: KeyState): 'quit' | void {
   if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  if (state.actions) {
+    const list = state.actions;
+    state.actions = null;
+    const a = /^[1-9]$/.test(key) ? list[Number(key) - 1] : undefined;
+    if (a) {
+      world.queueAction(a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! });
+      return;
+    }
+    if (/^[1-9]$/.test(key)) return;
+  } else if (key === 'x' && !state.dropPending) {
+    state.actions = actionMenu(world);
+    return;
+  }
   const inv = world.player.inv;
   if (inv) {
     const digit = /^[1-9]$/.test(key) ? Number(key) : 0;
@@ -142,17 +174,17 @@ export interface TerminalIO {
 export function runTerminal(world: World, io: TerminalIO): Promise<void> {
   const { stdin, stdout } = io;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, carrying/inventory, status, nearby, action and defeat/victory lines, blank line, help line.
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 6 + 2;
-  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop' : 'q: quit';
-  const keys: KeyState = { dropPending: false };
+  // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 7 + 2;
+  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act' : 'q: quit  x: act';
+  const keys: KeyState = { dropPending: false, actions: null };
 
   return new Promise((resolve) => {
     const draw = () => {
       const width = Math.max(10, stdout.columns ?? 80);
       const height = Math.max(5, (stdout.rows ?? 24) - HUD_ROWS);
       const frame = renderAscii(world, { width, height });
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.actions ? actionMenuText(keys.actions) : keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
     };
 
     const onKey = (buf: Buffer) => {

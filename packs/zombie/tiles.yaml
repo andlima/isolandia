@@ -27,6 +27,21 @@ tiles:
     walkable: true
     opaque: false
     tags: [glass]
+  # House windows: the undead see through them; a barricade blocks the view.
+  - id: window
+    label: Window
+    glyph: "\""
+    color: "#a8d8e8"
+    sprite: window_img
+    walkable: false
+    opaque: false
+  - id: barricaded_window
+    label: Barricaded window
+    glyph: "H"
+    color: "#a07242"
+    sprite: barricaded_window_img
+    walkable: false
+    opaque: true
   - id: bed
     label: Bed
     glyph: "="

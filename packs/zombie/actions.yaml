@@ -1,0 +1,15 @@
+# Timed actions (docs/packs.md#actions). Moving or starting another action
+# cancels one in progress; nothing is used up until it completes.
+actions:
+  # Board up a window from a cell next to it. The hammering is heard when
+  # the last nail goes in: the dead come to see what the noise was.
+  - id: barricade
+    label: Barricade
+    progress: Barricading
+    target: { tiles: [window] }
+    tools: [hammer]
+    consume: { plank: 2, nails: 4 }
+    duration: 6
+    effects:
+      - { type: set_tile, tile: barricaded_window }
+      - { type: noise, radius: 14 }

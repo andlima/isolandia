@@ -9,6 +9,15 @@ export class Grid {
   readonly walk: Uint8Array;
   /** 1 where the cell blocks line of sight, row-major. */
   readonly opaque: Uint8Array;
+  /**
+   * Bumped by every `setTile`. Pathfinding and line of sight read `walk` and
+   * `opaque` live (nothing is cached across calls), so only renderers and
+   * other caches need to compare it.
+   */
+  version = 0;
+  /** Cells whose tile differs from the map: cell index → tile index. */
+  readonly changed = new Map<number, number>();
+  private readonly original: readonly number[];
 
   constructor(
     map: MapDef,
@@ -16,9 +25,21 @@ export class Grid {
   ) {
     this.width = map.width;
     this.height = map.height;
+    this.original = map.cells;
     this.cells = Uint16Array.from(map.cells);
     this.walk = Uint8Array.from(this.cells, (t) => (tiles[t]!.walkable ? 1 : 0));
     this.opaque = Uint8Array.from(this.cells, (t) => (tiles[t]!.opaque ? 1 : 0));
+  }
+
+  /** Replace the tile of cell `i`, updating walkability and opacity at once. */
+  setTile(i: number, tile: number): void {
+    const t = this.tiles[tile]!;
+    this.cells[i] = tile;
+    this.walk[i] = t.walkable ? 1 : 0;
+    this.opaque[i] = t.opaque ? 1 : 0;
+    if (this.original[i] === tile) this.changed.delete(i);
+    else this.changed.set(i, tile);
+    this.version++;
   }
 
   inBounds(x: number, y: number): boolean {

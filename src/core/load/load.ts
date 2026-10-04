@@ -9,6 +9,8 @@
 import { DEFAULT_CLOCK, parseTimeOfDay, type ClockDef } from '../clock.ts';
 import {
   TICKS_PER_SECOND,
+  secondsToTicks,
+  type ActionDef,
   type ArchetypeDef,
   type AssetDef,
   type AssetImage,
@@ -18,6 +20,7 @@ import {
   type ContainerSpec,
   type OutcomeDef,
   type DistributionDef,
+  type DurationDef,
   type InventorySpec,
   type ItemCount,
   type ItemDef,
@@ -38,6 +41,7 @@ import {
   type StatusRate,
   type SystemDef,
   type TileDef,
+  type TileFilterDef,
   type TintKeyframe,
   type TransitionDef,
 } from '../definition.ts';
@@ -70,6 +74,7 @@ const KIND_OF: Record<ListDomain, Kind> = {
   items: 'item',
   loot: 'loot',
   behaviors: 'behavior',
+  actions: 'action',
 };
 
 const DEFAULT_TICKS_PER_STEP = 2;
@@ -80,7 +85,8 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
 const DEFAULT_VICTORY_MESSAGE = 'Victory';
-const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius' };
+const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius', set_tile: 'tile' };
+const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
 const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home', 'investigate'];
 const DEFAULT_REPATH = 1;
@@ -108,12 +114,15 @@ class Loader {
     items: [],
     loot: [],
     behaviors: [],
+    actions: [],
   };
   packs: { raw: RawPack; scope: Scope }[] = [];
   /** Every room tag used by a map, in first-seen order (collected before any expression compiles). */
   roomTags: string[] = [];
   /** Source of each resolved loot entry, per table (parallel to `LootTableDef.entries`). */
   private readonly lootEntrySrc: Src[][] = [];
+  /** Built tiles (for `set_tile` checks), set before any effect list is read. */
+  private tileDefs: readonly TileDef[] = [];
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
@@ -123,6 +132,7 @@ class Loader {
     const assets = this.defined.assets.map((d) => this.asset(d));
     const items = this.defined.items.map((d) => this.item(d));
     const tiles = this.defined.tiles.map((d) => this.tile(d));
+    this.tileDefs = tiles;
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements, items));
     const maps = this.defined.maps.map((d) => this.map(d));
     const loot = this.defined.loot.map((d) => this.lootTable(d));
@@ -131,6 +141,7 @@ class Loader {
     const statuses = this.defined.statuses.map((d) => this.status(d));
     const systems = this.defined.systems.map((d) => this.system(d));
     const behaviors = this.defined.behaviors.map((d) => this.behavior(d));
+    const actions = this.defined.actions.map((d) => this.action(d, tiles));
     const start = this.start(maps);
     const clock = this.clock();
     const lighting = this.lighting();
@@ -158,6 +169,7 @@ class Loader {
       items,
       loot,
       behaviors,
+      actions,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -174,6 +186,7 @@ class Loader {
         items: ids(items),
         loot: ids(loot),
         behaviors: ids(behaviors),
+        actions: ids(actions),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -233,7 +246,7 @@ class Loader {
 
   /** Compile an expression of any type; reports and returns null on error. */
   private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
-    const resolver = (kind: 'measurement' | 'status' | 'item') => (ref: string) => {
+    const resolver = (kind: 'measurement' | 'status' | 'item' | 'action') => (ref: string) => {
       const r = this.symbols.resolve(kind, ref, scope);
       return 'error' in r ? r : { index: r.index };
     };
@@ -242,6 +255,7 @@ class Loader {
       resolveStatus: resolver('status'),
       resolveItem: resolver('item'),
       resolveRoomTag: (tag) => this.roomTag(tag),
+      resolveAction: resolver('action'),
     });
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
@@ -480,7 +494,7 @@ class Loader {
     let use: ItemUseDef | null = null;
     const u = f.mapping('use');
     if (u) {
-      const uf = new Fields(this.sink, f.at('use'), u, ['label', 'when', 'effects', 'consume'], 'use');
+      const uf = new Fields(this.sink, f.at('use'), u, ['label', 'when', 'effects', 'consume', 'duration', 'interrupt'], 'use');
       const useLabel = uf.string('label', false) ?? DEFAULT_USE_LABEL;
       const whenFn = this.condition(uf, 'when', d.scope) ?? null;
       const effects = this.effects(uf, d.scope);
@@ -491,7 +505,9 @@ class Loader {
           this.sink.add(uf.at('consume'), `field 'consume' must be a non-negative integer, got ${JSON.stringify(cv)}`);
         } else consume = cv;
       }
-      use = { label: useLabel, whenFn, effects, consume };
+      const duration = this.duration(uf, d.scope);
+      const interruptFn = this.condition(uf, 'interrupt', d.scope) ?? null;
+      use = { label: useLabel, whenFn, effects, consume, duration, interruptFn };
     }
     return { id: d.id, index: d.index, label, glyph, color, weight, tags, sprite, use };
   }
@@ -1036,13 +1052,17 @@ class Loader {
     return { name, index, activity, target, radius, repath, on, timeout, done };
   }
 
-  /** A required, non-empty `effects` list (`apply`/`set`/`noise` on `self`). */
-  private effects(f: Fields, scope: Scope): EffectDef[] {
+  /**
+   * An `effects` list (`apply`/`set`/`noise` on `self`), required and
+   * non-empty unless `optional`. `set_tile` is only allowed with `setTile`
+   * (the effects of tile-targeted actions).
+   */
+  private effects(f: Fields, scope: Scope, opts: { optional?: boolean; setTile?: boolean } = {}): EffectDef[] {
     const effects: EffectDef[] = [];
     const list = f.list('effects');
     if (!list) {
-      if (!f.has('effects')) f.present('effects');
-    } else if (list.length === 0) {
+      if (!opts.optional && !f.has('effects')) f.present('effects');
+    } else if (list.length === 0 && !opts.optional) {
       this.sink.add(f.at('effects'), `field 'effects' must list at least one effect`);
     }
     (list ?? []).forEach((raw, i) => {
@@ -1065,6 +1085,21 @@ class Loader {
       }
       const t = type as EffectDef['type'];
       const valueKey = EFFECT_FIELDS[t];
+      if (t === 'set_tile') {
+        const sf = new Fields(this.sink, src, raw, ['type', 'tile'], `'set_tile' effect`);
+        if (!opts.setTile) {
+          this.sink.add(at(src, 'type'), `'set_tile' effects are only allowed in the effects of tile-targeted actions`);
+          return;
+        }
+        const r = sf.present('tile') ? this.symbols.ref('tile', sf.raw('tile'), scope, sf.at('tile'), this.sink) : null;
+        if (!r) return;
+        if (this.tileDefs[r.index]?.container) {
+          this.sink.add(sf.at('tile'), `set_tile cannot place tile '${r.id}': it has a 'container' (container identity never changes)`);
+          return;
+        }
+        effects.push({ type: t, tile: r.index });
+        return;
+      }
       if (t === 'noise') {
         const nf = new Fields(this.sink, src, raw, ['type', valueKey], `'noise' effect`);
         const term = nf.present(valueKey) ? this.numberTerm(nf.raw(valueKey), valueKey, scope, nf.at(valueKey)) : null;
@@ -1077,6 +1112,110 @@ class Loader {
       if (m && term) effects.push({ type: t, measurement: m.index, ...term });
     });
     return effects;
+  }
+
+  // ── Actions ─────────────────────────────────────────────────────────────
+
+  /** Optional `duration` (sim seconds ≥ 0, a whole number of ticks, or an expression). */
+  private duration(f: Fields, scope: Scope): DurationDef {
+    const v = f.raw('duration');
+    if (v === undefined || v === null) return NO_DURATION;
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v) || v < 0) {
+        this.sink.add(f.at('duration'), `field 'duration' must be a number of sim seconds ≥ 0, got ${v}`);
+        return NO_DURATION;
+      }
+      if (v === 0) return NO_DURATION;
+      return { ticks: this.ticks(f, 'duration', v) ?? 0, fn: null };
+    }
+    if (typeof v === 'string') {
+      const e = this.expr(v, scope, f.at('duration'));
+      if (!e) return NO_DURATION;
+      return e.constant !== undefined ? { ticks: secondsToTicks(e.constant), fn: null } : { ticks: 0, fn: e.fn };
+    }
+    this.sink.add(f.at('duration'), `field 'duration' must be a number or an expression`);
+    return NO_DURATION;
+  }
+
+  /** A tile filter `{ tiles?, tags? }` (at least one non-empty list); null after an error. */
+  private tileFilter(v: Json, src: Src, scope: Scope, tiles: readonly TileDef[]): TileFilterDef | null {
+    if (!isObject(v)) {
+      this.sink.add(src, `a tile filter must be a mapping like { tiles: [door] } or { tags: [glass] }, got ${JSON.stringify(v)}`);
+      return null;
+    }
+    const f = new Fields(this.sink, src, v, ['tiles', 'tags'], 'tile filter');
+    const listed = f.list('tiles') ?? [];
+    const indices: number[] = [];
+    listed.forEach((ref, i) => {
+      const r = this.symbols.ref('tile', ref, scope, f.at('tiles', i), this.sink);
+      if (r && !indices.includes(r.index)) indices.push(r.index);
+    });
+    const tags = this.tags(f);
+    const known = new Set(tiles.flatMap((t) => t.tags));
+    tags.forEach((t, i) => {
+      if (!ID_RE.test(t) || known.has(t)) return;
+      const s = nearMiss(t, known);
+      this.sink.warn(f.at('tags', i), `no tile carries the tag '${t}'${s ? ` (did you mean '${s}'?)` : ''}, so it never matches`);
+    });
+    if (listed.length === 0 && tags.length === 0) {
+      this.sink.add(src, `a tile filter needs a non-empty 'tiles' or 'tags' list`);
+      return null;
+    }
+    const match = tiles.map((t) => (indices.includes(t.index) || t.tags.some((g) => tags.includes(g)) ? 1 : 0));
+    return { tiles: indices, tags, match };
+  }
+
+  private action(d: Defined, tiles: readonly TileDef[]): ActionDef {
+    const f = new Fields(
+      this.sink,
+      d.entry.src,
+      d.entry.value,
+      ['id', 'label', 'progress', 'target', 'when', 'tools', 'consume', 'duration', 'interrupt', 'effects'],
+      'action',
+    );
+    const label = f.string('label') ?? d.id;
+    const progress = f.string('progress', false) ?? label;
+
+    let target: TileFilterDef | null = null;
+    let tileTarget = false;
+    const tv = f.raw('target');
+    if (tv === undefined || tv === null) f.present('target');
+    else if (typeof tv === 'string' || typeof tv !== 'object' || Array.isArray(tv)) {
+      if (tv !== 'self') this.sink.add(f.at('target'), `field 'target' must be 'self' or a tile filter like { tiles: [door] }, got ${JSON.stringify(tv)}`);
+    } else {
+      tileTarget = true;
+      target = this.tileFilter(tv, f.at('target'), d.scope, tiles);
+    }
+
+    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const tools: number[] = [];
+    (f.list('tools') ?? []).forEach((ref, i) => {
+      const r = this.symbols.ref('item', ref, d.scope, f.at('tools', i), this.sink);
+      if (!r) return;
+      if (tools.includes(r.index)) this.sink.add(f.at('tools', i), `tool '${r.id}' is listed twice`);
+      else tools.push(r.index);
+    });
+    const consume: ItemCount[] = [];
+    const rawConsume = f.mapping('consume');
+    for (const [ref, value] of Object.entries(rawConsume ?? {})) {
+      const src = f.at('consume', ref);
+      const r = this.symbols.ref('item', ref, d.scope, src, this.sink);
+      if (!r) continue;
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+        this.sink.add(src, `consumed count must be an integer ≥ 1, got ${JSON.stringify(value)}`);
+        continue;
+      }
+      if (consume.some((c) => c.item === r.index)) this.sink.add(src, `item '${r.id}' is listed twice`);
+      else consume.push({ item: r.index, count: value });
+    }
+    const duration = this.duration(f, d.scope);
+    const interruptFn = this.condition(f, 'interrupt', d.scope) ?? null;
+    const effects = this.effects(f, d.scope, { optional: true, setTile: tileTarget });
+    const rawEffects = f.raw('effects');
+    if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && Object.keys(rawConsume ?? {}).length === 0) {
+      this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
+    }
+    return { id: d.id, index: d.index, label, progress, target, whenFn, tools, consume, duration, interruptFn, effects };
   }
 
   /** `start.defeat` / `start.victory`: `{ when, message? }`. */

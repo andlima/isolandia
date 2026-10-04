@@ -14,6 +14,9 @@
  * texture, anchor and mirroring are swapped only when the direction it shows
  * changes. Tiles face their cell's legend `facing`.
  *
+ * Map edits (`world.tileVersion`) rebuild the render chunks whose cells
+ * changed: their ground container and their raised blocks.
+ *
  * Only a bucket whose contents moved gets re-sorted (Pixi sorts a
  * `sortableChildren` container only when one of its children's zIndex
  * changed), so a still scene costs no sorting at all.
@@ -43,8 +46,10 @@ const TARGET_COLOR = 0xffd23f;
 const INVALID_COLOR = 0xff3355;
 
 interface Chunk {
+  readonly cx: number;
+  readonly cy: number;
   readonly ground: Container;
-  readonly blocks: Sprite[];
+  blocks: Sprite[];
   readonly bounds: Bounds;
   visible: boolean;
 }
@@ -98,6 +103,9 @@ export class IsoScene {
   private readonly invalid: Sprite;
   private invalidUntil = 0;
   private tint = 0xffffff;
+  /** Tile index per cell as drawn (to find the cells a map edit changed). */
+  private readonly drawn: Uint16Array;
+  private tileVersion: number;
 
   constructor(
     private readonly world: World,
@@ -105,7 +113,8 @@ export class IsoScene {
   ) {
     this.root.addChild(this.ground, this.markers, this.objects);
     const { grid } = world;
-    const { facings } = world.def.maps[world.def.start.map]!;
+    this.drawn = Uint16Array.from(grid.cells);
+    this.tileVersion = world.tileVersion;
 
     for (let d = 0; d <= grid.width + grid.height; d++) {
       const b = new Container();
@@ -117,26 +126,12 @@ export class IsoScene {
     for (let cy = 0; cy < grid.height; cy += CHUNK) {
       for (let cx = 0; cx < grid.width; cx += CHUNK) {
         const ground = new Container();
-        const blocks: Sprite[] = [];
-        for (let y = cy; y < Math.min(cy + CHUNK, grid.height); y++) {
-          for (let x = cx; x < Math.min(cx + CHUNK, grid.width); x++) {
-            const tile = grid.tileAt(x, y)!;
-            const s = sprite(textures.tile(tile, facings[y * grid.width + x] ?? null));
-            const p = tileAnchorIso(x, y);
-            s.position.set(p.x, p.y);
-            if (tile.raised) {
-              s.zIndex = depthKey(x, y, Layer.Block);
-              this.buckets[diagonalOf(x, y)]!.addChild(s);
-              blocks.push(s);
-            } else {
-              ground.addChild(s);
-            }
-          }
-        }
         this.ground.addChild(ground);
         const bounds = tileRectIsoBounds(cx, cy, CHUNK, CHUNK);
         bounds.minY -= BLOCK_H * 3; // raised tiles and tall sprites
-        this.chunks.push({ ground, blocks, bounds, visible: true });
+        const chunk: Chunk = { cx, cy, ground, blocks: [], bounds, visible: true };
+        this.fillChunk(chunk);
+        this.chunks.push(chunk);
       }
     }
 
@@ -153,6 +148,52 @@ export class IsoScene {
     this.invalid = sprite(textures.outline(INVALID_COLOR));
     this.target.visible = this.invalid.visible = false;
     this.markers.addChild(this.target, this.invalid);
+  }
+
+  /** Create the tile sprites of a chunk: flat tiles in its ground container, raised ones in the object buckets. */
+  private fillChunk(chunk: Chunk): void {
+    const { grid } = this.world;
+    const { facings } = this.world.def.maps[this.world.def.start.map]!;
+    for (let y = chunk.cy; y < Math.min(chunk.cy + CHUNK, grid.height); y++) {
+      for (let x = chunk.cx; x < Math.min(chunk.cx + CHUNK, grid.width); x++) {
+        const tile = grid.tileAt(x, y)!;
+        const s = sprite(this.textures.tile(tile, facings[y * grid.width + x] ?? null));
+        const p = tileAnchorIso(x, y);
+        s.position.set(p.x, p.y);
+        if (tile.raised) {
+          s.zIndex = depthKey(x, y, Layer.Block);
+          s.visible = chunk.visible;
+          this.buckets[diagonalOf(x, y)]!.addChild(s);
+          chunk.blocks.push(s);
+        } else {
+          chunk.ground.addChild(s);
+        }
+      }
+    }
+  }
+
+  /** After a map edit: rebuild every chunk with a changed cell (ground and raised blocks). */
+  private syncTiles(): void {
+    const { world } = this;
+    if (world.tileVersion === this.tileVersion) return;
+    this.tileVersion = world.tileVersion;
+    const { grid } = world;
+    const perRow = Math.ceil(grid.width / CHUNK);
+    const dirty = new Set<number>();
+    for (let i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] === this.drawn[i]) continue;
+      this.drawn[i] = grid.cells[i]!;
+      const x = i % grid.width;
+      const y = (i - x) / grid.width;
+      dirty.add(Math.floor(y / CHUNK) * perRow + Math.floor(x / CHUNK));
+    }
+    for (const k of dirty) {
+      const chunk = this.chunks[k]!;
+      for (const s of chunk.ground.removeChildren()) s.destroy();
+      for (const s of chunk.blocks) s.destroy();
+      chunk.blocks = [];
+      this.fillChunk(chunk);
+    }
   }
 
   /** Add, retexture or remove ground-pile sprites after container changes. */
@@ -219,6 +260,7 @@ export class IsoScene {
       this.objects.tint = tint;
     }
 
+    this.syncTiles();
     this.syncPiles();
 
     let visibleEntities = 0;

@@ -67,6 +67,11 @@ items:
     use:
       label: Apply
       when: "self.hp < 100"
+      duration: 3                   # sim seconds; moving or acting cancels it
+      # A noise nearby startles you and wastes the attempt (the bandage is
+      # kept). Hearing lands after the work step, so 0.2 s is the shortest
+      # window the next tick's interrupt check still sees.
+      interrupt: "heard(self, 0.2)"
       effects:
         - { type: apply, measurement: hp, delta: 20 }
   # Rings loud enough to draw every shambler in the block.
@@ -81,6 +86,10 @@ items:
       consume: 0                    # reusable
       effects:
         - { type: noise, radius: 20 }
+  # Barricading (actions.yaml): the hammer is a tool, planks and nails are used up.
+  - { id: hammer, label: Hammer, glyph: "T", color: "#a07242", weight: 1, tags: [tool], sprite: hammer_img }
+  - { id: plank, label: Plank, glyph: "/", color: "#c89a5a", weight: 1, tags: [material], sprite: plank_img }
+  - { id: nails, label: Nails, glyph: ";", color: "#a6a8b4", weight: 0.02, tags: [material], sprite: nails_img }
   # Heavy junk: worth nothing, weighs a lot.
   - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3, tags: [junk], sprite: toaster_img }
   - { id: lamp, label: Desk lamp, glyph: "]", color: "#d8d070", weight: 2.5, tags: [junk], sprite: lamp_img }

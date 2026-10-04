@@ -154,7 +154,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M2 | Clock, day/night, `systems`, `statuses` | Survive a day with hunger/thirst/sleep | ✅ done |
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
-| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading |  |
+| M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | 🚧 in progress (timed actions done) |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
@@ -295,6 +295,28 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     applied in the intent phase right after movement, with a reach of 1
     tile (Chebyshev) and the result in `world.lastAction`. Duration,
     progress bar and interruption come in M5.
+- ~~How do actions take time?~~ **Decided (spec `m5-timed-actions`, M5
+  core):**
+  - **Actions are pack-defined** in an **`actions`** domain, with a
+    **`self`** target or a **tile** target picked by a tile filter
+    (`{ tiles?, tags? }`, one of the 8 cells around the actor or its own).
+    In a tile action's expressions, `tile` is the target cell. A new
+    **`set_tile`** effect edits the map (never onto or off a container
+    tile). Item `use` gains the same `duration`/`interrupt`.
+  - **Effects apply only at completion**, after every start check
+    (`when`, tools, consumed items, reach, filter) passes again; nothing is
+    consumed before. There is no partial progress and no resuming.
+  - **Moving or queueing a new action cancels** the activity, and so does
+    the pack's **`interrupt`** expression, checked every tick after the
+    start. Cancellation happens in the tick's intent phase, so it does not
+    depend on the shell.
+  - **Durations are evaluated once, at start** (a number or an
+    expression in sim seconds, rounded up to whole ticks); a 0-tick action
+    is instant and behaves exactly as before.
+  - The activity, and every cell that differs from the map, are
+    simulation state (snapshot and hash). `world.availableActions()` is a
+    pure query for the shells; the context menu (`m5-context-menu`) and
+    recipes (`m5-recipes`) build on it.
 - ~~How is sight represented?~~ **Decided (task `line-of-sight`, M4
   groundwork):** sight is **tile-based line of sight**. Tiles get an
   **`opaque`** flag (default `!walkable`; the vampire window is
@@ -334,6 +356,12 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   Animation frames are a later step. See `docs/iso.md`.
 
 ## 8. Next step
+
+M5 is in progress: **timed actions** are delivered (spec
+`m5-timed-actions`). Survivors barricade windows with a hammer, planks and
+nails while the dead hear the hammering, and bandaging takes a few
+seconds; the vampire closes shutters before dawn and rests on a crypt floor
+until a screeching bat wakes it. The context menu and recipes come next.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers
