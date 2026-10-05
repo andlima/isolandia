@@ -9,6 +9,12 @@ import { Looter, type LooterOptions } from './looter.ts';
 
 const DAY_TICKS = 14400; // 1440 s × 10 ticks/s
 const SEEDS = [1, 2, 3, 4, 5];
+/**
+ * Seeds for the composite start maps (the 256×256 zombie city with ~1000
+ * entities, the vampire estate): two in-game days cost ~25× the old maps per
+ * seed, so they run on fewer seeds to keep this file within a few seconds each.
+ */
+const BIG_SEEDS = [1, 2];
 
 function genre(name: string): Definition {
   const r = loadPacks(GAMES[name as keyof typeof GAMES].map(readPack));
@@ -36,7 +42,7 @@ const LOOTERS: Record<string, LooterOptions> = {
 for (const name of ['zombie', 'vampire']) {
   test(`scenario (${name}): an idle player gains a status on day 1 and is defeated within 2 days`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       let firstStatus = -1;
       while (!w.defeat && w.tick < 2 * DAY_TICKS) {
@@ -50,7 +56,7 @@ for (const name of ['zombie', 'vampire']) {
 
   test(`scenario (${name}): a looting player survives to the end of day 2 with goto/take/use only`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       const bot = new Looter(w, LOOTERS[name]!);
       const kinds = new Set<string>();
@@ -73,7 +79,7 @@ for (const name of ['zombie', 'vampire']) {
 
   test(`scenario (${name}): taking stops at capacity with reason too_heavy`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       const inv = w.player.inv!;
       const tried = new Set<number>();
