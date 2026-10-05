@@ -71,7 +71,7 @@ export class Looter {
     let bestD = Infinity;
     for (const c of w.containers.values()) {
       if (c.kind === 'inventory' || this.unreachable.has(c.id) || !has(c)) continue;
-      const d = Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y));
+      const d = Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) + Math.abs(c.z - p.z);
       if (d < bestD) {
         best = c;
         bestD = d;
@@ -84,6 +84,6 @@ export class Looter {
       return;
     }
     this.target = best;
-    w.queueIntent({ kind: 'goto', x: best.x, y: best.y, adjacent: true });
+    w.queueIntent({ kind: 'goto', x: best.x, y: best.y, z: best.z, adjacent: true });
   }
 }

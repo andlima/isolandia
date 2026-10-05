@@ -4,7 +4,7 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import type { ArchetypeDef, BehaviorDef, Definition, EffectDef, MeasurementDef, NumberTerm } from '../definition.ts';
+import { EMPTY_TILE, type ArchetypeDef, type BehaviorDef, type Definition, type EffectDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
@@ -21,6 +21,8 @@ export interface Entity extends ExprEntity {
   readonly archetype: ArchetypeDef;
   x: number;
   y: number;
+  /** Floor. */
+  z: number;
   /** Values indexed by measurement index (length = all measurements). */
   readonly m: Float64Array;
   /** Resolved max per measurement as of the last clamp (Infinity if unbounded). */
@@ -29,15 +31,16 @@ export interface Entity extends ExprEntity {
   moveCooldown: number;
   /** Direction the entity faces; it turns toward a new direction before stepping. */
   facing: Facing;
-  /** Tile the current (or last) step started from; equals (x, y) before any step. */
+  /** Tile the current (or last) step started from; equals (x, y, z) before any step. */
   fromX: number;
   fromY: number;
+  fromZ: number;
   /**
    * World tick at which the current step starts showing: the value of
    * `world.tick` right after the tick that took the step. See `renderPosition`.
    */
   stepTick: number;
-  /** Remaining path as cell indices (`y * width + x`), or null. */
+  /** Remaining path as cell indices (`(z * height + y) * width + x`), or null. */
   path: Int32Array | null;
   /** Index of the next cell of `path` to step onto. */
   pathPos: number;
@@ -54,6 +57,7 @@ export interface Entity extends ExprEntity {
   /** Spawn cell (fixed). */
   readonly homeX: number;
   readonly homeY: number;
+  readonly homeZ: number;
   /** Behavior driving the entity (null for the player and archetypes without one). */
   readonly behavior: BehaviorDef | null;
   /** Current state index of `behavior`, or -1 without one. */
@@ -63,10 +67,12 @@ export interface Entity extends ExprEntity {
   /** Cell and tick of the goto the current state last issued (`pursue`/`home`); `planTick` -1 = none yet. */
   planX: number;
   planY: number;
+  planZ: number;
   planTick: number;
   /** Cell and tick of the last heard noise (nearest within its tick); `heardTick` -1 = never. */
   heardX: number;
   heardY: number;
+  heardZ: number;
   heardTick: number;
   /** In-progress timed action, item use or recipe, or null. */
   activity: Activity | null;
@@ -76,6 +82,7 @@ export interface Entity extends ExprEntity {
 export interface Noise {
   x: number;
   y: number;
+  z: number;
   radius: number;
   /** Id of the emitting entity (it does not hear its own noise). */
   source: number;
@@ -92,7 +99,7 @@ export type DefeatRecord = OutcomeRecord;
 /** Recorded when the pack's `start.victory` condition becomes true. */
 export type VictoryRecord = OutcomeRecord;
 
-/** One-tile move in a direction (keyboard); cancels any active path. */
+/** One-tile move in a direction on the entity's floor (keyboard; never takes a link); cancels any active path. */
 export interface StepIntent {
   readonly kind: 'step';
   readonly dx: -1 | 0 | 1;
@@ -104,9 +111,12 @@ export interface GotoIntent {
   readonly kind: 'goto';
   readonly x: number;
   readonly y: number;
+  /** Goal floor; defaults to the entity's floor when the goto is resolved. */
+  readonly z?: number;
   /**
    * End on the walkable tile 8-adjacent to the goal (or the goal itself, if
-   * walkable) with the shortest path, e.g. to walk up to a fridge.
+   * walkable) with the shortest path, e.g. to walk up to a fridge. Only the
+   * goal's own floor counts.
    */
   readonly adjacent?: boolean;
   /**
@@ -123,6 +133,7 @@ export type Intent = StepIntent | GotoIntent;
 export interface GotoRecord {
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   /** False when the goal was blocked, out of bounds or unreachable. */
   readonly ok: boolean;
   /** Tick at which the goto was resolved. */
@@ -160,19 +171,25 @@ export interface UseAction {
   readonly item: string;
 }
 
-/** Start a pack action (`actions` domain); `x`/`y` are required for tile targets and forbidden for `self`. */
+/**
+ * Start a pack action (`actions` domain); `x`/`y` are required for tile
+ * targets and forbidden for `self`. `z` (tile targets only) defaults to the
+ * player's floor.
+ */
 export interface ActAction {
   readonly kind: 'act';
   /** Qualified action id. */
   readonly action: string;
   readonly x?: number;
   readonly y?: number;
+  readonly z?: number;
 }
 
 /**
  * Start a recipe (`recipes` domain). For a station recipe, `x`/`y` name the
  * station cell (omitted: the first matching cell in reach, row-major); they
- * are forbidden for recipes without a station.
+ * are forbidden for recipes without a station. `z` defaults to the player's
+ * floor.
  */
 export interface CraftAction {
   readonly kind: 'craft';
@@ -180,6 +197,7 @@ export interface CraftAction {
   readonly recipe: string;
   readonly x?: number;
   readonly y?: number;
+  readonly z?: number;
 }
 
 /** A player action, queued with `queueAction` and applied after the movement intents. */
@@ -244,6 +262,7 @@ export interface AvailableAction {
   /** Target cell of a tile-targeted action. */
   readonly x?: number;
   readonly y?: number;
+  readonly z?: number;
   readonly label: string;
   /** False when tools, consumed items, the inventory or `when` fail now. */
   readonly ok: boolean;
@@ -268,14 +287,14 @@ export interface AvailableRecipe {
   /** The recipe's `unavailable` text (reason `cannot_act`, when the pack sets one). */
   readonly unavailable?: string;
   /** The chosen station cell in reach (station recipes). */
-  readonly station?: { readonly x: number; readonly y: number };
+  readonly station?: { readonly x: number; readonly y: number; readonly z: number };
 }
 
-export type InteractionKind = 'act' | 'craft' | 'open' | 'take_all' | 'walk';
+export type InteractionKind = 'act' | 'craft' | 'open' | 'take_all' | 'climb' | 'walk';
 
-/** An entry of `world.interactionsAt(x, y)`. */
+/** An entry of `world.interactionsAt(x, y, z)`. */
 export interface Interaction {
-  /** Stable within a query, e.g. `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `walk`. */
+  /** Stable within a query, e.g. `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `climb:up`, `walk`. */
   readonly id: string;
   readonly label: string;
   readonly kind: InteractionKind;
@@ -290,6 +309,8 @@ export interface Interaction {
   readonly actions?: readonly Action[];
   /** Container id (`open`, `take_all`). */
   readonly container?: number;
+  /** The goto to the far end of the link (`climb`). */
+  readonly intent?: GotoIntent;
   /** Whether the player can do it without walking. */
   readonly inReach: boolean;
 }
@@ -309,6 +330,7 @@ export interface ActivitySnapshot {
   recipe?: string;
   x: number;
   y: number;
+  z: number;
   startTick: number;
   endTick: number;
 }
@@ -317,7 +339,7 @@ export interface ContainerSnapshot {
   id: number;
   kind: ContainerKind;
   /** Cell of a tile container or ground pile. */
-  cell?: [number, number];
+  cell?: [number, number, number];
   /** Owner entity id of an inventory. */
   owner?: number;
   /** Stacks as [qualified item id, count], in order. */
@@ -329,23 +351,25 @@ export interface EntitySnapshot {
   archetype: string;
   x: number;
   y: number;
+  z: number;
   facing: Facing;
   fromX: number;
   fromY: number;
+  fromZ: number;
   stepTick: number;
   moveCooldown: number;
-  /** Remaining path cells as [x, y] pairs. */
-  path: [number, number][] | null;
+  /** Remaining path cells as [x, y, z]. */
+  path: [number, number, number][] | null;
   measurements: Record<string, number>;
   /** Active status ids, in definition order. */
   statuses: string[];
   intent: Intent | null;
   lastGoto: GotoRecord | null;
-  home: [number, number];
-  /** Current behavior state (name), when it was entered, and its last planned goto. */
-  behavior: { state: string; since: number; plan: [number, number, number] | null } | null;
+  home: [number, number, number];
+  /** Current behavior state (name), when it was entered, and its last planned goto as [x, y, z, tick]. */
+  behavior: { state: string; since: number; plan: [number, number, number, number] | null } | null;
   /** Last heard noise, or null if never. */
-  heard: { x: number; y: number; tick: number } | null;
+  heard: { x: number; y: number; z: number; tick: number } | null;
   activity: ActivitySnapshot | null;
   /** Action queued when the current path arrives. */
   then: Action | null;
@@ -367,8 +391,8 @@ export interface WorldSnapshot {
   entities: EntitySnapshot[];
   /** Every container, in id order. */
   containers: ContainerSnapshot[];
-  /** Cells whose tile differs from the map, as [x, y, qualified tile id], row-major. */
-  tiles: [number, number, string][];
+  /** Cells whose tile differs from the map, as [x, y, z, qualified tile id], in cell index order. */
+  tiles: [number, number, number, string][];
 }
 
 /** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
@@ -378,7 +402,7 @@ export interface SaveFile {
   /** Loaded packs, in load order. */
   packs: { namespace: string; version: string }[];
   /** Qualified id of the start map, and its size. */
-  map: { id: string; width: number; height: number };
+  map: { id: string; width: number; height: number; floors: number };
   state: WorldSnapshot;
 }
 
@@ -395,7 +419,7 @@ export interface RestoreHost {
   readonly useSources: readonly (ActivitySource | null)[];
   readonly recipeSources: readonly ActivitySource[];
   /** Append an entity with spawn defaults and the given home and inventory; `driven` = run its archetype's behavior. */
-  entity(archetype: ArchetypeDef, x: number, y: number, homeX: number, homeY: number, inv: Container | null, driven: boolean): Entity;
+  entity(archetype: ArchetypeDef, x: number, y: number, z: number, home: readonly [number, number, number], inv: Container | null, driven: boolean): Entity;
   /** Register a container (in id order). */
   container(c: Container): void;
   setNextContainer(n: number): void;
@@ -524,23 +548,24 @@ export class World {
         actionSources: this.actionSources,
         useSources: this.useSources,
         recipeSources: this.recipeSources,
-        entity: (a, x, y, homeX, homeY, inv, driven) => this.addEntity(a, x, y, homeX, homeY, inv, driven),
+        entity: (a, x, y, z, home, inv, driven) => this.addEntity(a, x, y, z, home, inv, driven),
         container: (c) => (c.kind === 'inventory' ? this.containers.set(c.id, c) : this.addContainer(c)),
         setNextContainer: (n) => (this.nextContainerId = n),
         setActions: (a) => (this.actions = a),
       });
     } else {
-      // Container ids: tile containers in row-major order, then inventories in entity order.
+      // Container ids: tile containers in cell index order (z-major, row-major), then inventories in entity order.
       for (let i = 0; i < map.cells.length; i++) {
-        const tile = def.tiles[map.cells[i]!]!;
+        const t = map.cells[i]!;
+        if (t === EMPTY_TILE) continue;
+        const tile = def.tiles[t]!;
         if (!tile.container) continue;
-        const x = i % map.width;
-        const y = (i - x) / map.width;
-        this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, tile: tile.index }));
+        const { x, y, z } = this.grid.cellOf(i);
+        this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, z, tile: tile.index }));
       }
       const start = map.playerStart!;
-      this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, false);
-      for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y);
+      this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, start.z, false);
+      for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y, s.z);
       this.rollLoot(seed);
     }
 
@@ -552,10 +577,13 @@ export class World {
       ticksPerSecond: def.ticksPerSecond,
       clock: def.clock,
       random: () => world.rng.next(),
-      tileIdAt: (x, y) => world.grid.tileAt(x, y)?.id ?? '',
-      tileTagsAt: (x, y) => (world.grid.inBounds(x, y) ? world.tileTagSets[world.grid.cells[y * world.grid.width + x]!]! : NO_TAGS),
-      inRoom: (x, y, tag) => world.grid.inBounds(x, y) && world.roomHas[world.roomCell[y * world.grid.width + x]! * nt + tag] === 1,
-      los: (x0, y0, x1, y1) => lineOfSight(world.grid, x0, y0, x1, y1),
+      tileIdAt: (x, y, z) => world.grid.tileAt(x, y, z)?.id ?? '',
+      tileTagsAt: (x, y, z) => {
+        const t = world.grid.inBounds(x, y, z) ? world.grid.cells[world.grid.index(x, y, z)]! : EMPTY_TILE;
+        return t === EMPTY_TILE ? NO_TAGS : world.tileTagSets[t]!;
+      },
+      inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
+      los: (x0, y0, x1, y1, z0, z1) => lineOfSight(world.grid, x0, y0, x1, y1, z0, z1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
@@ -601,7 +629,7 @@ export class World {
       format: 'isolandia-save',
       version: SAVE_VERSION,
       packs: this.def.packs.map((p) => ({ namespace: p.namespace, version: p.version })),
-      map: { id: map.id, width: map.width, height: map.height },
+      map: { id: map.id, width: map.width, height: map.height, floors: map.floors },
       state: this.snapshot(),
     };
   }
@@ -621,7 +649,7 @@ export class World {
   }
 
   /** Add an entity; `driven` = run its archetype's behavior (false for the player). */
-  private spawn(archetype: ArchetypeDef, x: number, y: number, driven = true): Entity {
+  private spawn(archetype: ArchetypeDef, x: number, y: number, z: number, driven = true): Entity {
     const id = this.entities.length;
     let inv: Container | null = null;
     if (archetype.inventory) {
@@ -629,11 +657,11 @@ export class World {
       for (const s of archetype.inventory.items) add(inv, s.item, s.count, this.itemWeights[s.item]!);
       this.containers.set(inv.id, inv);
     }
-    return this.addEntity(archetype, x, y, x, y, inv, driven);
+    return this.addEntity(archetype, x, y, z, [x, y, z], inv, driven);
   }
 
   /** Append an entity with initial measurements and no state yet. */
-  private addEntity(archetype: ArchetypeDef, x: number, y: number, homeX: number, homeY: number, inv: Container | null, driven: boolean): Entity {
+  private addEntity(archetype: ArchetypeDef, x: number, y: number, z: number, home: readonly [number, number, number], inv: Container | null, driven: boolean): Entity {
     const id = this.entities.length;
     const m = new Float64Array(this.def.measurements.length);
     archetype.measurements.forEach((idx, k) => (m[idx] = archetype.initial[k]!));
@@ -644,6 +672,7 @@ export class World {
       archetype,
       x,
       y,
+      z,
       m,
       max,
       tags: this.tagSets[archetype.index]!,
@@ -651,6 +680,7 @@ export class World {
       facing: DEFAULT_FACING,
       fromX: x,
       fromY: y,
+      fromZ: z,
       stepTick: 0,
       path: null,
       pathPos: 0,
@@ -659,16 +689,19 @@ export class World {
       inv,
       intent: null,
       lastGoto: null,
-      homeX,
-      homeY,
+      homeX: home[0],
+      homeY: home[1],
+      homeZ: home[2],
       behavior,
       state: behavior ? behavior.initial : -1,
       stateTick: 0,
       planX: 0,
       planY: 0,
+      planZ: 0,
       planTick: -1,
       heardX: 0,
       heardY: 0,
+      heardZ: 0,
       heardTick: -1,
       activity: null,
     };
@@ -680,17 +713,17 @@ export class World {
 
   private addContainer(c: Container): void {
     this.containers.set(c.id, c);
-    const cell = c.y * this.grid.width + c.x;
+    const cell = this.grid.index(c.x, c.y, c.z);
     const ids = this.cellContainers.get(cell);
     if (ids) ids.push(c.id);
     else this.cellContainers.set(cell, [c.id]);
   }
 
   /** The ground pile on a cell, created if missing. */
-  private groundPile(x: number, y: number): Container {
-    let pile = this.containersAt(x, y).find((c) => c.kind === 'ground');
+  private groundPile(x: number, y: number, z: number): Container {
+    let pile = this.containersAt(x, y, z).find((c) => c.kind === 'ground');
     if (!pile) {
-      pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x, y });
+      pile = createContainer(this.nextContainerId++, 'ground', Infinity, { x, y, z });
       this.addContainer(pile);
     }
     return pile;
@@ -702,7 +735,7 @@ export class World {
     const fit = e.inv ? fits(e.inv, weight, count) : 0;
     if (fit > 0) add(e.inv!, item, fit, weight);
     const rest = count - fit;
-    if (rest > 0) add(this.groundPile(e.x, e.y), item, rest, weight);
+    if (rest > 0) add(this.groundPile(e.x, e.y, e.z), item, rest, weight);
     return rest;
   }
 
@@ -710,31 +743,31 @@ export class World {
   private pruneGround(c: Container): void {
     if (c.kind !== 'ground' || c.stacks.length > 0) return;
     this.containers.delete(c.id);
-    const cell = c.y * this.grid.width + c.x;
+    const cell = this.grid.index(c.x, c.y, c.z);
     const ids = this.cellContainers.get(cell)!;
     ids.splice(ids.indexOf(c.id), 1);
     if (ids.length === 0) this.cellContainers.delete(cell);
   }
 
-  /** Tile containers and ground piles on a cell, in id order. */
-  containersAt(x: number, y: number): Container[] {
-    if (!this.grid.inBounds(x, y)) return [];
-    const ids = this.cellContainers.get(y * this.grid.width + x);
+  /** Tile containers and ground piles on a cell (floor `z`, default the player's), in id order. */
+  containersAt(x: number, y: number, z: number = this.player.z): Container[] {
+    if (!this.grid.inBounds(x, y, z)) return [];
+    const ids = this.cellContainers.get(this.grid.index(x, y, z));
     return ids ? ids.map((id) => this.containers.get(id)!) : [];
   }
 
-  /** Every container the player can reach now (its cell or the 8 around it), in id order. */
+  /** Every container the player can reach now (its cell or the 8 around it, on its floor), in id order. */
   reachableContainers(): Container[] {
-    const { x, y } = this.player;
+    const { x, y, z } = this.player;
     const out: Container[] = [];
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.push(...this.containersAt(x + dx, y + dy));
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.push(...this.containersAt(x + dx, y + dy, z));
     return out.sort((a, b) => a.id - b.id);
   }
 
-  /** Room tag indices of a cell (empty outside rooms or out of bounds). */
-  roomTagsAt(x: number, y: number): readonly number[] {
-    if (!this.grid.inBounds(x, y)) return [];
-    return this.def.maps[this.def.start.map]!.rooms.sets[this.roomCell[y * this.grid.width + x]!]!;
+  /** Room tag indices of a cell (floor `z`, default the player's; empty outside rooms or out of bounds). */
+  roomTagsAt(x: number, y: number, z: number = this.player.z): readonly number[] {
+    if (!this.grid.inBounds(x, y, z)) return [];
+    return this.def.maps[this.def.start.map]!.rooms.sets[this.roomCell[this.grid.index(x, y, z)]!]!;
   }
 
   /** Fill tile containers from their distributions, with a dedicated RNG (never `this.rng`). */
@@ -742,12 +775,11 @@ export class World {
     const def = this.def;
     if (def.distributions.length === 0) return;
     const rng = new Rng(mix(seed, LOOT_SALT));
-    const w = this.grid.width;
     const chosen = new Map<number, number>(); // tile * sets + roomSet → table (-1 = none)
     const nsets = def.maps[def.start.map]!.rooms.sets.length;
     for (const c of this.containers.values()) {
       if (c.kind !== 'tile') break; // tile containers come first
-      const set = this.roomCell[c.y * w + c.x]!;
+      const set = this.roomCell[this.grid.index(c.x, c.y, c.z)]!;
       const key = c.tile * nsets + set;
       let table = chosen.get(key);
       if (table === undefined) {
@@ -811,10 +843,9 @@ export class World {
   }
 
   /** Goal tile of an entity's active path, or null. */
-  pathGoal(e: Entity): { x: number; y: number } | null {
+  pathGoal(e: Entity): { x: number; y: number; z: number } | null {
     if (!e.path || e.pathPos >= e.path.length) return null;
-    const i = e.path[e.path.length - 1]!;
-    return { x: i % this.grid.width, y: Math.floor(i / this.grid.width) };
+    return this.grid.cellOf(e.path[e.path.length - 1]!);
   }
 
   /** Bumped on every map edit (`set_tile`), so renderers can redraw changed cells. */
@@ -905,7 +936,7 @@ export class World {
    * Run effects on `e` (= `ctx.self`), in order; measurement effects skip
    * measurements it lacks. `set_tile` replaces the tile at `target`.
    */
-  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number } | null = null): void {
+  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number } | null = null): void {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
@@ -914,7 +945,7 @@ export class World {
         continue;
       }
       if (eff.type === 'set_tile') {
-        if (target) this.grid.setTile(target.y * this.grid.width + target.x, eff.tile);
+        if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
         continue;
       }
       const idx = eff.measurement;
@@ -932,14 +963,16 @@ export class World {
     if (slot) {
       slot.x = source.x;
       slot.y = source.y;
+      slot.z = source.z;
       slot.radius = radius;
       slot.source = source.id;
-    } else this.pending.push({ x: source.x, y: source.y, radius, source: source.id });
+    } else this.pending.push({ x: source.x, y: source.y, z: source.z, radius, source: source.id });
   }
 
   /**
    * Phase 4: every entity except the source hears a noise within its radius
-   * (euclidean, inclusive, walls ignored) and keeps this tick's nearest one
+   * (3D euclidean with one floor = one tile, inclusive, walls and floors
+   * ignored) and keeps this tick's nearest one
    * (ties: the earlier emission). O(noises × entities), no allocation.
    */
   private hear(): void {
@@ -953,7 +986,8 @@ export class World {
         if (n.source === e.id) continue;
         const dx = n.x - e.x;
         const dy = n.y - e.y;
-        const d = dx * dx + dy * dy;
+        const dz = n.z - e.z;
+        const d = dx * dx + dy * dy + dz * dz;
         if (d <= n.radius * n.radius && d < best) {
           best = d;
           pick = i;
@@ -963,6 +997,7 @@ export class World {
       const n = noises[pick]!;
       e.heardX = n.x;
       e.heardY = n.y;
+      e.heardZ = n.z;
       e.heardTick = this.tick;
     }
   }
@@ -1022,12 +1057,13 @@ export class World {
     if (intent?.kind === 'goto') {
       p.intent = null;
       this.pathfinder ??= new Pathfinder(this.grid);
+      const z = intent.z ?? p.z;
       const path = intent.adjacent
-        ? this.pathfinder.findPathAdjacent(p.x, p.y, intent.x, intent.y)
-        : this.pathfinder.findPath(p.x, p.y, intent.x, intent.y);
+        ? this.pathfinder.findPathAdjacent(p.x, p.y, intent.x, intent.y, p.z, z)
+        : this.pathfinder.findPath(p.x, p.y, intent.x, intent.y, p.z, z);
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
-      p.lastGoto = { x: intent.x, y: intent.y, ok: path !== null, tick: this.tick };
+      p.lastGoto = { x: intent.x, y: intent.y, z, ok: path !== null, tick: this.tick };
       p.then = path ? (intent.then ?? null) : null;
       if (!path && intent.then) this.lastAction = this.unreachable(intent.then);
       if (p.then && !p.path) this.arrive(p);
@@ -1038,14 +1074,23 @@ export class World {
 
     if (p.moveCooldown > 0) p.moveCooldown--;
     if (p.moveCooldown > 0) return;
-    const w = this.grid.width;
     let dx: number;
     let dy: number;
     if (p.intent?.kind === 'step') ({ dx, dy } = p.intent);
     else if (p.path) {
-      const next = p.path[p.pathPos]!;
-      dx = (next % w) - p.x;
-      dy = Math.floor(next / w) - p.y;
+      const next = this.grid.cellOf(p.path[p.pathPos]!);
+      if (next.z !== p.z) {
+        // A link step: no turn, facing unchanged.
+        p.pathPos++;
+        if (p.pathPos >= p.path.length) p.path = null;
+        if (!this.climb(p, next.z - p.z)) {
+          p.path = null;
+          p.then = null;
+        } else if (!p.path && p.then) this.arrive(p);
+        return;
+      }
+      dx = next.x - p.x;
+      dy = next.y - p.y;
     } else return;
 
     // Turn toward the step first; the intent and path stay pending meanwhile.
@@ -1136,9 +1181,10 @@ export class World {
       const s = this.actionSources[k]!;
       const stage = isTimed(s) ? 'start' : 'complete';
       if (s.requires.length > 0 && !inv) return fail('no_inventory', stage);
-      const hasXY = a.x !== undefined || a.y !== undefined;
-      if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y)) : hasXY) return fail('invalid_target', stage);
-      this.runner.start(s, p, s.filter ? a.x! : p.x, s.filter ? a.y! : p.y, tick);
+      const hasXY = a.x !== undefined || a.y !== undefined || a.z !== undefined;
+      if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y) && (a.z === undefined || Number.isInteger(a.z))) : hasXY) return fail('invalid_target', stage);
+      if (s.filter) this.runner.start(s, p, a.x!, a.y!, a.z ?? p.z, tick);
+      else this.runner.start(s, p, p.x, p.y, p.z, tick);
       return null;
     }
 
@@ -1149,20 +1195,20 @@ export class World {
       const s = this.recipeSources[k]!;
       const stage = isTimed(s) ? 'start' : 'complete';
       if (!inv) return fail('no_inventory', stage);
-      const hasXY = a.x !== undefined || a.y !== undefined;
+      const hasXY = a.x !== undefined || a.y !== undefined || a.z !== undefined;
       if (!s.filter) {
         if (hasXY) return fail('invalid_target', stage);
-        this.runner.start(s, p, p.x, p.y, tick);
+        this.runner.start(s, p, p.x, p.y, p.z, tick);
         return null;
       }
       if (!hasXY) {
         const at = this.stationCell(s);
         if (!at) return fail('out_of_reach', stage);
-        this.runner.start(s, p, at.x, at.y, tick);
+        this.runner.start(s, p, at.x, at.y, at.z, tick);
         return null;
       }
-      if (!(Number.isInteger(a.x) && Number.isInteger(a.y))) return fail('invalid_target', stage);
-      this.runner.start(s, p, a.x!, a.y!, tick);
+      if (!(Number.isInteger(a.x) && Number.isInteger(a.y) && (a.z === undefined || Number.isInteger(a.z)))) return fail('invalid_target', stage);
+      this.runner.start(s, p, a.x!, a.y!, a.z ?? p.z, tick);
       return null;
     }
 
@@ -1182,7 +1228,7 @@ export class World {
       const s = this.useSources[item];
       if (countOf(inv, item) === 0) return fail('missing');
       if (!s) return fail('cannot_use');
-      this.runner.start(s, p, p.x, p.y, tick);
+      this.runner.start(s, p, p.x, p.y, p.z, tick);
       return null;
     }
 
@@ -1190,13 +1236,13 @@ export class World {
       const n = Math.min(want, countOf(inv, item));
       if (n === 0) return fail('missing');
       remove(inv, item, n, weight);
-      add(this.groundPile(p.x, p.y), item, n, weight);
+      add(this.groundPile(p.x, p.y, p.z), item, n, weight);
       return done(n);
     }
 
     const c = this.containers.get(a.container);
     if (!c || c.kind === 'inventory') return fail('unknown_container');
-    if (Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) > 1) return fail('out_of_reach');
+    if (c.z !== p.z || Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) > 1) return fail('out_of_reach');
     const [from, to] = a.kind === 'take' ? [c, inv] : [inv, c];
     const have = Math.min(want, countOf(from, item));
     if (have === 0) return fail('missing');
@@ -1208,16 +1254,39 @@ export class World {
     return done(n);
   }
 
-  /** Take one step if allowed (the caller has already turned to face it); records the step for rendering. */
+  /** Take one step on the entity's floor if allowed (the caller has already turned to face it); records the step for rendering. */
   private move(e: Entity, dx: number, dy: number): boolean {
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy)) return false;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy, e.z)) return false;
     e.fromX = e.x;
     e.fromY = e.y;
+    e.fromZ = e.z;
     e.stepTick = this.tick + 1;
     e.x += dx;
     e.y += dy;
     e.moveCooldown = e.archetype.ticksPerStep;
     return true;
+  }
+
+  /** Cross the link at the entity's cell one floor in direction `dz` if it is open: one step, no turn. */
+  private climb(e: Entity, dz: number): boolean {
+    if ((dz !== 1 && dz !== -1) || this.grid.link(this.grid.index(e.x, e.y, e.z), dz) < 0) return false;
+    e.fromX = e.x;
+    e.fromY = e.y;
+    e.fromZ = e.z;
+    e.stepTick = this.tick + 1;
+    e.z += dz;
+    e.moveCooldown = e.archetype.ticksPerStep;
+    return true;
+  }
+
+  /**
+   * The goto that crosses the link at the player's cell one floor in
+   * direction `dz` (for the climb keys), or null when there is none.
+   */
+  climbIntent(dz: 1 | -1): GotoIntent | null {
+    const p = this.player;
+    if (this.grid.link(this.grid.index(p.x, p.y, p.z), dz) < 0) return null;
+    return { kind: 'goto', x: p.x, y: p.y, z: p.z + dz };
   }
 
   /** Resolved max of a measurement for an entity (Infinity if unbounded). */
@@ -1265,36 +1334,40 @@ export class World {
         archetype: e.archetype.id,
         x: e.x,
         y: e.y,
+        z: e.z,
         facing: e.facing,
         fromX: e.fromX,
         fromY: e.fromY,
+        fromZ: e.fromZ,
         stepTick: e.stepTick,
         moveCooldown: e.moveCooldown,
-        path: e.path
-          ? [...e.path.subarray(e.pathPos)].map((i): [number, number] => [i % this.grid.width, Math.floor(i / this.grid.width)])
-          : null,
+        path: e.path ? [...e.path.subarray(e.pathPos)].map((i) => this.cellTriple(i)) : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
         statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),
         intent: e.intent,
         lastGoto: e.lastGoto,
-        home: [e.homeX, e.homeY],
+        home: [e.homeX, e.homeY, e.homeZ],
         behavior: e.behavior
-          ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planTick] : null }
+          ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planZ, e.planTick] : null }
           : null,
-        heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, tick: e.heardTick } : null,
+        heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, z: e.heardZ, tick: e.heardTick } : null,
         activity: e.activity ? this.activitySnapshot(e.activity) : null,
         then: e.then,
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
         if (c.kind === 'inventory') out.owner = c.owner;
-        else out.cell = [c.x, c.y];
+        else out.cell = [c.x, c.y, c.z];
         return out;
       }),
-      tiles: [...this.grid.changed]
-        .sort((a, b) => a[0] - b[0])
-        .map(([i, t]): [number, number, string] => [i % this.grid.width, Math.floor(i / this.grid.width), this.def.tiles[t]!.id]),
+      tiles: [...this.grid.changed].sort((a, b) => a[0] - b[0]).map(([i, t]): [number, number, number, string] => [...this.cellTriple(i), this.def.tiles[t]!.id]),
     };
+  }
+
+  /** [x, y, z] of a cell index. */
+  private cellTriple(i: number): [number, number, number] {
+    const { x, y, z } = this.grid.cellOf(i);
+    return [x, y, z];
   }
 
   private activitySnapshot(a: Activity): ActivitySnapshot {
@@ -1306,6 +1379,7 @@ export class World {
       ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
       x: a.x,
       y: a.y,
+      z: a.z,
       startTick: a.startTick,
       endTick: a.endTick,
     };
@@ -1330,10 +1404,10 @@ export class World {
     }
   }
 
-  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y). */
-  private verdict(s: ActivitySource, x: number, y: number, skipReach: boolean): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
+  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y, z). */
+  private verdict(s: ActivitySource, x: number, y: number, z: number, skipReach: boolean): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
     const p = this.player;
-    const reason = this.runner.check(s, p, x, y, skipReach);
+    const reason = this.runner.check(s, p, x, y, z, skipReach);
     if (!reason) return { ok: true };
     if (reason === 'missing') {
       const items = this.def.items;
@@ -1351,7 +1425,7 @@ export class World {
 
   /**
    * Everything the player could start now: every `self` action, every tile
-   * action on each matching cell in reach (row-major), then each inventory
+   * action on each matching cell in reach (on the player's floor, row-major), then each inventory
    * stack with a `use`. Entries that match but fail on items, the inventory
    * or `when` are included with `ok: false`. Pure: `random` in a `when` draws
    * from a throwaway copy of the RNG, so `hash()` never changes.
@@ -1362,34 +1436,42 @@ export class World {
       const out: AvailableAction[] = [];
       for (const s of this.actionSources) {
         if (s.filter) continue;
-        out.push({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
+        out.push({ kind: 'act', action: this.def.actions[s.action]!.id, label: s.label, ...this.verdict(s, p.x, p.y, p.z, false) });
       }
-      const { grid } = this;
+      const z = p.z;
       for (const s of this.actionSources) {
         if (!s.filter) continue;
         for (let y = p.y - 1; y <= p.y + 1; y++) {
           for (let x = p.x - 1; x <= p.x + 1; x++) {
-            if (!grid.inBounds(x, y) || s.filter[grid.cells[y * grid.width + x]!] !== 1) continue;
-            const v = this.verdict(s, x, y, false);
+            if (!this.matches(s, x, y, z)) continue;
+            const v = this.verdict(s, x, y, z, false);
             if (v.reason === 'out_of_reach' || v.reason === 'invalid_target') continue;
-            out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, label: s.label, ...v });
+            out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, z, label: s.label, ...v });
           }
         }
       }
       for (const st of p.inv?.stacks ?? []) {
         const s = this.useSources[st.item];
-        if (s) out.push({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label, ...this.verdict(s, p.x, p.y, false) });
+        if (s) out.push({ kind: 'use', item: this.def.items[st.item]!.id, label: s.label, ...this.verdict(s, p.x, p.y, p.z, false) });
       }
       return out;
     });
   }
 
-  /** First cell in the player's reach (row-major) matching a station source's filter, or null. */
-  private stationCell(s: ActivitySource): { x: number; y: number } | null {
-    const { grid, player: p } = this;
+  /** Whether (x, y, z) is in bounds and holds a tile matching a tile-targeted source's filter. */
+  private matches(s: ActivitySource, x: number, y: number, z: number): boolean {
+    const { grid } = this;
+    if (!grid.inBounds(x, y, z)) return false;
+    const t = grid.cells[grid.index(x, y, z)]!;
+    return t !== EMPTY_TILE && s.filter![t] === 1;
+  }
+
+  /** First cell in the player's reach (its floor, row-major) matching a station source's filter, or null. */
+  private stationCell(s: ActivitySource): { x: number; y: number; z: number } | null {
+    const p = this.player;
     for (let y = p.y - 1; y <= p.y + 1; y++) {
       for (let x = p.x - 1; x <= p.x + 1; x++) {
-        if (grid.inBounds(x, y) && s.filter![grid.cells[y * grid.width + x]!] === 1) return { x, y };
+        if (this.matches(s, x, y, p.z)) return { x, y, z: p.z };
       }
     }
     return null;
@@ -1407,42 +1489,45 @@ export class World {
       this.recipeSources.map((s): AvailableRecipe => {
         const r = this.def.recipes[s.recipe]!;
         const base = { recipe: r.id, label: r.label, verb: r.verb, category: r.category };
-        if (!s.filter) return { ...base, ...this.verdict(s, p.x, p.y, false) };
+        if (!s.filter) return { ...base, ...this.verdict(s, p.x, p.y, p.z, false) };
         const at = this.stationCell(s);
         if (!at) return { ...base, ok: false, reason: p.inv ? 'out_of_reach' : 'no_inventory' };
-        return { ...base, ...this.verdict(s, at.x, at.y, false), station: at };
+        return { ...base, ...this.verdict(s, at.x, at.y, at.z, false), station: at };
       }),
     );
   }
 
   /**
-   * What the player can choose at a cell, ignoring reach: the tile actions
-   * whose filter matches the cell's tile (definition order), the recipes
-   * whose station matches it (definition order), `open` and
-   * (when not empty) `take_all` per container on the cell, the `self`
-   * actions on the player's own cell, then `walk` on any other walkable
-   * cell. `[]` out of bounds or once the game has ended. Pure, like
+   * What the player can choose at a cell (floor `z`, default the player's),
+   * ignoring reach: the tile actions whose filter matches the cell's tile
+   * (definition order), the recipes whose station matches it (definition
+   * order), `open` and (when not empty) `take_all` per container on the
+   * cell, `Go up` / `Go down` when the cell has an open link that way, the
+   * `self` actions on the player's own cell, then `walk` on any other
+   * walkable cell. `[]` out of bounds or once the game has ended. Pure, like
    * `availableActions`.
    */
-  interactionsAt(x: number, y: number): Interaction[] {
+  interactionsAt(x: number, y: number, z: number = this.player.z): Interaction[] {
     const { grid, player: p } = this;
-    if (!grid.inBounds(x, y) || this.ended) return [];
-    const inReach = Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1;
-    const own = x === p.x && y === p.y;
+    if (!grid.inBounds(x, y, z) || this.ended) return [];
+    const inReach = z === p.z && Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1;
+    const own = x === p.x && y === p.y && z === p.z;
     return this.pure(() => {
       const out: Interaction[] = [];
-      const tile = grid.cells[y * grid.width + x]!;
-      for (const s of this.actionSources) {
-        if (!s.filter || s.filter[tile] !== 1) continue;
-        const id = this.def.actions[s.action]!.id;
-        out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id, x, y }, inReach });
+      const tile = grid.cells[grid.index(x, y, z)]!;
+      if (tile !== EMPTY_TILE) {
+        for (const s of this.actionSources) {
+          if (!s.filter || s.filter[tile] !== 1) continue;
+          const id = this.def.actions[s.action]!.id;
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id, x, y, z }, inReach });
+        }
+        for (const s of this.recipeSources) {
+          if (!s.filter || s.filter[tile] !== 1) continue;
+          const id = this.def.recipes[s.recipe]!.id;
+          out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, z, true), action: { kind: 'craft', recipe: id, x, y, z }, inReach });
+        }
       }
-      for (const s of this.recipeSources) {
-        if (!s.filter || s.filter[tile] !== 1) continue;
-        const id = this.def.recipes[s.recipe]!.id;
-        out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, true), action: { kind: 'craft', recipe: id, x, y }, inReach });
-      }
-      for (const c of this.containersAt(x, y)) {
+      for (const c of this.containersAt(x, y, z)) {
         const label = c.kind === 'tile' ? this.def.tiles[c.tile]!.label : GROUND_LABEL;
         out.push({ id: `open:${c.id}`, label: `Open ${label}`, kind: 'open', ok: true, container: c.id, inReach });
         if (c.stacks.length === 0) continue;
@@ -1452,13 +1537,19 @@ export class World {
         const base = { id: `take_all:${c.id}`, label: `Take all from ${label}`, kind: 'take_all' as const, action: actions[0]!, actions, container: c.id, inReach };
         out.push(reason ? { ...base, ok: false, reason } : { ...base, ok: true });
       }
+      const i = grid.index(x, y, z);
+      for (const dz of [1, -1] as const) {
+        if (grid.link(i, dz) < 0) continue;
+        const intent: GotoIntent = { kind: 'goto', x, y, z: z + dz };
+        out.push({ id: dz > 0 ? 'climb:up' : 'climb:down', label: dz > 0 ? 'Go up' : 'Go down', kind: 'climb', ok: true, intent, inReach: false });
+      }
       if (own) {
         for (const s of this.actionSources) {
           if (s.filter) continue;
           const id = this.def.actions[s.action]!.id;
-          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, true), action: { kind: 'act', action: id }, inReach: true });
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id }, inReach: true });
         }
-      } else if (grid.walkable(x, y)) {
+      } else if (grid.walkable(x, y, z)) {
         out.push({ id: 'walk', label: 'Walk here', kind: 'walk', ok: true, inReach: false });
       }
       return out;
@@ -1474,21 +1565,23 @@ export class World {
    * action on arrival.
    */
   approachIntent(action: Action): GotoIntent | null {
+    const p = this.player;
     let x: number;
     let y: number;
+    let z: number;
     if (action.kind === 'take' || action.kind === 'put') {
       const c = this.containers.get(action.container);
       if (!c || c.kind === 'inventory') return null;
-      ({ x, y } = c);
+      ({ x, y, z } = c);
     } else if (action.kind === 'act' || action.kind === 'craft') {
       const s = action.kind === 'act' ? this.actionSources[this.def.ids.actions[action.action] ?? -1] : this.recipeSources[this.def.ids.recipes[action.recipe] ?? -1];
       if (!s?.filter || !Number.isInteger(action.x) || !Number.isInteger(action.y)) return null;
       x = action.x!;
       y = action.y!;
+      z = action.z ?? p.z;
     } else return null;
-    const p = this.player;
-    if (Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1) return null;
-    return { kind: 'goto', x, y, adjacent: !this.grid.walkable(x, y), then: action };
+    if (z === p.z && Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1) return null;
+    return { kind: 'goto', x, y, z, adjacent: !this.grid.walkable(x, y, z), then: action };
   }
 
   /** The entity's activity (the player's by default): its progress text and how far along it is, or null. */

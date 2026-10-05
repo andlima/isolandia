@@ -13,7 +13,7 @@ export class ContextMenu {
   private buttons: HTMLButtonElement[] = [];
   private selected = -1;
   /** Target cell while open, or null. */
-  target: { x: number; y: number } | null = null;
+  target: { x: number; y: number; z: number } | null = null;
   /** Set by a pointer press outside the open menu (which closes it): the shell skips that press's click. */
   dismissed = false;
   private readonly onPointerDown = (ev: PointerEvent) => {
@@ -53,16 +53,16 @@ export class ContextMenu {
     return this.target !== null;
   }
 
-  /** Open the menu for cell (x, y) at screen point (sx, sy); replaces any open menu. */
-  open(x: number, y: number, sx: number, sy: number): void {
+  /** Open the menu for cell (x, y) on floor z at screen point (sx, sy); replaces any open menu. */
+  open(x: number, y: number, z: number, sx: number, sy: number): void {
     this.close();
     if (this.world.ended) return;
-    this.items = contextMenu(this.world, x, y);
+    this.items = contextMenu(this.world, x, y, z);
     if (this.items.length === 0) return;
-    this.target = { x, y };
+    this.target = { x, y, z };
     const title = document.createElement('div');
     title.className = 'panel-title';
-    title.textContent = menuTitle(this.world, x, y);
+    title.textContent = menuTitle(this.world, x, y, z);
     this.buttons = this.items.map((it) => {
       const b = document.createElement('button');
       b.className = 'menu-item';

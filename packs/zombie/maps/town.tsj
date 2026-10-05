@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "town",
   "spacing": 0,
-  "tilecount": 17,
+  "tilecount": 21,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -36,6 +36,33 @@
     },
     {
       "id": 2,
+      "image": "../../std/assets/landing.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:landing"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "image": "../../std/assets/stairs_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "w"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:stairs"
+        }
+      ]
+    },
+    {
+      "id": 4,
       "image": "../../std/assets/wall.svg",
       "properties": [
         {
@@ -46,7 +73,7 @@
       ]
     },
     {
-      "id": 3,
+      "id": 5,
       "image": "../assets/bed_s.svg",
       "properties": [
         {
@@ -57,7 +84,23 @@
       ]
     },
     {
-      "id": 4,
+      "id": 6,
+      "image": "../assets/bed_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "bed"
+        }
+      ]
+    },
+    {
+      "id": 7,
       "image": "../assets/cabinet_s.svg",
       "properties": [
         {
@@ -68,7 +111,7 @@
       ]
     },
     {
-      "id": 5,
+      "id": 8,
       "image": "../assets/car_s.svg",
       "properties": [
         {
@@ -84,7 +127,7 @@
       ]
     },
     {
-      "id": 6,
+      "id": 9,
       "image": "../assets/car_w.svg",
       "properties": [
         {
@@ -100,7 +143,7 @@
       ]
     },
     {
-      "id": 7,
+      "id": 10,
       "image": "../assets/crate.svg",
       "properties": [
         {
@@ -111,7 +154,7 @@
       ]
     },
     {
-      "id": 8,
+      "id": 11,
       "image": "../assets/cupboard_s.svg",
       "properties": [
         {
@@ -122,7 +165,7 @@
       ]
     },
     {
-      "id": 9,
+      "id": 12,
       "image": "../assets/dresser_s.svg",
       "properties": [
         {
@@ -133,7 +176,23 @@
       ]
     },
     {
-      "id": 10,
+      "id": 13,
+      "image": "../assets/dresser_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "dresser"
+        }
+      ]
+    },
+    {
+      "id": 14,
       "image": "../assets/fridge_w.svg",
       "properties": [
         {
@@ -149,7 +208,7 @@
       ]
     },
     {
-      "id": 11,
+      "id": 15,
       "image": "../assets/fridge_s.svg",
       "properties": [
         {
@@ -165,7 +224,7 @@
       ]
     },
     {
-      "id": 12,
+      "id": 16,
       "image": "../assets/glass.svg",
       "properties": [
         {
@@ -176,7 +235,7 @@
       ]
     },
     {
-      "id": 13,
+      "id": 17,
       "image": "../assets/grass.svg",
       "properties": [
         {
@@ -187,7 +246,7 @@
       ]
     },
     {
-      "id": 14,
+      "id": 18,
       "image": "../assets/road.svg",
       "properties": [
         {
@@ -198,7 +257,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 19,
       "image": "../assets/stove.svg",
       "properties": [
         {
@@ -209,7 +268,7 @@
       ]
     },
     {
-      "id": 16,
+      "id": 20,
       "image": "../assets/window.svg",
       "properties": [
         {

@@ -228,16 +228,16 @@ test('craft: start checks in order', () => {
   assert.equal(w.lastAction!.recipe, 't:nope');
   // Station recipes: no oven in reach from (3, 1).
   assert.equal(reason({ kind: 'craft', recipe: 't:stew' }), 'out_of_reach');
-  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 3, y: 3 }), 'out_of_reach');
-  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 1.5, y: 1 }), 'invalid_target');
+  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 3, y: 3, z: 0 }), 'out_of_reach');
+  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 1.5, y: 1, z: 0 }), 'invalid_target');
   assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 1 }), 'invalid_target');
   moveTo(w.player, 2, 2);
-  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 2, y: 1 }), 'invalid_target');
+  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 2, y: 1, z: 0 }), 'invalid_target');
   // Recipes without a station refuse a cell.
-  assert.equal(reason({ kind: 'craft', recipe: 't:salad', x: 2, y: 2 }), 'invalid_target');
+  assert.equal(reason({ kind: 'craft', recipe: 't:salad', x: 2, y: 2, z: 0 }), 'invalid_target');
   // Items, then `when`.
   w.player.inv!.stacks.splice(0, 1); // the knife
-  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 1, y: 1 }), 'missing');
+  assert.equal(reason({ kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 }), 'missing');
   assert.equal(w.lastAction!.stage, 'start');
   assert.equal(reason({ kind: 'craft', recipe: 't:picky' }), 'cannot_act');
   assert.equal(w.lastAction!.stage, 'complete');
@@ -255,7 +255,7 @@ test('craft: station given by x/y, auto-picked in row-major order, or out of rea
   w.queueAction({ kind: 'craft', recipe: 't:stew' });
   w.step();
   assert.deepEqual([w.player.activity!.x, w.player.activity!.y], [1, 1]);
-  w.queueAction({ kind: 'craft', recipe: 't:stew', x: 3, y: 3 });
+  w.queueAction({ kind: 'craft', recipe: 't:stew', x: 3, y: 3, z: 0 });
   w.step();
   assert.deepEqual([w.player.activity!.x, w.player.activity!.y], [3, 3]);
   moveTo(w.player, 4, 2); // only (3, 3)
@@ -290,11 +290,11 @@ test('craft: a 0 s recipe completes at once with a single complete record', () =
 test('craft: a 2 s recipe completes 20 ticks after it starts; snapshot and hash cover it', () => {
   const w = world();
   moveTo(w.player, 2, 2);
-  w.queueAction({ kind: 'craft', recipe: 't:stew', x: 1, y: 1 });
+  w.queueAction({ kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 });
   w.step();
   const start = w.lastAction!;
   assert.deepEqual([start.kind, start.recipe, start.stage, start.ok], ['craft', 't:stew', 'start', true]);
-  assert.deepEqual(w.snapshot().entities[0]!.activity, { kind: 'craft', recipe: 't:stew', x: 1, y: 1, startTick: 0, endTick: 20 });
+  assert.deepEqual(w.snapshot().entities[0]!.activity, { kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0, startTick: 0, endTick: 20 });
   assert.equal(hudModel(w).activity!.label, 'Cook: Stew');
   assert.equal(hudModel(w).lastAction, 'You start: Cook: Stew.');
   steps(w, 19);
@@ -310,7 +310,7 @@ test('craft: a 2 s recipe completes 20 ticks after it starts; snapshot and hash 
   // Determinism: same intents ⇒ same hash.
   const again = world();
   moveTo(again.player, 2, 2);
-  again.queueAction({ kind: 'craft', recipe: 't:stew', x: 1, y: 1 });
+  again.queueAction({ kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 });
   steps(again, 21);
   assert.equal(again.hash(), w.hash());
 });
@@ -415,7 +415,7 @@ test('craft: action texts for failures', () => {
   };
   assert.equal(text({ kind: 'craft', recipe: 't:nope' }), 'Unknown recipe t:nope');
   assert.equal(text({ kind: 'craft', recipe: 't:stew' }), 'You need to be at a Oven.');
-  assert.equal(text({ kind: 'craft', recipe: 't:salad', x: 1, y: 1 }), "You can't craft that here.");
+  assert.equal(text({ kind: 'craft', recipe: 't:salad', x: 1, y: 1, z: 0 }), "You can't craft that here.");
   assert.equal(text({ kind: 'craft', recipe: 't:picky' }), 'Not hungry enough');
   w.player.inv!.stacks.length = 0;
   w.player.inv!.load = 0;
@@ -436,7 +436,7 @@ test('availableRecipes: every recipe in definition order; station in reach; pure
   assert.deepEqual(far[4], { recipe: 't:picky', label: 'Picky', verb: 'Craft', category: 'General', ok: false, reason: 'cannot_act', unavailable: 'Not hungry enough' });
   moveTo(w.player, 2, 2);
   const near = w.availableRecipes();
-  assert.deepEqual(near[0], { recipe: 't:stew', label: 'Stew', verb: 'Cook', category: 'Kitchen', ok: true, station: { x: 1, y: 1 } });
+  assert.deepEqual(near[0], { recipe: 't:stew', label: 'Stew', verb: 'Cook', category: 'Kitchen', ok: true, station: { x: 1, y: 1, z: 0 } });
   w.player.inv!.stacks.find((s) => s.item === w.def.ids.items['t:meat'])!.count = 1;
   assert.deepEqual(near[3]!.ok, true);
   assert.deepEqual(w.availableRecipes()[3], {
@@ -447,7 +447,7 @@ test('availableRecipes: every recipe in definition order; station in reach; pure
     ok: false,
     reason: 'missing',
     missing: [{ item: 't:meat', label: 'Meat', count: 1 }],
-    station: { x: 1, y: 1 },
+    station: { x: 1, y: 1, z: 0 },
   });
   // Pure: the `random` in lucky's `when` never moves the world RNG.
   const hash = w.hash();
@@ -471,7 +471,7 @@ test('interactionsAt: station recipes after tile actions and before containers; 
       [`open:${at[3]!.container}`, 'Open Oven', 'open', true, false],
     ],
   );
-  assert.deepEqual(at[1]!.action, { kind: 'craft', recipe: 't:stew', x: 1, y: 1 });
+  assert.deepEqual(at[1]!.action, { kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 });
   // Recipes without a station are never listed per cell.
   const own = w.interactionsAt(w.player.x, w.player.y);
   assert.ok(!own.some((e) => e.kind === 'craft'));
@@ -487,11 +487,11 @@ test('interactionsAt: station recipes after tile actions and before containers; 
 
 test('approachIntent: a station recipe from afar walks up and crafts on arrival', () => {
   const w = world();
-  const act: Action = { kind: 'craft', recipe: 't:stew', x: 1, y: 1 };
-  assert.deepEqual(w.approachIntent(act), { kind: 'goto', x: 1, y: 1, adjacent: true, then: act });
+  const act: Action = { kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 };
+  assert.deepEqual(w.approachIntent(act), { kind: 'goto', x: 1, y: 1, z: 0, adjacent: true, then: act });
   assert.equal(w.approachIntent({ kind: 'craft', recipe: 't:salad' }), null);
   assert.equal(w.approachIntent({ kind: 'craft', recipe: 't:stew' }), null);
-  assert.equal(w.approachIntent({ kind: 'craft', recipe: 't:nope', x: 1, y: 1 }), null);
+  assert.equal(w.approachIntent({ kind: 'craft', recipe: 't:nope', x: 1, y: 1, z: 0 }), null);
   moveTo(w.player, 2, 2);
   assert.equal(w.approachIntent(act), null);
 });
@@ -527,7 +527,7 @@ test('crafting panel: grouped by category, inputs, tools, station and hints', ()
   // In reach: Craft queues the recipe at the chosen station.
   moveTo(w.player, 4, 2);
   const near = craftingView(w, false).groups[0]!.rows[0]!.craft;
-  assert.deepEqual(near, { label: 'Craft', actions: [{ kind: 'craft', recipe: 't:stew', x: 3, y: 3 }], disabled: false });
+  assert.deepEqual(near, { label: 'Craft', actions: [{ kind: 'craft', recipe: 't:stew', x: 3, y: 3, z: 0 }], disabled: false });
   assert.equal(craftingView(w, true).groups[0]!.rows[0]!.craft.disabled, true);
   w.player.inv!.stacks.find((s) => s.item === w.def.ids.items['t:meat'])!.count = 0;
   assert.equal(recipeHint(w, w.availableRecipes()[3]!), 'Needs: 2× Meat');
@@ -537,8 +537,8 @@ test('crafting panel: grouped by category, inputs, tools, station and hints', ()
 test('context menu: station recipes from afar walk there; in reach they start at once', () => {
   const w = world();
   const far = contextMenu(w, 1, 1);
-  const act: Action = { kind: 'craft', recipe: 't:stew', x: 1, y: 1 };
-  assert.deepEqual(far[0], { label: 'Cook: Stew', disabled: false, run: { intent: { kind: 'goto', x: 1, y: 1, adjacent: true, then: act } } });
+  const act: Action = { kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 };
+  assert.deepEqual(far[0], { label: 'Cook: Stew', disabled: false, run: { intent: { kind: 'goto', x: 1, y: 1, z: 0, adjacent: true, then: act } } });
   runMenuItem(w, far[0]!);
   for (let i = 0; i < 200 && !w.player.activity; i++) w.step();
   assert.equal(w.player.activity?.source.recipe, w.def.ids.recipes['t:stew']);
@@ -580,7 +580,7 @@ test('ascii: c lists the ok recipes, 1-9 craft; with none, a few blocked ones wi
   const w2 = world();
   moveTo(w2.player, 2, 2);
   const m2 = craftMenu(w2);
-  assert.deepEqual(m2.entries[0]!.actions, [{ kind: 'craft', recipe: 't:stew', x: 1, y: 1 }]);
+  assert.deepEqual(m2.entries[0]!.actions, [{ kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 }]);
 });
 
 // ── Scenarios ───────────────────────────────────────────────────────────────
@@ -657,9 +657,9 @@ test('zombie: the stoves keep the kitchens walkable and every container reachabl
   for (const c of w.containers.values()) {
     if (c.kind !== 'tile') continue;
     w.player.path = null;
-    w.queueIntent({ kind: 'goto', x: c.x, y: c.y, adjacent: !w.grid.walkable(c.x, c.y) });
+    w.queueIntent({ kind: 'goto', x: c.x, y: c.y, z: c.z, adjacent: !w.grid.walkable(c.x, c.y, c.z) });
     w.step();
-    assert.ok(w.lastGoto!.ok, `container at ${c.x},${c.y} is unreachable`);
+    assert.ok(w.lastGoto!.ok, `container at ${c.x},${c.y},${c.z} is unreachable`);
   }
   for (const [x, y] of stoves) {
     w.queueIntent({ kind: 'goto', x, y, adjacent: true });

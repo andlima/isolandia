@@ -13,3 +13,7 @@
   facing `n` against a south wall.
 - **Spawns:** shamblers on the road and in the yards, crawlers inside two
   of the houses; the player starts on the road.
+- **Floors:** two `floor N` groups. The north-east house has stairs at the
+  east end of its hallway, up to a second-floor bedroom (room `bedroom`,
+  dresser, bed and a window) with one shambler. The rest of floor 1 is
+  empty, so the street shows through.

@@ -7,7 +7,7 @@
  * only at completion, after every check has passed again.
  */
 
-import { secondsToTicks, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
+import { EMPTY_TILE, secondsToTicks, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
 import type { Compiled, ExprContext } from '../expr/index.ts';
 import { countOf, type Container } from './containers.ts';
 import type { Grid } from './grid.ts';
@@ -58,6 +58,7 @@ export interface Activity {
   /** Target cell (the actor's cell at start for `self` targets and item uses). */
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly startTick: number;
   /** Tick whose work step completes the activity. */
   readonly endTick: number;
@@ -73,7 +74,7 @@ export interface ActivityHost {
   readonly entities: readonly Entity[];
   readonly ticksPerSecond: number;
   /** Run effects on `e` (= `ctx.self`); `set_tile` acts on `target`. */
-  runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number } | null): void;
+  runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number } | null): void;
   /** Remove up to `count` units from `inv`; returns units removed. */
   removeItem(inv: Container, item: number, count: number): number;
   /** Add `count` units to `e`'s inventory, the rest to the ground pile on its cell; returns units dropped. */
@@ -175,17 +176,18 @@ export function isTimed(s: ActivitySource): boolean {
 
 export class ActivityRunner {
   /** The target cell `tile` is bound to while a tile-targeted source is evaluated. */
-  private readonly point = { x: 0, y: 0 };
+  private readonly point = { x: 0, y: 0, z: 0 };
 
   constructor(private readonly host: ActivityHost) {}
 
   /** Point `ctx.self` at the actor and `tile` at the target cell (tile targets only). */
-  private bind(s: ActivitySource, e: Entity, x: number, y: number): ExprContext {
+  private bind(s: ActivitySource, e: Entity, x: number, y: number, z: number): ExprContext {
     const ctx = this.host.ctx;
     ctx.self = e;
     if (s.filter) {
       this.point.x = x;
       this.point.y = y;
+      this.point.z = z;
       ctx.target = this.point;
     } else ctx.target = null;
     return ctx;
@@ -197,22 +199,24 @@ export class ActivityRunner {
 
   /**
    * Checks 2–5 (inventory, reach and filter, held items, `when`) for `e`
-   * acting on (x, y). Returns the first failure, or null when all pass.
-   * `skipReach` leaves out the reach check (the cell must still be in bounds).
+   * acting on (x, y, z). Returns the first failure, or null when all pass.
+   * Reach is the same floor and Chebyshev ≤ 1 on (x, y). `skipReach` leaves
+   * out the reach check (the cell must still be in bounds). An empty cell
+   * matches no filter.
    */
-  check(s: ActivitySource, e: Entity, x: number, y: number, skipReach = false): ActionFailure | null {
+  check(s: ActivitySource, e: Entity, x: number, y: number, z: number, skipReach = false): ActionFailure | null {
     if (s.requires.length > 0 && !e.inv) return 'no_inventory';
     if (s.filter) {
       const { grid } = this.host;
-      if (!grid.inBounds(x, y) || (!skipReach && Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) > 1)) return 'out_of_reach';
-      const tile = grid.cells[y * grid.width + x]!;
-      if (s.filter[tile] !== 1) return 'invalid_target';
+      if (!grid.inBounds(x, y, z) || (!skipReach && (z !== e.z || Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) > 1))) return 'out_of_reach';
+      const tile = grid.cells[grid.index(x, y, z)]!;
+      if (tile === EMPTY_TILE || s.filter[tile] !== 1) return 'invalid_target';
       if (s.setTiles.length > 0 && this.host.tiles[tile]!.container) return 'invalid_target';
     }
     const inv = e.inv;
     if (inv) for (const r of s.requires) if (countOf(inv, r.item) < r.count) return 'missing';
     if (s.whenFn) {
-      const ok = s.whenFn(this.bind(s, e, x, y));
+      const ok = s.whenFn(this.bind(s, e, x, y, z));
       this.unbind();
       if (!ok) return s.whenFailure;
     }
@@ -220,20 +224,20 @@ export class ActivityRunner {
   }
 
   /**
-   * Start `s` for `e` on (x, y) at `tick`: check, evaluate the duration once,
+   * Start `s` for `e` on (x, y, z) at `tick`: check, evaluate the duration once,
    * then complete at once (0 ticks) or begin an activity, which clears the
    * entity's path (and its pending `then`) and pending intent. Records the outcome.
    */
-  start(s: ActivitySource, e: Entity, x: number, y: number, tick: number): void {
-    const failure = this.check(s, e, x, y);
+  start(s: ActivitySource, e: Entity, x: number, y: number, z: number, tick: number): void {
+    const failure = this.check(s, e, x, y, z);
     if (failure) return this.host.record(e, s, isTimed(s) ? 'start' : 'complete', false, failure, 0, 0);
     let n = s.duration.ticks;
     if (s.duration.fn) {
-      n = secondsToTicks(Number(s.duration.fn(this.bind(s, e, x, y))), this.host.ticksPerSecond);
+      n = secondsToTicks(Number(s.duration.fn(this.bind(s, e, x, y, z))), this.host.ticksPerSecond);
       this.unbind();
     }
-    if (n === 0) return this.finish(e, s, x, y);
-    e.activity = { source: s, action: s.action, x, y, startTick: tick, endTick: tick + n };
+    if (n === 0) return this.finish(e, s, x, y, z);
+    e.activity = { source: s, action: s.action, x, y, z, startTick: tick, endTick: tick + n };
     e.path = null;
     e.pathPos = 0;
     e.then = null;
@@ -258,23 +262,23 @@ export class ActivityRunner {
     if (!a || tick <= a.startTick) return;
     const s = a.source;
     if (s.interruptFn) {
-      const hit = s.interruptFn(this.bind(s, e, a.x, a.y));
+      const hit = s.interruptFn(this.bind(s, e, a.x, a.y, a.z));
       this.unbind();
       if (hit) return this.end(e, 'interrupted');
     }
     if (tick < a.endTick) return;
     e.activity = null;
-    const failure = this.check(s, e, a.x, a.y);
+    const failure = this.check(s, e, a.x, a.y, a.z);
     if (failure) return this.host.record(e, s, 'complete', false, failure, 0, 0);
-    this.finish(e, s, a.x, a.y);
+    this.finish(e, s, a.x, a.y, a.z);
   }
 
   /** Completion after the checks: `occupied`, then the source's completion steps in order. */
-  private finish(e: Entity, s: ActivitySource, x: number, y: number): void {
+  private finish(e: Entity, s: ActivitySource, x: number, y: number, z: number): void {
     const { tiles, entities } = this.host;
     for (const t of s.setTiles) {
       if (tiles[t]!.walkable) continue;
-      for (const o of entities) if (o.x === x && o.y === y) return this.host.record(e, s, 'complete', false, 'occupied', 0, 0);
+      for (const o of entities) if (o.x === x && o.y === y && o.z === z) return this.host.record(e, s, 'complete', false, 'occupied', 0, 0);
     }
     let consumed = 0;
     let produced = 0;
@@ -282,7 +286,7 @@ export class ActivityRunner {
     const inv = e.inv;
     for (const step of s.completion) {
       if (step === 'effects') {
-        this.bind(s, e, x, y);
+        this.bind(s, e, x, y, z);
         this.host.runEffects(e, s.effects, s.filter ? this.point : null);
         this.unbind();
       } else if (step === 'consume') {

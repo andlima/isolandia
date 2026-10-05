@@ -302,10 +302,10 @@ test('actions: a 6 s action completes exactly 60 ticks after it starts', () => {
   moveTo(w.player, 4, 1);
   steps(w, 100);
   const before = food(w);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   w.step(); // tick 100
   assert.deepEqual(w.lastAction, { kind: 'act', item: '', action: 't:board_up', moved: 0, ok: true, stage: 'start', tick: 100 });
-  assert.deepEqual(w.snapshot().entities[0]!.activity, { kind: 'act', action: 't:board_up', x: 5, y: 1, startTick: 100, endTick: 160 });
+  assert.deepEqual(w.snapshot().entities[0]!.activity, { kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0, startTick: 100, endTick: 160 });
   assert.equal(hudModel(w).activity!.text, progressText('Boarding up', 1 / 60));
   steps(w, 59); // ticks 101..159
   assert.equal(cell(w, 5, 1), 't:pane');
@@ -355,25 +355,25 @@ test('actions: start checks in order', () => {
     return w.lastAction!.reason ?? 'ok';
   };
   assert.equal(reason({ kind: 'act', action: 't:nope' }), 'unknown_action');
-  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 1 }), 'out_of_reach'); // (3,1) → (5,1)
+  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 }), 'out_of_reach'); // (3,1) → (5,1)
   assert.equal(reason({ kind: 'act', action: 't:board_up' }), 'invalid_target'); // x/y required
-  assert.equal(reason({ kind: 'act', action: 't:nap', x: 3, y: 1 }), 'invalid_target'); // forbidden for self
-  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 4, y: 1 }), 'invalid_target'); // floor
+  assert.equal(reason({ kind: 'act', action: 't:nap', x: 3, y: 1, z: 0 }), 'invalid_target'); // forbidden for self
+  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 4, y: 1, z: 0 }), 'invalid_target'); // floor
   moveTo(w.player, 4, 1);
-  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 2 }), 'invalid_target'); // wall
+  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 2, z: 0 }), 'invalid_target'); // wall
   assert.equal(reason({ kind: 'act', action: 't:wait_soft' }), 'cannot_act');
   const inv = w.player.inv!;
   inv.stacks.splice(0, inv.stacks.length);
-  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 1 }), 'missing');
+  assert.equal(reason({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 }), 'missing');
   assert.equal(w.lastAction!.stage, 'start');
   assert.equal(reason({ kind: 'act', action: 't:hum' }), 'ok');
 
   const bare = World.create(loadPacksOrThrow([fixture({ ...FILES, 'archetypes.yaml': FILES['archetypes.yaml']!.replace(/    inventory: .*\n/, '') })]), 1);
   moveTo(bare.player, 4, 1);
-  bare.queueAction({ kind: 'act', action: 't:board_up', x: 9, y: 9 });
+  bare.queueAction({ kind: 'act', action: 't:board_up', x: 9, y: 9, z: 0 });
   bare.step();
   assert.equal(bare.lastAction!.reason, 'no_inventory', 'inventory is checked before reach');
-  bare.queueAction({ kind: 'act', action: 't:smash', x: 5, y: 1 });
+  bare.queueAction({ kind: 'act', action: 't:smash', x: 5, y: 1, z: 0 });
   bare.step();
   assert.equal(bare.lastAction!.ok, true, 'an action without items needs no inventory');
 });
@@ -381,10 +381,10 @@ test('actions: start checks in order', () => {
 test('actions: starting clears the path and pending intent', () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  w.queueIntent({ kind: 'goto', x: 4, y: 3 });
+  w.queueIntent({ kind: 'goto', x: 4, y: 3, z: 0 });
   w.step();
   assert.ok(w.player.path);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   w.step();
   assert.ok(w.player.activity);
   assert.equal(w.player.path, null);
@@ -398,10 +398,10 @@ test('actions: a step, a goto or a new action cancels the activity; nothing is c
   for (const cancel of ['step', 'goto', 'action'] as const) {
     const w = world();
     moveTo(w.player, 4, 1);
-    w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+    w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
     steps(w, 10);
     if (cancel === 'step') w.queueIntent({ kind: 'step', dx: -1, dy: 0 });
-    if (cancel === 'goto') w.queueIntent({ kind: 'goto', x: 1, y: 1 });
+    if (cancel === 'goto') w.queueIntent({ kind: 'goto', x: 1, y: 1, z: 0 });
     if (cancel === 'action') w.queueAction({ kind: 'drop', item: 't:saw' });
     w.step(); // tick 10
     assert.equal(w.player.activity, null, cancel);
@@ -416,13 +416,13 @@ test('actions: a step, a goto or a new action cancels the activity; nothing is c
 test('actions: the last activity started in a tick wins; a queued intent then action in one frame is shell-independent', () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   w.queueAction({ kind: 'act', action: 't:nap' });
   w.step();
   assert.equal(w.player.activity!.action, w.def.ids.actions['t:nap']);
   // Intent and action queued in the same frame: the intent is applied first (cancelling), then the action starts.
   w.queueIntent({ kind: 'step', dx: 0, dy: 1 });
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   w.step();
   assert.equal(w.player.activity!.action, w.def.ids.actions['t:board_up']);
 });
@@ -455,7 +455,7 @@ test('actions: a noise interrupts a nap; the activity snapshot survives defeat',
 test("actions: the player's own completion noise never interrupts the next timed action", () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(w, 61);
   assert.equal(w.noises.length, 1);
   assert.equal(w.player.heardTick, -1);
@@ -470,7 +470,7 @@ test('actions: completion re-checks items and the target', () => {
   // An item dropped mid-way.
   const w = world();
   moveTo(w.player, 4, 1);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(w, 10);
   w.player.inv!.stacks.splice(
     w.player.inv!.stacks.findIndex((s) => s.item === w.def.ids.items['t:board']),
@@ -483,7 +483,7 @@ test('actions: completion re-checks items and the target', () => {
   // The tile already changed (someone else boarded it).
   const v = world();
   moveTo(v.player, 4, 1);
-  v.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  v.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(v, 10);
   v.grid.setTile(1 * v.grid.width + 5, v.def.ids.tiles['t:boarded']!);
   steps(v, 51);
@@ -493,7 +493,7 @@ test('actions: completion re-checks items and the target', () => {
   // Out of reach by the end (moved without an intent, e.g. pushed).
   const u = world();
   moveTo(u.player, 4, 1);
-  u.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  u.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(u, 10);
   moveTo(u.player, 2, 1);
   steps(u, 51);
@@ -504,7 +504,7 @@ test('actions: set_tile onto an occupied cell fails with occupied; nothing runs 
   const w = world();
   moveTo(w.player, 2, 3);
   moveTo(rock(w), 3, 3); // on the mud
-  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3 });
+  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3, z: 0 });
   steps(w, 11);
   assert.deepEqual(w.lastAction, { kind: 'act', item: '', action: 't:fill', moved: 0, ok: false, stage: 'complete', reason: 'occupied', tick: 10 });
   assert.equal(cell(w, 3, 3), 't:mud');
@@ -512,11 +512,11 @@ test('actions: set_tile onto an occupied cell fails with occupied; nothing runs 
   // The actor counts too.
   moveTo(rock(w), 2, 2);
   moveTo(w.player, 3, 3);
-  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3 });
+  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3, z: 0 });
   steps(w, 11);
   assert.equal(w.lastAction!.reason, 'occupied');
   moveTo(w.player, 3, 2);
-  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3 });
+  w.queueAction({ kind: 'act', action: 't:fill', x: 3, y: 3, z: 0 });
   steps(w, 11);
   assert.equal(w.lastAction!.ok, true);
   assert.equal(cell(w, 3, 3), 't:wall');
@@ -531,11 +531,11 @@ test('actions: set_tile on a container cell fails with invalid_target at run tim
   ]);
   const w = World.create(d, 1);
   moveTo(w.player, 2, 2);
-  w.queueAction({ kind: 'act', action: 't:paint', x: 1, y: 3 });
+  w.queueAction({ kind: 'act', action: 't:paint', x: 1, y: 3, z: 0 });
   w.step();
   assert.equal(w.lastAction!.reason, 'invalid_target');
   assert.ok(!w.availableActions().some((a) => a.x === 1 && a.y === 3), 'not offered either');
-  w.queueAction({ kind: 'act', action: 't:paint', x: 2, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:paint', x: 2, y: 1, z: 0 });
   w.step();
   assert.equal(cell(w, 2, 1), 't:mud');
 });
@@ -547,13 +547,13 @@ test('actions: set_tile updates walkability, opacity, A* and can_see at once', (
   assert.equal(pf.findPath(4, 1, 5, 1), null);
   assert.ok(lineOfSight(w.grid, 3, 1, 6, 1), 'through the pane');
   // Board up: opaque.
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(w, 61);
   assert.equal(w.grid.opaque[1 * w.grid.width + 5], 1);
   assert.ok(!lineOfSight(w.grid, 3, 1, 6, 1));
   assert.equal(w.tileVersion, 1);
   // Smash it: walkable floor; the same Pathfinder sees it.
-  w.queueAction({ kind: 'act', action: 't:smash', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:smash', x: 5, y: 1, z: 0 });
   steps(w, 11);
   assert.equal(cell(w, 5, 1), 't:floor');
   assert.equal(w.grid.walk[1 * w.grid.width + 5], 1);
@@ -574,7 +574,7 @@ test('actions: can_see follows set_tile (expressions read the live grid)', () =>
   w.step();
   assert.ok(spots(), 'through the pane');
   moveTo(w.player, 3, 1);
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 4, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 4, y: 1, z: 0 });
   steps(w, 60);
   assert.ok(spots());
   w.step();
@@ -586,19 +586,19 @@ test('actions: snapshot and hash cover the activity and changed tiles', () => {
   const a = world();
   const b = world();
   for (const w of [a, b]) moveTo(w.player, 4, 1);
-  a.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  a.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   a.step();
   b.step();
   assert.notEqual(a.hash(), b.hash(), 'the activity is hashed');
   assert.deepEqual(a.snapshot().tiles, []);
   steps(a, 60);
   const boarded = a.snapshot();
-  assert.deepEqual(boarded.tiles, [[5, 1, 't:boarded']]);
+  assert.deepEqual(boarded.tiles, [[5, 1, 0, 't:boarded']]);
   assert.equal(boarded.entities[0]!.activity, null);
   // Same history ⇒ same hash; a changed cell alone changes it.
   const c = world();
   moveTo(c.player, 4, 1);
-  c.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  c.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(c, 61);
   assert.equal(c.hash(), a.hash());
   c.grid.setTile(1 * c.grid.width + 5, c.def.ids.tiles['t:pane']!);
@@ -648,7 +648,7 @@ test('actions: busy and doing in statuses', () => {
   assert.ok(st('t:napping') && st('t:occupied') && !st('t:working'));
   steps(w, 20);
   assert.ok(!st('t:napping') && !st('t:occupied'));
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   w.step();
   assert.ok(!st('t:napping') && st('t:occupied') && st('t:working'));
 });
@@ -683,6 +683,7 @@ test('availableActions: self actions, tile actions × cells in reach, item uses;
     action: 't:board_up',
     x: 5,
     y: 1,
+    z: 0,
     label: 'Board up',
     ok: false,
     reason: 'missing',
@@ -720,18 +721,18 @@ test('hud: action texts', () => {
     w.step();
     return hudModel(w).lastAction;
   };
-  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 1 }), 'You start boarding up.');
+  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 }), 'You start boarding up.');
   steps(w, 60);
   assert.equal(hudModel(w).lastAction, 'You finish boarding up.');
   w.grid.setTile(1 * w.grid.width + 5, w.def.ids.tiles['t:pane']!);
-  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 3 }), "You can't reach that.");
-  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 2 }), "You can't board up that.");
+  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 3, z: 0 }), "You can't reach that.");
+  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 2, z: 0 }), "You can't board up that.");
   assert.equal(text({ kind: 'act', action: 't:wait_soft' }), "You can't wait now.");
   assert.equal(text({ kind: 'act', action: 't:nap' }), 'You start napping.');
   assert.equal(text({ kind: 'act', action: 't:hum' }), 'You finish hum.');
   assert.equal(text({ kind: 'act', action: 't:nope' }), 'Unknown action t:nope');
   w.player.inv!.stacks.splice(0, w.player.inv!.stacks.length);
-  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 1 }), 'You need Saw, Board x2.');
+  assert.equal(text({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 }), 'You need Saw, Board x2.');
 });
 
 test('ascii: x opens the action list, 1-9 start one, any other key closes it', () => {
@@ -765,7 +766,7 @@ test('ascii: the renderer shows a changed tile', () => {
   moveTo(w.player, 4, 1);
   const row = () => frameToText(renderAscii(w, { width: 9, height: 3 })).split('\n')[1]!;
   assert.equal(row(), '#...@W#  ');
-  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1 });
+  w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(w, 61);
   assert.equal(row(), '#...@H#  ');
 });
@@ -843,7 +844,7 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   const planks = have('zmb:plank');
   const nails = have('zmb:nails');
   const shambler = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && Math.hypot(e.x - 15, e.y - 3) <= 14);
-  w.queueAction({ kind: 'act', action: 'zmb:barricade', x: wx, y: wy });
+  w.queueAction({ kind: 'act', action: 'zmb:barricade', x: wx, y: wy, z: 0 });
   w.step();
   const start = w.lastAction!;
   assert.equal(start.stage, 'start');
@@ -892,7 +893,7 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   // Shutters on the west room's north window.
   walk(w, 3, 1);
   assert.equal(cell(w, 3, 0), 'vamp:window');
-  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: 3, y: 0 });
+  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: 3, y: 0, z: 0 });
   steps(w, 21);
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
   assert.equal(cell(w, 3, 0), 'vamp:shuttered_window');

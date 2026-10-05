@@ -332,7 +332,7 @@ test('transitions: switching state clears the path and the pending intent', () =
   });
   const n = w.entities[1]!;
   // Idle keeps an external goto.
-  w.queueIntent({ kind: 'goto', x: 11, y: 11 }, n);
+  w.queueIntent({ kind: 'goto', x: 11, y: 11, z: 0 }, n);
   w.step();
   assert.deepEqual(pos(n), [7, 7]);
   assert.ok(n.path);
@@ -371,7 +371,7 @@ test('pursue: reaches a moving target and re-plans at most once per repath windo
   assert.ok(gotos.length >= 2, 'never re-planned for the moving target');
   for (let i = 1; i < gotos.length; i++) assert.ok(gotos[i]!.tick - gotos[i - 1]!.tick >= 5, `re-planned after ${gotos[i]!.tick - gotos[i - 1]!.tick} ticks`);
   assert.ok(gotos.every((g) => g.ok));
-  assert.deepEqual(w.snapshot().entities[1]!.behavior!.plan, [n.planX, n.planY, n.planTick]);
+  assert.deepEqual(w.snapshot().entities[1]!.behavior!.plan, [n.planX, n.planY, n.planZ, n.planTick]);
 });
 
 test('pursue: an unreachable target fails cleanly and waits for the next window', () => {
@@ -490,7 +490,7 @@ test('the player ignores a behavior on its archetype', () => {
   assert.notDeepEqual(pos(n), [6, 6]);
   const snap = w.snapshot();
   assert.equal(snap.entities[0]!.behavior, null);
-  assert.deepEqual(snap.entities[0]!.home, [1, 6]);
+  assert.deepEqual(snap.entities[0]!.home, [1, 6, 0]);
   assert.equal(snap.entities[1]!.behavior!.state, 's');
 });
 

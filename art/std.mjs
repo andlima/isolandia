@@ -1,4 +1,4 @@
-// std: genre-neutral floor, wall, door and an everyday person.
+// std: genre-neutral floor, wall, door, stairs and landing, and an everyday person.
 
 import { humanoid, FACINGS } from './characters.mjs';
 import { blockTile, flatTile, hash, px } from './lib.mjs';
@@ -78,6 +78,49 @@ function door() {
   return c;
 }
 
+/** Steps of a staircase block. */
+const STEPS = 4;
+
+/**
+ * A wooden staircase filling its cell, rising toward its facing: drawn `s`
+ * it climbs toward the south (screen-left) face, so the stepped profile
+ * shows on the right face; drawn `w` it climbs toward the hidden west face,
+ * so the risers face the camera on the right. `n` and `e` are the mirrors.
+ */
+function stairs(facing) {
+  const { c, I } = blockTile();
+  const tread = (along) => (u, v) => (px(along(u, v)) % 4 === 3 ? 'wood' : 'wood_hi'); // nosing at each step's front edge
+  for (let k = 0; k < STEPS; k++) {
+    // Back to front: farther steps first, so nearer ones cover them.
+    if (facing === 's') {
+      I.box(0, k / STEPS, 1, (k + 1) / STEPS, 0, (k + 1) / STEPS, {
+        left: (u, z) => (px(u) === 0 || px(u) === 15 || px(z) === 0 || px(z) === 15 ? 'wood_lo' : 'wood'), // the top step's stringer panel
+        right: (v, z) => (px(z) === 0 || px(v) % 4 === 0 ? 'wood_dk' : 'wood_lo'),
+        top: tread((u, v) => 1 - v),
+      });
+    } else {
+      I.box(k / STEPS, 0, (k + 1) / STEPS, 1, 0, (STEPS - k) / STEPS, {
+        left: (u, z) => (px(z) === 0 || px(u) % 4 === 3 ? 'wood_lo' : 'wood'),
+        right: (v, z) => (px(z) % 4 === 3 ? 'wood_dk' : 'wood_lo'),
+        top: tread((u) => u),
+      });
+    }
+  }
+  return c;
+}
+
+/** The floor at the top of the stairs: boards with a worn edge. */
+function landing() {
+  const { c, I } = flatTile();
+  I.top(0, 0, 1, 1, 0, (u, v, x, y) => {
+    const [U, V] = [px(u), px(v)];
+    if (U === 0 || V === 0 || U === 15 || V === 15) return 'wood_lo';
+    if (V % 4 === 3) return 'wood_lo'; // gaps between boards
+    return hash(x, y, 7) < 0.06 ? 'wood' : 'wood_hi';
+  });
+  return c;
+}
+
 const person = {
   outline: 'outline',
   key: { H: 'hair', h: 'outline', s: 'skin', S: 'skin_lo', k: 'outline', t: 'shirt', T: 'shirt_lo', p: 'pants', P: 'pants_lo', f: 'shoes' },
@@ -88,6 +131,8 @@ export function images() {
     { file: 'floor.svg', canvas: floor(), note: 'flat tile' },
     { file: 'wall.svg', canvas: wall(), note: 'block' },
     { file: 'door.svg', canvas: door(), note: 'block: a door on each visible face' },
+    ...['s', 'w'].map((f) => ({ file: `stairs_${f}.svg`, canvas: stairs(f), note: `block, rising toward ${f}` })),
+    { file: 'landing.svg', canvas: landing(), note: 'flat tile' },
     ...FACINGS.map((f) => ({ file: `humanoid_${f}.svg`, canvas: humanoid(f, person), note: `facing ${f}` })),
   ];
 }

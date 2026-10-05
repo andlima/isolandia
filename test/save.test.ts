@@ -194,7 +194,7 @@ function rich(): World {
 
 // ── Snapshot ────────────────────────────────────────────────────────────────
 
-test('snapshot: seed, nextContainer and changed tiles as [x, y, id], row-major', () => {
+test('snapshot: seed, nextContainer and changed tiles as [x, y, z, id], in cell order', () => {
   const w = world(7);
   const s = w.snapshot();
   assert.equal(w.seed, 7);
@@ -204,8 +204,8 @@ test('snapshot: seed, nextContainer and changed tiles as [x, y, id], row-major',
   w.grid.setTile(2 * w.grid.width + 12, DEF.ids.tiles['t:boarded']!);
   w.grid.setTile(1 * w.grid.width + 13, DEF.ids.tiles['t:floor']!);
   assert.deepEqual(w.snapshot().tiles, [
-    [13, 1, 't:floor'],
-    [12, 2, 't:boarded'],
+    [13, 1, 0, 't:floor'],
+    [12, 2, 0, 't:boarded'],
   ]);
   assert.notEqual(world(7).hash(), world(8).hash(), 'the seed is hashed');
 });
@@ -214,9 +214,9 @@ test('save: a plain JSON SaveFile with format, version, packs and map', () => {
   const w = world();
   const s = w.save();
   assert.equal(s.format, 'isolandia-save');
-  assert.equal(s.version, 1);
+  assert.equal(s.version, 2);
   assert.deepEqual(s.packs, [{ namespace: 't', version: '1.0.0' }]);
-  assert.deepEqual(s.map, { id: 't:room', width: 14, height: 8 });
+  assert.deepEqual(s.map, { id: 't:room', width: 14, height: 8, floors: 1 });
   assert.deepEqual(s.state, w.snapshot());
   assert.deepStrictEqual(json(s), s, 'plain JSON');
   assert.deepEqual(Object.keys(s).sort(), ['format', 'map', 'packs', 'state', 'version'], 'no wall-clock time or other metadata');
@@ -238,6 +238,56 @@ test('save: pure — hash, RNG state and warnings are unchanged; works on an end
   assert.equal(w.save().state.defeat!.message, 'Down.');
 });
 
+// ── Version 1 (before floors) ───────────────────────────────────────────────
+
+/** A version 2 save as version 1 wrote it: no floors, every cell without its `z`. */
+function toV1(save: SaveFile): unknown {
+  const s = json(save) as unknown as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const xy = (o: Record<string, unknown> | null) => (o && delete o['z'], o);
+  s['version'] = 1;
+  delete s['map'].floors;
+  const st = s['state'];
+  st.tiles = st.tiles.map(([x, y, , id]: unknown[]) => [x, y, id]);
+  for (const c of st.containers) if (c.cell) c.cell = c.cell.slice(0, 2);
+  for (const e of st.entities) {
+    delete e.z;
+    delete e.fromZ;
+    e.home = e.home.slice(0, 2);
+    if (e.path) e.path = e.path.map((c: number[]) => c.slice(0, 2));
+    if (e.behavior?.plan) e.behavior.plan = [e.behavior.plan[0], e.behavior.plan[1], e.behavior.plan[3]];
+    xy(e.heard);
+    xy(e.activity);
+    xy(e.lastGoto);
+    if (e.intent?.kind === 'goto') xy(e.intent);
+  }
+  return s;
+}
+
+test('version 1 saves load with every z = 0, and continue exactly', () => {
+  const w = rich();
+  w.grid.setTile(2 * w.grid.width + 12, DEF.ids.tiles['t:boarded']!);
+  w.queueIntent({ kind: 'goto', x: 12, y: 5 });
+  steps(w, 2);
+  const save = w.save();
+  assert.ok(save.state.entities.some((e) => e.path) && save.state.entities.some((e) => e.behavior?.plan) && save.state.tiles.length > 0);
+  const v1 = toV1(save);
+  const r = World.restore(DEF, v1);
+  if (!r.ok) assert.fail(r.errors.join('\n'));
+  assert.deepEqual(r.warnings, []);
+  assert.deepStrictEqual(r.world.snapshot(), json(w.snapshot()));
+  assert.equal(r.world.save().version, 2);
+  for (let i = 0; i < 40; i++) {
+    w.step();
+    r.world.step();
+    assert.equal(r.world.hash(), w.hash(), `tick ${w.tick}`);
+  }
+  // Version 1 shapes are checked like version 2 ones.
+  const bad = toV1(save) as { state: { tiles: unknown[] } };
+  bad.state.tiles.push([1, 2]);
+  const e = World.restore(DEF, bad);
+  assert.ok(!e.ok && e.errors.some((m) => m.startsWith('state.tiles[1]: expected [x, y, z, tile id]')), JSON.stringify(e));
+});
+
 // ── Round trip on the fixture ───────────────────────────────────────────────
 
 test('round trip: tick 0', () => {
@@ -257,7 +307,7 @@ test('round trip: mid-path with a goto.then pending, then the action and set_til
   assert.equal(w.player.activity!.source.kind, 'act');
   steps(w, 2);
   assertRoundTrip(w, undefined, 30);
-  assert.deepEqual(w.snapshot().tiles, [[12, 2, 't:boarded']]);
+  assert.deepEqual(w.snapshot().tiles, [[12, 2, 0, 't:boarded']]);
   assertRoundTrip(w, undefined, 30);
 });
 
@@ -476,7 +526,7 @@ function fuzz(seed: number): Script {
       const s = c && pick(c.stacks);
       if (s) {
         const take: Action = { kind: 'take', container: c.id, item: w.def.items[s.item]!.id };
-        w.queueIntent(w.approachIntent(take) ?? { kind: 'goto', x: c.x, y: c.y, adjacent: true, then: take });
+        w.queueIntent(w.approachIntent(take) ?? { kind: 'goto', x: c.x, y: c.y, z: c.z, adjacent: true, then: take });
       }
     } else if (roll < 0.11 && p.inv) {
       const s = pick(p.inv.stacks);
@@ -561,11 +611,12 @@ const idx = (s: SaveFile, archetype: string) => s.state.entities.findIndex((e) =
 
 test('validation: format, version, packs and map', () => {
   expectError((s) => (s.format = 'other' as 'isolandia-save'), 'format', /expected 'isolandia-save', got 'other'/);
-  expectError((s) => ((s as { version: number }).version = 2), 'version', /unsupported save version 2 \(supported: 1\)/);
+  expectError((s) => ((s as { version: number }).version = 3), 'version', /unsupported save version 3 \(supported: 1, 2\)/);
   expectError((s) => (s.packs = [{ namespace: 'u', version: '1.0.0' }]), 'packs', /made with packs \[u\] but the loaded packs are \[t\]/);
   expectError((s) => s.packs.push({ namespace: 'u', version: '1' }), 'packs', /\[t, u\] but the loaded packs are \[t\]/);
   expectError((s) => (s.map.id = 't:other'), 'map', /map 't:other' \(14×8\) but the start map is 't:room' \(14×8\)/);
   expectError((s) => (s.map.width = 15), 'map', /15×8/);
+  expectError((s) => (s.map.floors = 2), 'map', /map 't:room' \(14×8, 2 floors\) but the start map is 't:room' \(14×8\)/);
 });
 
 test('validation: unknown qualified ids, with did-you-mean and JSON path', () => {
@@ -580,11 +631,11 @@ test('validation: unknown qualified ids, with did-you-mean and JSON path', () =>
   }, `state.entities[${hero}].measurements["t:fod"]`, /unknown measurement 't:fod' \(did you mean 't:food'\?\)/);
   expectError((s) => s.state.entities[hero]!.statuses.push('t:sad'), `state.entities[${hero}].statuses[0]`, /unknown status 't:sad'/);
   expectError((s) => (s.state.containers[0]!.stacks[0]![0] = 't:plnk'), 'state.containers[0].stacks[0][0]', /unknown item 't:plnk' \(did you mean 't:plank'\?\)/);
-  expectError((s) => s.state.tiles.push([12, 2, 't:bordd']), 'state.tiles[0][2]', /unknown tile 't:bordd' \(did you mean 't:boarded'\?\)/);
+  expectError((s) => s.state.tiles.push([12, 2, 0, 't:bordd']), 'state.tiles[0][3]', /unknown tile 't:bordd' \(did you mean 't:boarded'\?\)/);
   expectError((s) => s.state.actions.push({ kind: 'act', action: 't:bord', x: 12, y: 2 }), 'state.actions[0].action', /unknown action 't:bord' \(did you mean 't:board'\?\)/);
   expectError((s) => (s.state.entities[hero]!.activity!.recipe = 't:cok'), `state.entities[${hero}].activity.recipe`, /unknown recipe 't:cok' \(did you mean 't:cook'\?\)/);
   expectError((s) => (s.state.entities[listener]!.behavior!.state = 'goo'), `state.entities[${listener}].behavior.state`, /behavior 't:listener' has no state 'goo' \(did you mean 'go'\?\)/);
-  expectError((s) => (s.state.entities[hero]!.activity = { kind: 'use', item: 't:plank', x: 2, y: 1, startTick: 1, endTick: 4 }), `state.entities[${hero}].activity.item`, /has no use/);
+  expectError((s) => (s.state.entities[hero]!.activity = { kind: 'use', item: 't:plank', x: 2, y: 1, z: 0, startTick: 1, endTick: 4 }), `state.entities[${hero}].activity.item`, /has no use/);
 });
 
 test('validation: entity ids, player, inventories and container ids', () => {
@@ -604,26 +655,27 @@ test('validation: every kind of cell out of bounds', () => {
   const hero = RICH.state.player;
   const listener = idx(RICH, 't:listener');
   const homer = idx(RICH, 't:homer');
-  const OOB = /out of bounds \(map is 14×8\)/;
+  const OOB = /out of bounds \(map is 14×8, 1 floor\)/;
   const e = (k: number) => `state.entities[${k}]`;
   expectError((s) => (s.state.entities[hero]!.x = 14), e(hero), OOB);
   expectError((s) => (s.state.entities[hero]!.fromY = -1), `${e(hero)}.from`, OOB);
-  expectError((s) => (s.state.entities[hero]!.home = [0, 8]), `${e(hero)}.home`, OOB);
-  expectError((s) => s.state.entities[homer]!.path!.push([20, 3]), `${e(homer)}.path[${RICH.state.entities[homer]!.path!.length}]`, OOB);
-  expectError((s) => (s.state.containers[0]!.cell = [99, 1]), 'state.containers[0].cell', OOB);
-  expectError((s) => s.state.tiles.push([3, 9, 't:floor']), 'state.tiles[0]', OOB);
+  expectError((s) => (s.state.entities[hero]!.z = 1), e(hero), OOB);
+  expectError((s) => (s.state.entities[hero]!.home = [0, 8, 0]), `${e(hero)}.home`, OOB);
+  expectError((s) => s.state.entities[homer]!.path!.push([20, 3, 0]), `${e(homer)}.path[${RICH.state.entities[homer]!.path!.length}]`, OOB);
+  expectError((s) => (s.state.containers[0]!.cell = [99, 1, 0]), 'state.containers[0].cell', OOB);
+  expectError((s) => s.state.tiles.push([3, 9, 0, 't:floor']), 'state.tiles[0]', OOB);
   expectError((s) => (s.state.entities[hero]!.activity!.x = -2), `${e(hero)}.activity`, OOB);
   expectError((s) => (s.state.entities[listener]!.heard!.y = 8), `${e(listener)}.heard`, OOB);
   expectError((s) => (s.state.entities[listener]!.behavior!.plan![0] = 30), `${e(listener)}.behavior.plan`, OOB);
 });
 
 test('validation: a tile container must sit on a container tile of the restored grid', () => {
-  expectError((s) => s.state.tiles.push([1, 2, 't:floor']), 'state.containers[0].cell', /tile 't:floor' at \(1, 2\) holds no container/);
-  expectError((s) => (s.state.containers[0]!.cell = [3, 3]), 'state.containers[0].cell', /holds no container/);
+  expectError((s) => s.state.tiles.push([1, 2, 0, 't:floor']), 'state.containers[0].cell', /tile 't:floor' at \(1, 2, 0\) holds no container/);
+  expectError((s) => (s.state.containers[0]!.cell = [3, 3, 0]), 'state.containers[0].cell', /holds no container/);
   // Changed tiles are applied first: a crate placed on a floor cell may hold a container.
   const s = json(RICH);
-  s.state.tiles.push([3, 3, 't:crate']);
-  s.state.containers.push({ id: s.state.nextContainer, kind: 'tile', cell: [3, 3], stacks: [] });
+  s.state.tiles.push([3, 3, 0, 't:crate']);
+  s.state.containers.push({ id: s.state.nextContainer, kind: 'tile', cell: [3, 3, 0], stacks: [] });
   s.state.nextContainer++;
   const r = World.restore(DEF, s);
   assert.ok(r.ok, r.ok ? '' : r.errors.join('\n'));

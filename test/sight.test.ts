@@ -5,7 +5,7 @@ import { readPack } from '../src/node/read-pack.ts';
 import { GAMES, loadFixture } from './helpers.ts';
 
 function tileDef(index: number, id: string, walkable: boolean, opaque: boolean): TileDef {
-  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null };
+  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null };
 }
 
 /** `.` floor, `#` wall, `+` door, `"` window (not walkable, not opaque). */
@@ -14,7 +14,7 @@ const CODES: Record<string, number> = { '.': 0, '#': 1, '+': 2, '"': 3 };
 
 function grid(rows: string[]): Grid {
   const cells = rows.flatMap((r) => [...r].map((ch) => CODES[ch]!));
-  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, cells } as unknown as MapDef;
+  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, floors: 1, cells } as unknown as MapDef;
   return new Grid(map, TILES);
 }
 

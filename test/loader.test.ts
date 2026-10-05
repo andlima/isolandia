@@ -109,8 +109,8 @@ test('the loaded definition is deeply frozen', () => {
 test('zombie and vampire cannot load together without an explicit start choice', () => {
   // Both define `start`, `clock` and `lighting`: at most one of each is allowed.
   const errors = errorsOf([STD, NEEDS, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 118, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 121, message: /duplicate 'start': already defined in pack 'zmb'/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 128, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 131, message: /duplicate 'start': already defined in pack 'zmb'/ });
   expectError(errors, {
     pack: 'vamp',
     file: 'survival.yaml',

@@ -21,8 +21,8 @@ const symbols: CompileSymbols = {
   },
 };
 
-function entity(x: number, y: number, m: number[], tags: string[] = [], statuses: number[] = []): ExprEntity {
-  return { x, y, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses), inv: null, heardTick: -1 };
+function entity(x: number, y: number, m: number[], tags: string[] = [], statuses: number[] = [], z = 0): ExprEntity {
+  return { x, y, z, m: Float64Array.from(m), tags: new Set(tags), st: Uint8Array.from(statuses), inv: null, heardTick: -1 };
 }
 
 function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings: string[] } {
@@ -177,6 +177,13 @@ test('compile: built-ins', () => {
   assert.equal(run('chebyshev(self, player)'), 4);
   assert.equal(run('euclidean(0, 0, 3, 4)'), 5);
   assert.equal(run('manhattan(tile, player)'), 7);
+  // One floor counts as one tile.
+  const up = context({ player: entity(4, 6, [7, 8, 9], [], [], 2) });
+  assert.equal(run('manhattan(self, player)', up), 9);
+  assert.equal(run('chebyshev(self, player)', up), 4);
+  assert.equal(run('chebyshev(self, player)', context({ player: entity(1, 2, [0], [], [], 3) })), 3);
+  assert.equal(run('euclidean(self, player)', context({ player: entity(1, 2, [0], [], [], 2) })), 2);
+  assert.equal(run('self.z + player.z * 10 + tile.z', up), 20);
   assert.equal(run('has_tag(self, "undead")'), true);
   assert.equal(run("self.has_tag('undead')"), true);
   assert.equal(run('player.has_tag("undead")'), false);
@@ -210,6 +217,13 @@ test('compile: can_see with entities, tiles and an inclusive euclidean range', (
   // The line walk decides once in range.
   const far = context({ player: entity(9, 2, [0, 0, 0]), los: (_a, _b, x1) => x1 !== 9 });
   assert.equal(run('can_see(self, player, 10)', far), false);
+  // Across floors: the floors go to the line of sight; with a range, false without walking the line.
+  const zs: number[][] = [];
+  const upstairs = context({ player: entity(1, 3, [0], [], [], 1), los: (_a, _b, _c, _d, z0, z1) => (zs.push([z0, z1]), z0 === z1) });
+  assert.equal(run('can_see(self, player)', upstairs), false);
+  assert.deepEqual(zs.pop(), [0, 1]);
+  assert.equal(run('can_see(self, player, 10)', upstairs), false);
+  assert.equal(zs.length, 0);
 });
 
 test('compile: can_see errors are load errors', () => {

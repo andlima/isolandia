@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clockAt, formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
+import { clockAt, EMPTY_TILE, formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES } from './helpers.ts';
 import { Looter, type LooterOptions } from './looter.ts';
@@ -93,7 +93,7 @@ for (const name of ['zombie', 'vampire']) {
             if (best) {
               tried.add(best.id);
               target = best;
-              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, adjacent: true });
+              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, z: best.z, adjacent: true });
             }
           }
         }
@@ -193,7 +193,7 @@ test('genre packs use every M2 and M3 primitive', () => {
     // Tile containers in at least two kinds of room.
     const roomsWithContainers = new Set<number>();
     map.cells.forEach((t, i) => {
-      if (def.tiles[t]!.container) for (const tag of map.rooms.sets[map.rooms.cellSet[i]!]!) roomsWithContainers.add(tag);
+      if (t !== EMPTY_TILE && def.tiles[t]!.container) for (const tag of map.rooms.sets[map.rooms.cellSet[i]!]!) roomsWithContainers.add(tag);
     });
     assert.ok(roomsWithContainers.size >= 2, `${name}: containers in ${roomsWithContainers.size} room kinds`);
     // count_item / has_item in a status or system (expressions are compiled away, so check the source).

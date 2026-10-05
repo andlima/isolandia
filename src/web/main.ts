@@ -6,7 +6,8 @@
 import { Application, type Container } from 'pixi.js';
 import { loadPacks, renderPosition, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
-import { groundCentreIso, isoToScreen, pickTile } from '../iso/projection.ts';
+import { viewFloor } from '../iso/cutaway.ts';
+import { FLOOR_H, groundCentreIso, isoToScreen, pickCell } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
@@ -108,12 +109,25 @@ async function main(): Promise<void> {
   const playerIso = (alpha: number) => {
     const w = session.world;
     const r = renderPosition(w.player, w.tick, alpha);
-    return groundCentreIso(r.x, r.y);
+    const p = groundCentreIso(r.x, r.y);
+    return { x: p.x, y: p.y - r.z * FLOOR_H };
   };
-  const tileAt = (sx: number, sy: number) => pickTile(sx, sy, rig.cam, (x, y) => session.world.grid.tileAt(x, y)?.raised ?? false);
+  /** The cell under a screen point: on the view floor, falling through empty cells to the floors below. */
+  const tileAt = (sx: number, sy: number) => {
+    const w = session.world;
+    const view = viewFloor(renderPosition(w.player, w.tick, loop.alpha).z, w.grid.floors);
+    return pickCell(
+      sx,
+      sy,
+      rig.cam,
+      view,
+      (x, y, z) => w.grid.tileAt(x, y, z)?.raised ?? false,
+      (x, y, z) => w.grid.tileAt(x, y, z) !== undefined,
+    );
+  };
   const openMenu = (sx: number, sy: number) => {
     const t = tileAt(sx, sy);
-    session.menu.open(t.x, t.y, sx, sy);
+    session.menu.open(t.x, t.y, t.z, sx, sy);
   };
 
   const loop = new FixedTickLoop(
@@ -191,7 +205,7 @@ async function main(): Promise<void> {
         return;
       }
       const t = tileAt(sx, sy);
-      world.queueIntent(clickIntent(world, t.x, t.y));
+      world.queueIntent(clickIntent(world, t.x, t.y, t.z));
     },
     longPress: openMenu,
     menu: openMenu,
@@ -211,8 +225,14 @@ async function main(): Promise<void> {
       if (code === 'KeyE') {
         const iso = playerIso(loop.alpha);
         const p = isoToScreen(iso.x, iso.y, rig.cam);
-        menu.open(world.player.x, world.player.y, p.x, p.y);
+        menu.open(world.player.x, world.player.y, world.player.z, p.x, p.y);
       }
+    },
+    climb: (dz) => {
+      const { world, menu } = session;
+      menu.close();
+      const intent = world.climbIntent(dz);
+      if (intent) world.queueIntent(intent);
     },
   });
 
@@ -226,7 +246,7 @@ async function main(): Promise<void> {
     if (world.ended) s.menu.close();
     if (world.lastGoto !== s.lastGoto) {
       s.lastGoto = world.lastGoto;
-      if (s.lastGoto && !s.lastGoto.ok) scene.flashUnreachable(s.lastGoto.x, s.lastGoto.y, now);
+      if (s.lastGoto && !s.lastGoto.ok) scene.flashUnreachable(s.lastGoto.x, s.lastGoto.y, s.lastGoto.z, now);
     }
     const { width, height } = app.screen;
     const cam = rig.update(playerIso(loop.alpha), width, height);

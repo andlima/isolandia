@@ -24,6 +24,8 @@ export interface HudModel {
   readonly tick: number;
   /** `Time: Day D HH:MM (tick N)`. */
   readonly time: string;
+  /** `Floor N` (the player's floor `z`) on a map with more than one floor, else null. */
+  readonly floor: string | null;
   readonly measurements: readonly HudMeasurement[];
   /** Labels of the player's active statuses, in definition order. */
   readonly statuses: readonly string[];
@@ -85,6 +87,7 @@ export interface HudContainer {
   readonly label: string;
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly stacks: readonly HudStack[];
   /** `Label [A x2, B x1]` or `Label [empty]`. */
   readonly text: string;
@@ -117,11 +120,11 @@ export function progressText(label: string, fraction: number): string {
 }
 
 /**
- * HUD text lines shared by the shells: time, measurements, then — only when
+ * HUD text lines shared by the shells: time, floor (multi-floor maps), measurements, then — only when
  * present — carrying/inventory, status, nearby, latest action and defeat/victory.
  */
 export function hudLines(m: HudModel): string[] {
-  const lines = [m.time, ...m.measurements.map((x) => x.text)];
+  const lines = [m.time, ...(m.floor ? [m.floor] : []), ...m.measurements.map((x) => x.text)];
   if (m.inventory) lines.push(m.inventory.carrying, m.inventory.line);
   if (m.statusLine) lines.push(m.statusLine);
   if (m.nearbyLine) lines.push(m.nearbyLine);
@@ -363,7 +366,7 @@ export function hudModel(world: World): HudModel {
   const nearby = world.reachableContainers().map((c): HudContainer => {
     const stacks = stacksOf(world, c);
     const label = containerLabel(world, c);
-    return { id: c.id, label, x: c.x, y: c.y, stacks, text: `${label} [${stacks.length ? stacks.map((s) => s.text).join(', ') : 'empty'}]` };
+    return { id: c.id, label, x: c.x, y: c.y, z: c.z, stacks, text: `${label} [${stacks.length ? stacks.map((s) => s.text).join(', ') : 'empty'}]` };
   });
   const a = world.lastAction;
   const fresh = a !== null && world.tick - a.tick <= ACTION_SECONDS * world.def.ticksPerSecond;
@@ -376,6 +379,7 @@ export function hudModel(world: World): HudModel {
     clock,
     tick: world.tick,
     time: `Time: ${clock} (tick ${world.tick})`,
+    floor: world.grid.floors > 1 ? `Floor ${player.z}` : null,
     measurements,
     statuses,
     statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,

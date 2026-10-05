@@ -60,7 +60,7 @@ string in arithmetic is a load error.
 |----------|--------|---------------------------------------------------------------|
 | `self`   | entity | The entity the expression is evaluated for                    |
 | `player` | entity | The player entity                                             |
-| `tile`   | tile   | The tile under `self`: `tile.x`, `tile.y`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
+| `tile`   | tile   | The tile under `self`, on `self`'s floor: `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
 | `world`  | —      | World time; see the fields below                              |
 
 World fields (all derived from the current tick; see the
@@ -78,7 +78,8 @@ World fields (all derived from the current tick; see the
 
 Entity members:
 
-- `self.x`, `self.y` — grid position.
+- `self.x`, `self.y` — grid position; `self.z` — the entity's floor (`0`
+  on one-floor maps, see [floors](packs.md#floors)).
 - `self.<measurement>` — the entity's current value of a measurement, by
   short (`self.hp`) or qualified (`self.std:hp`) id. An entity that does
   not have the measurement reads `0`.
@@ -90,7 +91,8 @@ Entity members:
   the entity's inventory, in normal weight units (`0` without an
   inventory). These names take precedence over measurements.
 
-`tile.id` is the qualified tile id, e.g. `tile.id == "std:floor"`.
+`tile.id` is the qualified tile id, e.g. `tile.id == "std:floor"`; on an
+[empty cell](packs.md#floors) it is `""` and `tile.has_tag(...)` is false.
 `tile.has_tag("water")` (or `has_tag(tile, "water")`) tests the tags of the
 tile under `self` (see [tile tags](packs.md#tiles)). `tile.in_room("kitchen")`
 (or `in_room(tile, "kitchen")`) tests the [room](packs.md#maps) tags of the
@@ -121,6 +123,10 @@ sets.
 | `doing(entity, "action")`                | Whether the entity's activity is that pack action |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
+With two entities or tiles they include the floors, one floor counting as
+one tile: `manhattan` adds `|dz|`, `chebyshev` takes `max(|dx|, |dy|, |dz|)`
+and `euclidean` is `√(dx² + dy² + dz²)`. The four-number form is on one
+floor.
 
 `has_status` takes a **string literal** status id, short or qualified,
 resolved at load time with the usual namespacing rules; an unknown id is a
@@ -157,6 +163,9 @@ rules:
   peeking through wall corners, like movement's no corner cutting).
 - The result is symmetric: `can_see(a, b) == can_see(b, a)`. It is
   integer-only and deterministic.
+- Sight stays on one floor: `a` and `b` on different
+  [floors](packs.md#floors) never see each other (even straight up a
+  stairwell).
 - With `range`, the result is `false` when `euclidean(a, b) > range`
   (a pair exactly `range` apart can still see each other). The range is checked before the
   line is walked, so distant pairs are cheap.
@@ -199,7 +208,7 @@ statuses:
 
 **`tile` in tile-targeted actions.** In the `when`, `interrupt`,
 `duration` and `effects` of an action whose `target` is a tile filter,
-`tile` (and `tile.x`, `tile.y`, `tile.id`, `tile.has_tag(...)`,
+`tile` (and `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag(...)`,
 `tile.in_room(...)`, and `tile` as a `can_see`/distance argument) is the
 **target cell**, not the cell under the actor; `self` is still the actor.
 Everywhere else (systems, statuses, behaviors, item uses, `self` actions)

@@ -7,10 +7,14 @@
  *
  * Tile ids and facings come from tileset tile properties (`tile`, `facing`),
  * never from gids or flip flags. The top-most non-empty gid of the visible
- * tile layers wins per cell. Objects are matched by `type`/`class`.
+ * tile layers of a floor wins per cell; a cell empty on every layer of its
+ * floor is an empty cell. Objects are matched by `type`/`class`.
+ *
+ * Floors: a group layer with an integer property `floor` holds that floor's
+ * tile and object layers; layers outside any floor group belong to floor 0.
  */
 
-import type { SpawnDef } from '../definition.ts';
+import { EMPTY_TILE, type SpawnDef } from '../definition.ts';
 import { CARDINALS, isFacing, type Facing } from '../facing.ts';
 import { nearMiss } from '../expr/index.ts';
 import { formatPath, type KeyPath } from './errors.ts';
@@ -38,6 +42,7 @@ export interface TiledInput {
 export interface TiledRoom {
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly w: number;
   readonly h: number;
   /** Room tag names, validated against the id pattern. */
@@ -47,17 +52,18 @@ export interface TiledRoom {
 export interface TiledMap {
   readonly width: number;
   readonly height: number;
+  readonly floors: number;
+  /** Tile index per cell (`EMPTY_TILE` for none), by cell index `(z * height + y) * width + x`. */
   readonly cells: number[];
   readonly facings: (Facing | null)[];
   readonly spawns: SpawnDef[];
-  readonly playerStart: { x: number; y: number } | null;
+  readonly playerStart: { x: number; y: number; z: number } | null;
   readonly rooms: TiledRoom[];
 }
 
 export const OBJECT_CLASSES = ['player', 'spawn', 'room'] as const;
 
 const FLIP_BITS = 0xf0000000;
-const MAX_EMPTY_LISTED = 5;
 const UNRESOLVED = -2;
 const FAILED = -1;
 const FACING_CODE: readonly (Facing | null)[] = [null, ...CARDINALS];
@@ -110,6 +116,16 @@ interface Tileset {
   readonly path: KeyPath;
   /** Local id → `tiles[]` entry and its index. */
   readonly tiles: Map<number, { tile: Obj; index: number }>;
+}
+
+/** Where a layer list is being read: its floor, and the per-map collections. */
+interface LayerScope {
+  readonly z: number;
+  /** Inside a floor group (another one would be nested). */
+  readonly inFloor: boolean;
+  readonly tops: Uint32Array[];
+  readonly objects: { obj: Obj; path: KeyPath; z: number }[];
+  readonly groups: Map<number, KeyPath>;
 }
 
 class Reader {
@@ -168,29 +184,32 @@ class Reader {
 
     const tilesets = this.tilesets(root);
     const gids = new GidTable(this, tilesets);
-    const top = new Uint32Array(w * h);
-    const objects: { obj: Obj; path: KeyPath }[] = [];
+    /** Top-most gid per cell, per floor (grown as floor groups are found). */
+    const tops: Uint32Array[] = [new Uint32Array(w * h)];
+    const objects: { obj: Obj; path: KeyPath; z: number }[] = [];
+    /** Floor number → path of its group (for duplicates). */
+    const groups = new Map<number, KeyPath>();
     if (!Array.isArray(root['layers'])) this.problem(['layers'], `map 'layers' must be a list`);
-    else this.layers(root['layers'], ['layers'], w, h, gids, top, objects);
-
-    const cells = new Array<number>(w * h).fill(0);
-    const facings = new Array<Facing | null>(w * h).fill(null);
-    const empty: number[] = [];
-    for (let i = 0; i < w * h; i++) {
-      const code = top[i] ? gids.code(top[i]!) : UNRESOLVED;
-      if (!top[i]) empty.push(i);
-      else if (code >= 0) {
-        cells[i] = Math.floor(code / FACING_CODE.length);
-        facings[i] = FACING_CODE[code % FACING_CODE.length]!;
-      }
+    else this.layers(root['layers'], ['layers'], w, h, gids, { z: 0, inFloor: false, tops, objects, groups });
+    const floors = Math.max(1, ...[...groups.keys()].map((z) => z + 1));
+    for (let z = 0; z < floors; z++) {
+      if (z > 0 && !groups.has(z)) this.problem(['layers'], `floor groups must be numbered 0, 1, 2, … without gaps: floor ${z} is missing (the map has a floor ${floors - 1})`);
+      tops[z] ??= new Uint32Array(w * h);
     }
-    if (empty.length) {
-      const listed = empty
-        .slice(0, MAX_EMPTY_LISTED)
-        .map((i) => `(${i % w}, ${Math.floor(i / w)})`)
-        .join(', ');
-      const more = empty.length > MAX_EMPTY_LISTED ? ', …' : '';
-      this.problem(['layers'], `${empty.length} cell(s) are empty on every visible tile layer: ${listed}${more}; paint a tile on every cell`);
+
+    const area = w * h;
+    const cells = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const facings = new Array<Facing | null>(area * floors).fill(null);
+    for (let z = 0; z < floors; z++) {
+      const top = tops[z]!;
+      for (let i = 0; i < area; i++) {
+        if (!top[i]) continue;
+        const code = gids.code(top[i]!);
+        if (code >= 0) {
+          cells[z * area + i] = Math.floor(code / FACING_CODE.length);
+          facings[z * area + i] = FACING_CODE[code % FACING_CODE.length]!;
+        }
+      }
     }
 
     const ux = root['tilewidth'] as number;
@@ -198,7 +217,7 @@ class Reader {
     // Tiled stores isometric object positions in tile-height units on both axes.
     const unit = orientation === 'isometric' ? [uy, uy] : [ux, uy];
     const { spawns, playerStart, rooms } = this.objects(objects, w, h, unit[0]!, unit[1]!);
-    return { width: w, height: h, cells, facings, spawns, playerStart, rooms };
+    return { width: w, height: h, floors, cells, facings, spawns, playerStart, rooms };
   }
 
   private tilesets(root: Obj): Tileset[] {
@@ -265,7 +284,7 @@ class Reader {
     return out.sort((a, b) => a.firstgid - b.firstgid);
   }
 
-  private layers(list: unknown[], path: KeyPath, w: number, h: number, gids: GidTable, top: Uint32Array, objects: { obj: Obj; path: KeyPath }[]): void {
+  private layers(list: unknown[], path: KeyPath, w: number, h: number, gids: GidTable, at: LayerScope): void {
     list.forEach((layer: unknown, i) => {
       const lp: KeyPath = [...path, i];
       if (!isObj(layer)) {
@@ -274,12 +293,33 @@ class Reader {
       }
       if (layer['visible'] === false) return;
       const type = layer['type'];
+      const floor = type === 'group' ? property(layer, lp, 'floor') : null;
+      let scope = at;
+      if (floor) {
+        const z = floor.value;
+        if (!isInt(z) || z < 0) {
+          this.problem(floor.path, `group property 'floor' must be an integer ≥ 0, got ${JSON.stringify(z)}`);
+          return;
+        }
+        if (at.inFloor) {
+          this.problem(floor.path, `floor group ${z} is nested inside another floor group; floor groups must not be nested`);
+          return;
+        }
+        const dup = at.groups.get(z);
+        if (dup) {
+          this.problem(floor.path, `duplicate floor group ${z} (already at ${formatPath(dup)}); floor numbers must be unique`);
+          return;
+        }
+        at.groups.set(z, lp);
+        at.tops[z] ??= new Uint32Array(w * h);
+        scope = { ...at, z, inFloor: true };
+      }
       if (type === 'group') {
-        if (Array.isArray(layer['layers'])) this.layers(layer['layers'], [...lp, 'layers'], w, h, gids, top, objects);
-      } else if (type === 'tilelayer') this.tileLayer(layer, lp, w, h, gids, top);
+        if (Array.isArray(layer['layers'])) this.layers(layer['layers'], [...lp, 'layers'], w, h, gids, scope);
+      } else if (type === 'tilelayer') this.tileLayer(layer, lp, w, h, gids, at.tops[at.z]!);
       else if (type === 'objectgroup') {
         const objs = layer['objects'];
-        if (Array.isArray(objs)) objs.forEach((obj: unknown, j) => isObj(obj) && objects.push({ obj, path: [...lp, 'objects', j] }));
+        if (Array.isArray(objs)) objs.forEach((obj: unknown, j) => isObj(obj) && at.objects.push({ obj, path: [...lp, 'objects', j], z: at.z }));
       }
     });
   }
@@ -358,16 +398,16 @@ class Reader {
   }
 
   private objects(
-    list: readonly { obj: Obj; path: KeyPath }[],
+    list: readonly { obj: Obj; path: KeyPath; z: number }[],
     w: number,
     h: number,
     ux: number,
     uy: number,
   ): Pick<TiledMap, 'spawns' | 'playerStart' | 'rooms'> {
-    const spawns: { x: number; y: number; id: number; archetype: number }[] = [];
-    let playerStart: { x: number; y: number } | null = null;
+    const spawns: { x: number; y: number; z: number; id: number; archetype: number }[] = [];
+    let playerStart: { x: number; y: number; z: number } | null = null;
     const rooms: TiledRoom[] = [];
-    for (const { obj, path } of list) {
+    for (const { obj, path, z } of list) {
       if (obj['visible'] === false) continue;
       const cls = typeof obj['type'] === 'string' && obj['type'] ? obj['type'] : typeof obj['class'] === 'string' ? obj['class'] : '';
       if (!cls) continue;
@@ -418,7 +458,7 @@ class Reader {
           this.problem(path, `room rect [${rect.join(', ')}] is out of bounds: the map is ${w}×${h}`);
           ok = false;
         }
-        if (ok) rooms.push({ x: x0, y: y0, w: rw, h: rh, tags });
+        if (ok) rooms.push({ x: x0, y: y0, z, w: rw, h: rh, tags });
         continue;
       }
       const cx = Math.floor(x / ux);
@@ -430,7 +470,7 @@ class Reader {
       }
       if (cls === 'player') {
         if (playerStart) this.problem(path, `map has more than one player object ${cell} (another at ${playerStart.x},${playerStart.y})`);
-        else playerStart = { x: cx, y: cy };
+        else playerStart = { x: cx, y: cy, z };
         continue;
       }
       const arch = property(obj, path, 'archetype');
@@ -443,11 +483,11 @@ class Reader {
         this.problem(arch.path, `${r.error} ${cell}`);
         continue;
       }
-      spawns.push({ x: cx, y: cy, id: isInt(obj['id']) ? obj['id'] : 0, archetype: r.index });
+      spawns.push({ x: cx, y: cy, z, id: isInt(obj['id']) ? obj['id'] : 0, archetype: r.index });
     }
-    // Row-major, then object id: entity ids match the ASCII loader whatever the file order.
-    spawns.sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);
-    return { spawns: spawns.map(({ x, y, archetype }) => ({ x, y, archetype })), playerStart, rooms };
+    // Floor, row-major, then object id: entity ids match the ASCII loader whatever the file order.
+    spawns.sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x || a.id - b.id);
+    return { spawns: spawns.map(({ x, y, z, archetype }) => ({ x, y, z, archetype })), playerStart, rooms };
   }
 }
 

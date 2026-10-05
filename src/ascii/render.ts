@@ -1,6 +1,7 @@
 /**
  * Top-down ASCII renderer. Pure: reads the world, returns text. No ANSI
  * codes — per-cell colors are returned separately for the terminal shell.
+ * Shows the player's floor only; empty cells are spaces.
  */
 
 import { hudLines, hudModel, type World } from '../core/index.ts';
@@ -23,6 +24,7 @@ export interface AsciiFrame {
 export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
   const { width, height } = viewport;
   const { grid, player } = world;
+  const z = player.z;
   const x0 = player.x - Math.floor(width / 2);
   const y0 = player.y - Math.floor(height / 2);
 
@@ -32,7 +34,7 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
     const row: string[] = [];
     const crow: (string | null)[] = [];
     for (let vx = 0; vx < width; vx++) {
-      const t = grid.tileAt(x0 + vx, y0 + vy);
+      const t = grid.tileAt(x0 + vx, y0 + vy, z);
       row.push(t ? t.glyph : ' ');
       crow.push(t ? t.color : null);
     }
@@ -42,7 +44,7 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
 
   // Ground piles show their first stack's item; entities draw over them.
   for (const c of world.containers.values()) {
-    if (c.kind !== 'ground' || c.stacks.length === 0) continue;
+    if (c.kind !== 'ground' || c.stacks.length === 0 || c.z !== z) continue;
     const vx = c.x - x0;
     const vy = c.y - y0;
     if (vx < 0 || vy < 0 || vx >= width || vy >= height) continue;
@@ -53,6 +55,7 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
 
   // Entities on top of tiles; the player last so it is always visible.
   const draw = (e: (typeof world.entities)[number]) => {
+    if (e.z !== z) return;
     const vx = e.x - x0;
     const vy = e.y - y0;
     if (vx < 0 || vy < 0 || vx >= width || vy >= height) return;

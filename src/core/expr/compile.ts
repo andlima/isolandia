@@ -12,6 +12,8 @@ import type { Ast } from './parser.ts';
 export interface ExprEntity {
   readonly x: number;
   readonly y: number;
+  /** Floor. */
+  readonly z: number;
   /** Measurement values, indexed by the definition's measurement index. */
   readonly m: Float64Array;
   readonly tags: ReadonlySet<string>;
@@ -29,6 +31,7 @@ export interface ExprEntity {
 export interface TileRef {
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly id: string;
   readonly tags: ReadonlySet<string>;
 }
@@ -45,7 +48,7 @@ export interface ExprContext {
    * Cell that `tile` refers to while a tile-targeted action is evaluated;
    * null or absent means the cell under `self`.
    */
-  target?: { readonly x: number; readonly y: number } | null;
+  target?: { readonly x: number; readonly y: number; readonly z: number } | null;
   player: ExprEntity;
   tick: number;
   ticksPerSecond: number;
@@ -53,13 +56,14 @@ export interface ExprContext {
   clock: ClockDef;
   /** Seeded RNG returning floats in [0, 1). */
   random(): number;
-  tileIdAt(x: number, y: number): string;
-  /** Tags of the tile at (x, y); empty out of bounds. */
-  tileTagsAt(x: number, y: number): ReadonlySet<string>;
-  /** Whether the cell at (x, y) is in a room with the room tag of that index. */
-  inRoom(x: number, y: number, tag: number): boolean;
-  /** Tile line of sight between two cells (see `lineOfSight`). */
-  los(x0: number, y0: number, x1: number, y1: number): boolean;
+  /** Qualified id of the tile at (x, y, z); `""` out of bounds or on an empty cell. */
+  tileIdAt(x: number, y: number, z: number): string;
+  /** Tags of the tile at (x, y, z); empty out of bounds or on an empty cell. */
+  tileTagsAt(x: number, y: number, z: number): ReadonlySet<string>;
+  /** Whether the cell at (x, y, z) is in a room with the room tag of that index. */
+  inRoom(x: number, y: number, z: number, tag: number): boolean;
+  /** Tile line of sight between two cells; false across floors (see `lineOfSight`). */
+  los(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean;
   warn(message: string): void;
 }
 
@@ -104,9 +108,9 @@ interface Builtin {
   impl: (args: Value[], ctx: ExprContext) => Value;
 }
 
-type Point = { x: number; y: number };
+type Point = { x: number; y: number; z: number };
 
-/** Whether a value of this type has a position (`x`, `y`). */
+/** Whether a value of this type has a position (`x`, `y`, `z`). */
 export function isPointType(t: ValueType): boolean {
   return t === 'entity' || t === 'tile' || t === 'any';
 }
@@ -128,13 +132,14 @@ function distanceCheck(name: string) {
   };
 }
 
-function deltas(args: Value[]): [number, number] {
+/** Coordinate deltas of a distance call; one floor counts as one tile (`dz` is 0 for the 4-number form). */
+function deltas(args: Value[]): [number, number, number] {
   if (args.length === 2) {
     const a = args[0] as Point;
     const b = args[1] as Point;
-    return [b.x - a.x, b.y - a.y];
+    return [b.x - a.x, b.y - a.y, b.z - a.z];
   }
-  return [(args[2] as number) - (args[0] as number), (args[3] as number) - (args[1] as number)];
+  return [(args[2] as number) - (args[0] as number), (args[3] as number) - (args[1] as number), 0];
 }
 
 const BUILTINS: Record<string, Builtin> = {
@@ -180,8 +185,8 @@ const BUILTINS: Record<string, Builtin> = {
     ret: 'number',
     check: distanceCheck('manhattan'),
     impl: (a) => {
-      const [dx, dy] = deltas(a);
-      return Math.abs(dx) + Math.abs(dy);
+      const [dx, dy, dz] = deltas(a);
+      return Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
     },
   },
   chebyshev: {
@@ -190,8 +195,8 @@ const BUILTINS: Record<string, Builtin> = {
     ret: 'number',
     check: distanceCheck('chebyshev'),
     impl: (a) => {
-      const [dx, dy] = deltas(a);
-      return Math.max(Math.abs(dx), Math.abs(dy));
+      const [dx, dy, dz] = deltas(a);
+      return Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
     },
   },
   euclidean: {
@@ -200,8 +205,8 @@ const BUILTINS: Record<string, Builtin> = {
     ret: 'number',
     check: distanceCheck('euclidean'),
     impl: (a) => {
-      const [dx, dy] = deltas(a);
-      return Math.sqrt(dx * dx + dy * dy);
+      const [dx, dy, dz] = deltas(a);
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
     },
   },
   has_tag: {
@@ -224,11 +229,12 @@ const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
-const TILE_FIELDS = ['x', 'y', 'id'];
+const TILE_FIELDS = ['x', 'y', 'z', 'id'];
 
-/** Cell `tile` refers to: the context's target override, else `self`'s cell. */
+/** Cell `tile` refers to: the context's target override, else `self`'s cell (on `self`'s floor). */
 const tileX = (c: ExprContext): number => (c.target ? c.target.x : c.self.x);
 const tileY = (c: ExprContext): number => (c.target ? c.target.y : c.self.y);
+const tileZ = (c: ExprContext): number => (c.target ? c.target.z : c.self.z);
 const WORLD_FIELDS = ['tick', 'seconds', 'day', 'hour', 'minute', 'time_of_day', 'is_day'];
 
 /** Levenshtein edit distance. */
@@ -294,6 +300,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         const root = entityRoot(obj.name);
         if (prop === 'x') return { fn: (c) => root(c).x, type: 'number' };
         if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
+        if (prop === 'z') return { fn: (c) => root(c).z, type: 'number' };
         if (prop === 'carry_weight') return { fn: (c) => (root(c).inv?.load ?? 0) / 100, type: 'number' };
         if (prop === 'carry_capacity') return { fn: (c) => (root(c).inv?.capacity ?? 0) / 100, type: 'number' };
         if (prop === 'busy') return { fn: (c) => (root(c).activity ?? null) !== null, type: 'boolean' };
@@ -307,7 +314,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'tile':
         if (prop === 'x') return { fn: tileX, type: 'number' };
         if (prop === 'y') return { fn: tileY, type: 'number' };
-        if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c)), type: 'string' };
+        if (prop === 'z') return { fn: tileZ, type: 'number' };
+        if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c), tileZ(c)), type: 'string' };
         return err(`unknown property 'tile.${prop}'${hint(`tile.${prop}`, TILE_FIELDS.map((f) => `tile.${f}`))}`, node.pos);
       case 'world':
         if (prop === 'tick') return { fn: (c) => c.tick, type: 'number' };
@@ -334,7 +342,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
           fn: (c) => {
             const x = tileX(c);
             const y = tileY(c);
-            return { x, y, id: c.tileIdAt(x, y), tags: c.tileTagsAt(x, y) };
+            const z = tileZ(c);
+            return { x, y, z, id: c.tileIdAt(x, y, z), tags: c.tileTagsAt(x, y, z) };
           },
           type: 'tile',
         };
@@ -402,7 +411,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'player':
         return { type: 'boolean', fn: (c) => c.player.tags.has(tag) };
       case 'tile':
-        return { type: 'boolean', fn: (c) => c.tileTagsAt(tileX(c), tileY(c)).has(tag) };
+        return { type: 'boolean', fn: (c) => c.tileTagsAt(tileX(c), tileY(c), tileZ(c)).has(tag) };
       default:
         return null;
     }
@@ -508,7 +517,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const r = symbols.resolveRoomTag(tagNode.value);
     if ('error' in r) return err(`in_room: ${r.error}`, tagNode.pos);
     const k = r.index;
-    return { type: 'boolean', fn: (c) => c.inRoom(tileX(c), tileY(c), k) };
+    return { type: 'boolean', fn: (c) => c.inRoom(tileX(c), tileY(c), tileZ(c), k) };
   }
 
   /** Point argument without allocating: `tile` reads as the target cell, or `self` (same position) without one. */
@@ -519,7 +528,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     return walk(node);
   }
 
-  /** `can_see(a, b[, range])`: euclidean range check first, then tile line of sight; no argument array. */
+  /** `can_see(a, b[, range])`: euclidean range check first, then tile line of sight (false across floors); no argument array. */
   function canSee(argNodes: Ast[], pos: number): CompiledExpr {
     if (argNodes.length !== 2 && argNodes.length !== 3) return err(`can_see() takes 2 or 3 arguments, got ${argNodes.length}`, pos);
     const before = errors.length;
@@ -537,7 +546,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         fn: (c) => {
           const p = A(c);
           const q = B(c);
-          return c.los(p.x, p.y, q.x, q.y);
+          return c.los(p.x, p.y, q.x, q.y, p.z, q.z);
         },
       };
     }
@@ -547,10 +556,11 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       fn: (c) => {
         const p = A(c);
         const q = B(c);
+        if (p.z !== q.z) return false;
         const dx = q.x - p.x;
         const dy = q.y - p.y;
         if (Math.sqrt(dx * dx + dy * dy) > Number(R(c))) return false;
-        return c.los(p.x, p.y, q.x, q.y);
+        return c.los(p.x, p.y, q.x, q.y, p.z, q.z);
       },
     };
   }

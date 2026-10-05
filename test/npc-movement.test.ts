@@ -84,11 +84,11 @@ test('NPC step: a zero step is ignored and does not clear a pending intent', () 
 test('NPC goto: walks an A* path; pathGoal and lastGoto are per entity', () => {
   const w = npcWorld();
   const z = w.entities[1]!;
-  w.queueIntent({ kind: 'goto', x: 5, y: 1 }, z);
+  w.queueIntent({ kind: 'goto', x: 5, y: 1, z: 0 }, z);
   w.step();
-  assert.deepEqual(w.pathGoal(z), { x: 5, y: 1 });
+  assert.deepEqual(w.pathGoal(z), { x: 5, y: 1, z: 0 });
   assert.equal(w.pathGoal(w.player), null);
-  assert.deepEqual(z.lastGoto, { x: 5, y: 1, ok: true, tick: 0 });
+  assert.deepEqual(z.lastGoto, { x: 5, y: 1, z: 0, ok: true, tick: 0 });
   assert.equal(w.player.lastGoto, null);
   assert.equal(w.lastGoto, null);
   // First step on tick 0, then one step every 3 ticks.
@@ -109,7 +109,7 @@ test('NPC goto: walks an A* path; pathGoal and lastGoto are per entity', () => {
 test('NPC goto adjacent: ends next to a blocked goal', () => {
   const w = npcWorld();
   const c = w.entities[2]!;
-  w.queueIntent({ kind: 'goto', x: 6, y: 1, adjacent: true }, c);
+  w.queueIntent({ kind: 'goto', x: 6, y: 1, z: 0, adjacent: true }, c);
   for (let i = 0; i < 20; i++) w.step();
   assert.ok(c.lastGoto!.ok);
   assert.equal(Math.max(Math.abs(c.x - 6), Math.abs(c.y - 1)), 1);
@@ -118,17 +118,17 @@ test('NPC goto adjacent: ends next to a blocked goal', () => {
 test('NPC goto: unreachable goal fails on the NPC only', () => {
   const w = npcWorld();
   const z = w.entities[1]!;
-  w.queueIntent({ kind: 'goto', x: 7, y: 1 }, z);
+  w.queueIntent({ kind: 'goto', x: 7, y: 1, z: 0 }, z);
   w.step();
-  assert.deepEqual(z.lastGoto, { x: 7, y: 1, ok: false, tick: 0 });
+  assert.deepEqual(z.lastGoto, { x: 7, y: 1, z: 0, ok: false, tick: 0 });
   assert.equal(z.path, null);
   assert.deepEqual(pos(z), [1, 3]);
   assert.equal(w.player.lastGoto, null);
   assert.equal(w.lastGoto, null);
   // The player's own goto is still tracked separately.
-  w.queueIntent({ kind: 'goto', x: 3, y: 1 });
+  w.queueIntent({ kind: 'goto', x: 3, y: 1, z: 0 });
   w.step();
-  assert.deepEqual(w.lastGoto, { x: 3, y: 1, ok: true, tick: 1 });
+  assert.deepEqual(w.lastGoto, { x: 3, y: 1, z: 0, ok: true, tick: 1 });
   assert.equal(z.lastGoto!.ok, false);
 });
 
@@ -136,18 +136,18 @@ test('player and NPC intents on the same tick are all applied', () => {
   const w = npcWorld();
   const [p, z, c] = w.entities as [Entity, Entity, Entity];
   w.queueIntent({ kind: 'step', dx: 1, dy: 0 });
-  w.queueIntent({ kind: 'goto', x: 3, y: 3 }, z);
-  w.queueIntent({ kind: 'goto', x: 7, y: 1 }, c);
+  w.queueIntent({ kind: 'goto', x: 3, y: 3, z: 0 }, z);
+  w.queueIntent({ kind: 'goto', x: 7, y: 1, z: 0 }, c);
   const snap = w.snapshot();
   assert.deepEqual(
     snap.entities.map((e) => e.intent),
-    [{ kind: 'step', dx: 1, dy: 0 }, { kind: 'goto', x: 3, y: 3 }, { kind: 'goto', x: 7, y: 1 }],
+    [{ kind: 'step', dx: 1, dy: 0 }, { kind: 'goto', x: 3, y: 3, z: 0 }, { kind: 'goto', x: 7, y: 1, z: 0 }],
   );
   w.step();
   assert.deepEqual(pos(p), [2, 1]);
   assert.deepEqual(pos(z), [2, 3]);
   assert.deepEqual(pos(c), [6, 3]);
-  assert.deepEqual(z.lastGoto, { x: 3, y: 3, ok: true, tick: 0 });
+  assert.deepEqual(z.lastGoto, { x: 3, y: 3, z: 0, ok: true, tick: 0 });
   assert.equal(c.lastGoto!.ok, false);
   assert.equal(p.lastGoto, null);
   assert.deepEqual(

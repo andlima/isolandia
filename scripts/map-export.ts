@@ -6,13 +6,15 @@
  *
  * Writes `<dir>/<id>.tmj` and `<dir>/<id>.tsj`. Output is stable: the same
  * input gives byte-identical files. Loading the result gives the same
- * `MapDef` as the source map (see the round-trip test).
+ * `MapDef` as the source map (see the round-trip test). A one-floor map is
+ * written as a `ground` tile layer and an `objects` layer; a multi-floor map
+ * as one `floor N` group (property `floor: N`) per floor holding those two.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { FACINGS, formatError, loadPacks, type AssetDef, type Definition, type Facing, type MapDef } from '../src/core/index.ts';
+import { EMPTY_TILE, FACINGS, formatError, loadPacks, type AssetDef, type Definition, type Facing, type MapDef } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 
 export const TILE_WIDTH = 64;
@@ -77,12 +79,13 @@ function previewFile(asset: AssetDef, facing: Facing): string | null {
 /** Write `map` as Tiled JSON: the `.tmj` text and its external `.tsj` tileset. */
 export function exportTiledMap(def: Definition, map: MapDef, opts: ExportOptions): { tmj: string; tsj: string } {
   const ns = map.id.slice(0, map.id.indexOf(':'));
-  const { width, height } = map;
+  const { width, height, floors } = map;
+  const area = width * height;
   const key = (tile: number, facing: Facing | null) => `${tile}|${facing ?? ''}`;
 
   // One tileset tile per used (tile, facing) pair, sorted by tile id then facing.
   const pairs = new Map<string, { tile: number; facing: Facing | null }>();
-  map.cells.forEach((tile, i) => pairs.set(key(tile, map.facings[i] ?? null), { tile, facing: map.facings[i] ?? null }));
+  map.cells.forEach((tile, i) => tile !== EMPTY_TILE && pairs.set(key(tile, map.facings[i] ?? null), { tile, facing: map.facings[i] ?? null }));
   const sorted = [...pairs.values()].sort((a, b) => {
     const ia = def.tiles[a.tile]!.id;
     const ib = def.tiles[b.tile]!.id;
@@ -120,25 +123,25 @@ export function exportTiledMap(def: Definition, map: MapDef, opts: ExportOptions
     version: FORMAT_VERSION,
   };
 
-  // Objects: the player, spawns (row-major, as loaded), then rooms in source order.
+  // Objects per floor: the player, spawns (as loaded), then rooms in source order.
   // Tiled stores isometric object positions in tile-height units on both axes.
   const u = TILE_HEIGHT;
-  const objects: Out[] = [];
+  const objects: Out[][] = Array.from({ length: floors }, () => []);
   let nextId = 1;
-  const point = (type: string, name: string, x: number, y: number, props: Out[]): void => {
+  const point = (type: string, name: string, x: number, y: number, z: number, props: Out[]): void => {
     const o: { [k: string]: Out } = { height: 0, id: nextId++, name, point: true };
     if (props.length) o['properties'] = props;
     Object.assign(o, { rotation: 0, type, visible: true, width: 0, x: (x + 0.5) * u, y: (y + 0.5) * u });
-    objects.push(o);
+    objects[z]!.push(o);
   };
-  if (map.playerStart) point('player', 'player', map.playerStart.x, map.playerStart.y, []);
+  if (map.playerStart) point('player', 'player', map.playerStart.x, map.playerStart.y, map.playerStart.z, []);
   for (const s of map.spawns) {
     const arch = refFrom(ns, def.archetypes[s.archetype]!.id);
-    point('spawn', arch, s.x, s.y, [prop('archetype', arch)]);
+    point('spawn', arch, s.x, s.y, s.z, [prop('archetype', arch)]);
   }
   for (const r of map.rooms.rects) {
     const tags = r.tags.map((t) => def.roomTags[t]!).join(', ');
-    objects.push({
+    objects[r.z]!.push({
       height: r.h * u,
       id: nextId++,
       name: tags,
@@ -152,29 +155,39 @@ export function exportTiledMap(def: Definition, map: MapDef, opts: ExportOptions
     });
   }
 
+  let nextLayer = 1;
+  const floorLayers = (z: number): Out[] => [
+    {
+      data: new Rows(
+        map.cells.slice(z * area, (z + 1) * area).map((tile, i) => (tile === EMPTY_TILE ? 0 : 1 + localId.get(key(tile, map.facings[z * area + i] ?? null))!)),
+        width,
+      ),
+      height,
+      id: nextLayer++,
+      name: 'ground',
+      opacity: 1,
+      type: 'tilelayer',
+      visible: true,
+      width,
+      x: 0,
+      y: 0,
+    },
+    { draworder: 'topdown', id: nextLayer++, name: 'objects', objects: objects[z]!, opacity: 1, type: 'objectgroup', visible: true, x: 0, y: 0 },
+  ];
+  const layers: Out[] =
+    floors === 1
+      ? floorLayers(0)
+      : Array.from({ length: floors }, (_, z): Out => {
+          const id = nextLayer++;
+          return { id, layers: floorLayers(z), name: `floor ${z}`, opacity: 1, properties: [{ name: 'floor', type: 'int', value: z }], type: 'group', visible: true, x: 0, y: 0 };
+        });
+
   const tmj: Out = {
     compressionlevel: -1,
     height,
     infinite: false,
-    layers: [
-      {
-        data: new Rows(
-          map.cells.map((tile, i) => 1 + localId.get(key(tile, map.facings[i] ?? null))!),
-          width,
-        ),
-        height,
-        id: 1,
-        name: 'ground',
-        opacity: 1,
-        type: 'tilelayer',
-        visible: true,
-        width,
-        x: 0,
-        y: 0,
-      },
-      { draworder: 'topdown', id: 2, name: 'objects', objects, opacity: 1, type: 'objectgroup', visible: true, x: 0, y: 0 },
-    ],
-    nextlayerid: 3,
+    layers,
+    nextlayerid: nextLayer,
     nextobjectid: nextId,
     orientation: 'isometric',
     renderorder: 'right-down',
@@ -241,7 +254,7 @@ function main(argv: readonly string[]): void {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, `${name}.tmj`), tmj);
   writeFileSync(join(outDir, `${name}.tsj`), tsj);
-  console.log(`wrote ${join(out, `${name}.tmj`)} and ${join(out, `${name}.tsj`)} (${map.width}×${map.height})`);
+  console.log(`wrote ${join(out, `${name}.tmj`)} and ${join(out, `${name}.tsj`)} (${map.width}×${map.height}${map.floors > 1 ? `, ${map.floors} floors` : ''})`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main(process.argv.slice(2));

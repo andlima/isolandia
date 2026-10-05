@@ -34,7 +34,8 @@ http://localhost:5173/?packs=std,garden
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
 there. Right-click (or long-press) a tile for what you can do there, or
 press `E` for your own cell (see [docs/ui.md](docs/ui.md)). `C` opens the
-crafting panel. Space recenters the camera. `F5` quicksaves, `F9`
+crafting panel. On stairs, `PageUp`/`<` and `PageDown`/`>` climb a
+floor (the floors above you are cut away). Space recenters the camera. `F5` quicksaves, `F9`
 quickloads and `O` opens the Game panel with three save slots and file
 export/import (see [docs/saves.md](docs/saves.md)).
 
@@ -48,8 +49,8 @@ npm run play -- packs/std packs/std-needs packs/zombie --load isolandia-save.jso
 ```
 
 `q` quits, `g` takes everything nearby, `1`–`9` uses an item, `d 1`–`9`
-drops one. `S` saves to `--save-file` (default `isolandia-save.json`) and
-`L` loads it.
+drops one, `<`/`>` climb stairs. `S` saves to `--save-file` (default
+`isolandia-save.json`) and `L` loads it.
 
 ## Packs
 

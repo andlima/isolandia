@@ -156,10 +156,10 @@ test('container ids: tile containers row-major, then inventories; piles get new 
   assert.deepEqual(
     snap.map((c) => [c.id, c.kind, c.cell ?? c.owner]),
     [
-      [0, 'tile', [1, 1]],
-      [1, 'tile', [5, 1]],
-      [2, 'tile', [1, 3]],
-      [3, 'tile', [5, 3]],
+      [0, 'tile', [1, 1, 0]],
+      [1, 'tile', [5, 1, 0]],
+      [2, 'tile', [1, 3, 0]],
+      [3, 'tile', [5, 3, 0]],
       [4, 'inventory', 0],
     ],
   );
@@ -339,7 +339,7 @@ test('determinism: same seed, intents and actions ⇒ same hashes; containers ar
     const w = world({ 'loot.yaml': 'loot:\n  - { id: p, rolls: [0, 9], entries: [{ item: pebble }, { item: coin, count: [1, 5] }] }\ndistributions:\n  - { container: crate, table: p }\n' }, seed);
     const hashes: string[] = [];
     for (let t = 0; t < 60; t++) {
-      if (t === 2) w.queueIntent({ kind: 'goto', x: 5, y: 1, adjacent: true });
+      if (t === 2) w.queueIntent({ kind: 'goto', x: 5, y: 1, z: 0, adjacent: true });
       if (t === 10) for (const c of w.reachableContainers()) for (const s of c.stacks) w.queueAction({ kind: 'take', container: c.id, item: w.def.items[s.item]!.id });
       if (t === 20) w.queueAction({ kind: 'drop', item: 't:coin', count: 1 });
       w.step();
@@ -490,7 +490,7 @@ test('rooms: overlapping rects union their tags into room sets', () => {
 
 test('goto adjacent: ends next to a non-walkable goal; stays put when already adjacent; fails when unreachable', () => {
   const w = world();
-  w.queueIntent({ kind: 'goto', x: 1, y: 3, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 1, y: 3, z: 0, adjacent: true });
   w.step();
   assert.ok(w.lastGoto!.ok);
   // One diagonal step: (2,2) is the closest of (1,2), (2,2) and (2,3).
@@ -500,33 +500,33 @@ test('goto adjacent: ends next to a non-walkable goal; stays put when already ad
   assert.deepEqual([w.player.x, w.player.y], [2, 2]);
   assert.deepEqual(w.reachableContainers().map((c) => c.id), [0, 2]);
 
-  w.queueIntent({ kind: 'goto', x: 1, y: 3, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 1, y: 3, z: 0, adjacent: true });
   w.step();
   assert.ok(w.lastGoto!.ok);
   assert.equal(w.player.path, null);
 
   // Without `adjacent`, a non-walkable goal fails.
-  w.queueIntent({ kind: 'goto', x: 1, y: 3 });
+  w.queueIntent({ kind: 'goto', x: 1, y: 3, z: 0 });
   w.step();
   assert.equal(w.lastGoto!.ok, false);
   // The closest walkable neighbour wins: from (5,2), the crate (5,1) beats (4,1) for the wall above it.
   at(w, 5, 2);
   w.player.moveCooldown = 0;
-  w.queueIntent({ kind: 'goto', x: 5, y: 0, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 5, y: 0, z: 0, adjacent: true });
   w.step();
   assert.ok(w.lastGoto!.ok);
   assert.deepEqual([w.player.x, w.player.y], [5, 1]);
   // Already adjacent to a walkable goal: no path. Otherwise the closest candidate.
   at(w, 2, 3);
   w.player.moveCooldown = 0;
-  w.queueIntent({ kind: 'goto', x: 3, y: 2, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 3, y: 2, z: 0, adjacent: true });
   w.step();
   assert.equal(w.player.path, null); // already adjacent: no path
-  w.queueIntent({ kind: 'goto', x: 4, y: 2, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 4, y: 2, z: 0, adjacent: true });
   w.step();
   assert.deepEqual(w.pathGoal(w.player) ?? { x: w.player.x, y: w.player.y }, { x: 3, y: 3 });
   // Out of bounds or no walkable neighbour: unreachable.
-  w.queueIntent({ kind: 'goto', x: 40, y: 0, adjacent: true });
+  w.queueIntent({ kind: 'goto', x: 40, y: 0, z: 0, adjacent: true });
   w.step();
   assert.equal(w.lastGoto!.ok, false);
 });
@@ -535,7 +535,7 @@ test('goto adjacent: deterministic tie-breaking', () => {
   const run = () => {
     const w = world();
     at(w, 3, 3);
-    w.queueIntent({ kind: 'goto', x: 3, y: 0, adjacent: true });
+    w.queueIntent({ kind: 'goto', x: 3, y: 0, z: 0, adjacent: true });
     w.step();
     return w.pathGoal(w.player);
   };
@@ -661,9 +661,9 @@ test('browser panels: views from hudModel, buttons become actions, read-only aft
 
 test('clickIntent: non-walkable containers are approached with adjacent: true', () => {
   const w = world();
-  assert.deepEqual(clickIntent(w, 1, 1), { kind: 'goto', x: 1, y: 1, adjacent: true });
-  assert.deepEqual(clickIntent(w, 5, 1), { kind: 'goto', x: 5, y: 1 }); // walkable crate
-  assert.deepEqual(clickIntent(w, 0, 0), { kind: 'goto', x: 0, y: 0 }); // plain wall
+  assert.deepEqual(clickIntent(w, 1, 1), { kind: 'goto', x: 1, y: 1, z: 0, adjacent: true });
+  assert.deepEqual(clickIntent(w, 5, 1), { kind: 'goto', x: 5, y: 1, z: 0 }); // walkable crate
+  assert.deepEqual(clickIntent(w, 0, 0), { kind: 'goto', x: 0, y: 0, z: 0 }); // plain wall
 });
 
 // ── Loader errors (AC 19) ───────────────────────────────────────────────────

@@ -103,7 +103,12 @@ export interface ActEntry {
   readonly hint: string;
   /** Queued in order when chosen. */
   readonly actions: readonly Action[];
+  /** Queued when chosen, before the actions (`Go up` / `Go down`). */
+  readonly intent?: Intent;
 }
+
+/** Climb keys: `<` goes up a floor, `>` down. */
+export const CLIMB_KEYS: Readonly<Record<string, 1 | -1>> = { '<': 1, '>': -1 };
 
 /** The `c` list: recipes that can be made now, or (when there are none) a few that cannot, with hints. */
 export interface CraftMenu {
@@ -120,24 +125,30 @@ export interface KeyState {
   actions?: ActEntry[] | null;
   /** The open `c` list, or null/absent when closed. */
   crafting?: CraftMenu | null;
+  /** A message for the help line set by the last key (e.g. `No way up here.`), or null/absent. */
+  message?: string | null;
 }
 
 /**
- * The `x` list, at most 9 entries: the self and tile actions that can be
- * started here (`availableActions`), then `take all` for each reachable
- * non-empty container (`interactionsAt` over the reachable cells, row-major).
+ * The `x` list, at most 9 entries: `Go up` / `Go down` when the player
+ * stands on a link, the self and tile actions that can be started here
+ * (`availableActions`), then `take all` for each reachable non-empty
+ * container (`interactionsAt` over the reachable cells, row-major).
  */
 export function actionMenu(world: World): ActEntry[] {
   const out: ActEntry[] = [];
+  const { x: px, y: py, z: pz } = world.player;
+  for (const e of world.interactionsAt(px, py, pz)) {
+    if (e.kind === 'climb') out.push({ label: e.label, ok: e.ok, hint: '', actions: [], intent: e.intent! });
+  }
   for (const a of world.availableActions()) {
     if (a.kind !== 'act') continue;
-    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! };
+    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y!, z: a.z! } : { kind: 'act', action: a.action! };
     out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y! } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
   }
-  const { x: px, y: py } = world.player;
   for (let y = py - 1; y <= py + 1; y++) {
     for (let x = px - 1; x <= px + 1; x++) {
-      for (const e of world.interactionsAt(x, y)) {
+      for (const e of world.interactionsAt(x, y, pz)) {
         if (e.kind === 'take_all') out.push({ label: e.label, x, y, ok: e.ok, hint: reasonText(e), actions: e.actions! });
       }
     }
@@ -160,7 +171,7 @@ export function craftMenu(world: World): CraftMenu {
       ...(r.station ? { x: r.station.x, y: r.station.y } : {}),
       ok: r.ok,
       hint: r.ok ? '' : recipeHint(world, r),
-      actions: [r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y } : { kind: 'craft', recipe: r.recipe }],
+      actions: [r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y, z: r.station.z } : { kind: 'craft', recipe: r.recipe }],
     }),
   );
   const entries = all.filter((e) => e.ok).slice(0, 9);
@@ -183,11 +194,14 @@ export type KeyResult = 'quit' | 'save' | 'load' | void;
  * inventory, `g` takes everything that fits from every reachable container,
  * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
  * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
- * NumLock off still do, and cancel what the player is doing). Returns
+ * NumLock off still do, and cancel what the player is doing). `<` / `>`
+ * climb through the link at the player's cell (`climbIntent`), or set
+ * `state.message` to `No way up here.` / `No way down here.`. Returns
  * `'quit'` for `q`/Ctrl-C, and `'save'` / `'load'` for `S` / `L` (the
  * caller does the file work; lowercase `s`/`l` still move).
  */
 export function handleKey(world: World, key: string, state: KeyState): KeyResult {
+  state.message = null;
   if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
   if (key === 'S' || key === 'L') {
     state.actions = null;
@@ -201,10 +215,17 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     state.crafting = null;
     const a = /^[1-9]$/.test(key) ? open[Number(key) - 1] : undefined;
     if (a) {
+      if (a.intent) world.queueIntent(a.intent);
       for (const action of a.actions) world.queueAction(action);
       return;
     }
     if (/^[1-9]$/.test(key)) return;
+  } else if (CLIMB_KEYS[key] && !state.dropPending) {
+    const dz = CLIMB_KEYS[key];
+    const intent = world.climbIntent(dz);
+    if (intent) world.queueIntent(intent);
+    else state.message = dz > 0 ? 'No way up here.' : 'No way down here.';
+    return;
   } else if (key === 'x' && !state.dropPending) {
     state.actions = actionMenu(world);
     return;
@@ -270,8 +291,8 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
 
   return new Promise((resolve) => {
     const draw = () => {
-      // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
-      const hudRows = 2 + world.player.archetype.measurements.length + 7 + 2;
+      // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + world.player.archetype.measurements.length + 7 + 2;
       const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + (saves ? '  S: save  L: load' : '');
       const width = Math.max(10, stdout.columns ?? 80);
       const height = Math.max(5, (stdout.rows ?? 24) - hudRows);
@@ -288,6 +309,10 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
     const onKey = (buf: Buffer) => {
       const r = handleKey(world, buf.toString('utf8'), keys);
       if (r === 'quit') return stop();
+      if (keys.message) {
+        say(keys.message);
+        draw();
+      }
       if (!saves) return;
       if (r === 'save') say(saves.save(world));
       else if (r === 'load') {

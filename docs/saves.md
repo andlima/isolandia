@@ -17,11 +17,11 @@ else show(r.errors);
 ```ts
 interface SaveFile {
   format: 'isolandia-save';
-  version: 1;
+  version: 2;
   /** Loaded packs, in load order. */
   packs: { namespace: string; version: string }[];
   /** Qualified id of the start map, and its size. */
-  map: { id: string; width: number; height: number };
+  map: { id: string; width: number; height: number; floors: number };
   state: WorldSnapshot;
 }
 ```
@@ -31,7 +31,11 @@ interface SaveFile {
 `nextContainer` (ids are never reused, so it cannot be derived once a
 ground pile has gone), the action queue, `lastAction`, `defeat` /
 `victory`, every entity, every container in id order, and the cells whose
-tile differs from the map as `[x, y, tileId]`, row-major. Every reference
+tile differs from the map as `[x, y, z, tileId]`, in cell order (floor by
+floor, row-major). Every cell carries its floor `z`: entity `z` and
+`fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
+`[x, y, z, tick]`, `heard` and the activity target with `z`, `lastGoto.z`,
+and container cells as `[x, y, z]` (see [floors](packs.md#floors)). Every reference
 is a qualified id (`zmb:hammer`), never an index, so a save does not depend
 on load order details.
 
@@ -45,7 +49,7 @@ inside `state`:
 
 ```json
 { "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "zmb"] },
-  "save": { "format": "isolandia-save", "version": 1, "...": "..." } }
+  "save": { "format": "isolandia-save", "version": 2, "...": "..." } }
 ```
 
 Every reader (browser import, `--load`, `check --save`) accepts both the
@@ -58,8 +62,16 @@ renamed or reinterpreted). Adding state that a restore needs is breaking
 too, since older files lack it. `World.restore` keeps reading every
 version listed in `SUPPORTED_SAVE_VERSIONS`, migrating older ones on read;
 an unlisted version is an error that names the supported ones. Later M6
-work (`m6-tiled-maps`, `m6-floors`, `m6-chunked-world`) extends the format
-under this policy and must keep the round-trip invariant.
+work (`m6-chunked-world`) extends the format under this policy and must
+keep the round-trip invariant.
+
+| Version | Change | Read as |
+|---------|--------|---------|
+| 1 | first format | migrated on read: every `z` is `0` (cells become `[x, y, 0]`, the plan `[x, y, 0, tick]`, records gain `z: 0`), `map.floors` is 1 |
+| 2 | floors (`m6-floors`): `map.floors` and a `z` on every cell, as above | current |
+
+`save()` always writes the current version, so a version 1 file loaded
+and saved again becomes version 2.
 
 ## Validation
 
@@ -73,7 +85,8 @@ mean 'zmb:shambler'?)`).
 
 - `format` is not `isolandia-save`, or `version` is unsupported.
 - The pack **namespaces** differ from the loaded packs, in order (both
-  lists are shown), or the map id or size differs from the start map.
+  lists are shown), or the map id or size (width, height, floors) differs
+  from the start map.
   These stop the check: the state's ids and cells would only add noise.
 - A qualified id does not resolve: archetype, measurement, status, item,
   tile, action, recipe, or the behavior state name of the entity's
@@ -84,9 +97,11 @@ mean 'zmb:shambler'?)`).
 - An inventory has no `owner`, its owner's archetype has no `inventory`,
   or an entity whose archetype has an inventory has no inventory container.
 - A container id is duplicated or `≥ nextContainer`.
-- A cell is out of bounds: entity position, `from`, `home`, path cell,
-  container cell, changed tile, activity target, heard noise, or a behavior
-  plan (`[-1, -1]` is allowed: `investigate` plans without a goto).
+- A cell is out of bounds (on any axis, floors included): entity
+  position, `from`, `home`, path cell, container cell, changed tile,
+  activity target, heard noise, or a behavior plan (`[-1, -1, -1]` is
+  allowed: `investigate` plans without a goto).
+- A changed tile is on an empty cell of the map.
 - A tile container's cell does not hold a container tile in the restored
   grid (changed tiles are applied first).
 - A field has the wrong type or range (e.g. a negative tick, an RNG state
