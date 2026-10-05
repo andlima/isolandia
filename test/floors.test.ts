@@ -667,19 +667,26 @@ for (const name of ['zombie', 'vampire'] as const) {
     assert.equal(m.floors, 2);
     const w = World.create(d, 1);
     const g = w.grid;
-    const pf = new Pathfinder(g);
+    // Region labels (A*'s own connectivity, see Grid.regions): one region holds the start and every walkable cell.
+    const labels = g.regions();
     const s = m.playerStart!;
+    const home = labels[g.index(s.x, s.y, s.z)]!;
     const unreachable: string[] = [];
-    for (let z = 0; z < g.floors; z++) {
-      for (let y = 0; y < g.height; y++) {
-        for (let x = 0; x < g.width; x++) if (g.walkable(x, y, z) && !pf.findPath(s.x, s.y, x, y, s.z, z)) unreachable.push(`(${x}, ${y}, ${z})`);
-      }
+    for (let i = 0; i < g.cells.length; i++) {
+      if (g.walk[i] !== 1 || labels[i] === home) continue;
+      const { x, y, z } = g.cellOf(i);
+      unreachable.push(`(${x}, ${y}, ${z})`);
     }
     assert.deepEqual(unreachable, []);
+    const pf = new Pathfinder(g);
     for (const c of w.containers.values()) {
       if (c.kind !== 'tile') continue;
-      assert.ok(pf.findPathAdjacent(s.x, s.y, c.x, c.y, s.z, c.z), `container at (${c.x}, ${c.y}, ${c.z})`);
+      let near = false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) near ||= g.walkable(c.x + dx, c.y + dy, c.z) && labels[g.index(c.x + dx, c.y + dy, c.z)] === home;
+      assert.ok(near, `container at (${c.x}, ${c.y}, ${c.z})`);
     }
+    // Spot check with A* itself: the upstairs containers.
+    for (const c of w.containers.values()) if (c.kind === 'tile' && c.z === 1) assert.ok(pf.findPathAdjacent(s.x, s.y, c.x, c.y, s.z, c.z), `container at (${c.x}, ${c.y}, ${c.z})`);
     assert.ok([...w.containers.values()].some((c) => c.kind === 'tile' && c.z === 1), 'a container upstairs');
   });
 }
