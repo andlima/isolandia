@@ -249,6 +249,12 @@ export class IsoScene {
   }
 
   /** Applies the camera, culls chunks and entities, interpolates and re-buckets entities. */
+  /** Destroy the scene's display objects; shared textures stay alive for the next scene. */
+  destroy(): void {
+    this.root.removeFromParent();
+    this.root.destroy({ children: true });
+  }
+
   update(cam: CameraState, viewW: number, viewH: number, alpha: number, now: number): SceneStats {
     this.root.position.set(cam.offsetX, cam.offsetY);
     this.root.scale.set(cam.zoom);

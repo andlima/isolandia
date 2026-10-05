@@ -1,7 +1,8 @@
 import type { LoadError } from '../core/index.ts';
-import { loadOrExitIf, parseArgs } from './common.ts';
+import { fail, loadOrExitIf, parseArgs } from './common.ts';
+import { readSaveFile } from './saves.ts';
 
-const { dirs } = parseArgs(process.argv.slice(2), 'usage: npm run check -- <pack-dir> [<pack-dir>…]');
+const { dirs, save } = parseArgs(process.argv.slice(2), 'usage: npm run check -- <pack-dir> [<pack-dir>…] [--save <file>]', ['--seed', '--save']);
 
 /**
  * A stack whose only error is the missing `start` is a valid *library* stack
@@ -11,7 +12,7 @@ const { dirs } = parseArgs(process.argv.slice(2), 'usage: npm run check -- <pack
 const isMissingStartOnly = (errors: readonly LoadError[]): boolean =>
   errors.length === 1 && errors[0]!.message.startsWith("no 'start' defined");
 
-const r = loadOrExitIf(dirs, (errors) => !isMissingStartOnly(errors));
+const r = loadOrExitIf(dirs, (errors) => save !== null || !isMissingStartOnly(errors));
 if (!r.ok) {
   console.log(`OK: ${dirs.join(', ')} — library stack (no 'start' defined; not playable on its own)`);
 } else {
@@ -24,4 +25,18 @@ if (!r.ok) {
       `${def.items.length} items, ${def.loot.length} loot tables, ${def.distributions.length} distributions, ` +
       `${def.behaviors.length} behaviors, ${def.actions.length} actions, ${def.recipes.length} recipes`,
   );
+  if (save !== null) {
+    const s = readSaveFile(def, save);
+    if (!s.ok) {
+      for (const e of s.errors) console.error(`${save}: ${e}`);
+      fail(`\n${s.errors.length} error(s); save not loaded.`);
+    }
+    for (const w of s.warnings) console.error(`warning: ${save}: ${w}`);
+    const { day, hour, minute } = s.world.clock;
+    console.log(
+      `OK: ${save} — tick ${s.world.tick}, day ${day} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}, ` +
+        `${s.world.entities.length} entities, ${s.world.containers.size} containers` +
+        (s.warnings.length ? `, ${s.warnings.length} warning(s)` : ''),
+    );
+  }
 }

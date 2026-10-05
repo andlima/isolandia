@@ -132,7 +132,7 @@ class Checker {
 
   int(v: unknown, path: string, min = -Infinity, max = Infinity): number | null {
     if (typeof v !== 'number' || !Number.isInteger(v)) return this.err(path, `expected an integer, got ${show(v)}`);
-    if (v < min || v > max) return this.err(path, `${v} is out of range [${min}, ${max}]`);
+    if (v < min || v > max) return this.err(path, max === Infinity ? `${v} must be ≥ ${min}` : `${v} is out of range [${min}, ${max}]`);
     return v;
   }
 
@@ -363,6 +363,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     const want = def.packs.map((p) => p.namespace);
     if (saved.every((s) => s !== null) && (saved.length !== want.length || saved.some((s, i) => s !== want[i]))) {
       c.err('packs', `the save was made with packs [${saved.join(', ')}] but the loaded packs are [${want.join(', ')}]`);
+      headerOk = false;
     }
   }
   const m = c.obj(root['map'], 'map');
@@ -372,8 +373,10 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     const h = c.int(m['height'], 'map.height');
     if (id !== null && w !== null && h !== null && (id !== map.id || w !== map.width || h !== map.height)) {
       c.err('map', `the save is for map '${id}' (${w}×${h}) but the start map is '${map.id}' (${map.width}×${map.height})`);
+      headerOk = false;
     }
   }
+  // Another format, version, pack list or map: the state's ids and cells would only add noise.
   if (!headerOk) return { ok: false, errors: c.errors };
   const s = c.obj(root['state'], 'state');
   if (!s) return { ok: false, errors: c.errors };

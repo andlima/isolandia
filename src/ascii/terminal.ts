@@ -173,6 +173,9 @@ export function craftMenuText(menu: CraftMenu): string {
   return ['Nothing to craft', ...menu.blocked.map((e) => `${e.label} [${e.hint}]`)].join('  ');
 }
 
+/** What a key asks of the terminal loop, beyond changing the world. */
+export type KeyResult = 'quit' | 'save' | 'load' | void;
+
 /**
  * Apply one key to the world. `x` opens the list of pack actions and
  * `take all`s that can be done here, `c` the list of recipes that can be
@@ -181,10 +184,17 @@ export function craftMenuText(menu: CraftMenu): string {
  * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
  * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
  * NumLock off still do, and cancel what the player is doing). Returns
- * `'quit'` for `q`/Ctrl-C.
+ * `'quit'` for `q`/Ctrl-C, and `'save'` / `'load'` for `S` / `L` (the
+ * caller does the file work; lowercase `s`/`l` still move).
  */
-export function handleKey(world: World, key: string, state: KeyState): 'quit' | void {
+export function handleKey(world: World, key: string, state: KeyState): KeyResult {
   if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  if (key === 'S' || key === 'L') {
+    state.actions = null;
+    state.crafting = null;
+    state.dropPending = false;
+    return key === 'S' ? 'save' : 'load';
+  }
   const open = state.actions ?? state.crafting?.entries;
   if (open) {
     state.actions = null;
@@ -234,31 +244,67 @@ export interface TerminalIO {
   readonly stdout: NodeJS.WriteStream;
 }
 
+/** File work for `S` / `L`, done by the caller (see `src/cli/saves.ts`). */
+export interface TerminalSaves {
+  /** Write the save; returns the message to show. */
+  save(world: World): string;
+  /** Read the save: a new world (or null on errors) and the message to show. */
+  load(): { world: World | null; message: string };
+}
+
+/** How long a save/load message stays on the help line. */
+const STATUS_MS = 4000;
+
 /** Run an interactive session until `q`/Ctrl-C. Resolves when the session ends. */
-export function runTerminal(world: World, io: TerminalIO): Promise<void> {
+export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSaves, status = ''): Promise<void> {
   const { stdin, stdout } = io;
+  let world = initial;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 7 + 2;
-  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act';
   const keys: KeyState = { dropPending: false, actions: null, crafting: null };
+  let message = status;
+  let messageAt = Date.now();
+  const say = (text: string) => {
+    message = text;
+    messageAt = Date.now();
+  };
 
   return new Promise((resolve) => {
     const draw = () => {
+      // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+      const hudRows = 2 + world.player.archetype.measurements.length + 7 + 2;
+      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + (saves ? '  S: save  L: load' : '');
       const width = Math.max(10, stdout.columns ?? 80);
-      const height = Math.max(5, (stdout.rows ?? 24) - HUD_ROWS);
+      const height = Math.max(5, (stdout.rows ?? 24) - hudRows);
       const frame = renderAscii(world, { width, height });
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
+      if (message && Date.now() - messageAt > STATUS_MS) message = '';
+      const line = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : message || help;
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${line}\x1b[0m\x1b[J`);
     };
+
+    // Sim time tracks wall time from (startMs, startTick); a load restarts the count.
+    let startMs = Date.now();
+    let startTick = world.tick;
 
     const onKey = (buf: Buffer) => {
-      if (handleKey(world, buf.toString('utf8'), keys) === 'quit') return stop();
+      const r = handleKey(world, buf.toString('utf8'), keys);
+      if (r === 'quit') return stop();
+      if (!saves) return;
+      if (r === 'save') say(saves.save(world));
+      else if (r === 'load') {
+        const loaded = saves.load();
+        say(loaded.message);
+        if (loaded.world) {
+          world = loaded.world;
+          startMs = Date.now();
+          startTick = world.tick;
+        }
+      }
+      if (r) draw();
     };
 
-    const start = Date.now();
     const timer = setInterval(() => {
       // Catch up on missed ticks so sim time tracks wall time.
-      const due = Math.floor((Date.now() - start) / tickMs);
+      const due = startTick + Math.floor((Date.now() - startMs) / tickMs);
       let n = 0;
       while (world.tick < due && n++ < 10) world.step();
       draw();

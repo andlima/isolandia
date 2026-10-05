@@ -36,6 +36,11 @@ export class FixedTickLoop {
     return ticks;
   }
 
+  /** Drop the accumulated time (a new world starts on a whole tick). */
+  reset(): void {
+    this.accumulator = 0;
+  }
+
   /** Interpolation factor in [0, 1) between the current tick and the next. */
   get alpha(): number {
     return this.accumulator / this.tickMs;

@@ -635,7 +635,7 @@ test('validation: every error is reported, not just the first', () => {
     s.state.entities[0]!.archetype = 't:nope';
     s.state.containers[0]!.stacks[0]![0] = 't:nope';
     s.state.tick = -1;
-  }, 'state.tick', /out of range/);
+  }, 'state.tick', /-1 must be ≥ 0/);
   assert.ok(errors.length >= 3, errors.join('\n'));
 });
 

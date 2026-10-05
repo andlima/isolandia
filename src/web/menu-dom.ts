@@ -16,6 +16,10 @@ export class ContextMenu {
   target: { x: number; y: number } | null = null;
   /** Set by a pointer press outside the open menu (which closes it): the shell skips that press's click. */
   dismissed = false;
+  private readonly onPointerDown = (ev: PointerEvent) => {
+    this.dismissed = this.isOpen && !this.el.contains(ev.target as Node);
+    if (this.dismissed) this.close();
+  };
 
   constructor(
     parent: HTMLElement,
@@ -35,14 +39,14 @@ export class ContextMenu {
       if (k >= 0) this.choose(k);
     });
     this.el.addEventListener('contextmenu', (ev) => ev.preventDefault());
-    document.addEventListener(
-      'pointerdown',
-      (ev) => {
-        this.dismissed = this.isOpen && !this.el.contains(ev.target as Node);
-        if (this.dismissed) this.close();
-      },
-      true,
-    );
+    document.addEventListener('pointerdown', this.onPointerDown, true);
+  }
+
+  /** Remove the menu and its listener (the world is being replaced). */
+  dispose(): void {
+    this.close();
+    document.removeEventListener('pointerdown', this.onPointerDown, true);
+    this.el.remove();
   }
 
   get isOpen(): boolean {

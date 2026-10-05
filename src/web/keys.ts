@@ -49,3 +49,10 @@ export function heldDirection(held: Iterable<string>): { dx: D; dy: D } | null {
   const dy = Math.sign(sy - sx) as D;
   return dx === 0 && dy === 0 ? null : { dx, dy };
 }
+
+/** Keys whose browser default (focus change, scrolling, page reload) the game suppresses. */
+export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F5', 'F9']);
+
+export function suppressesDefault(code: string): boolean {
+  return SUPPRESSED_KEYS.has(code);
+}

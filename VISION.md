@@ -387,6 +387,29 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   legend. Facing-aware actions (vision cones, interact with the faced
   tile) may come in M5.
   Animation frames are a later step. See `docs/iso.md`.
+- ~~How are games saved and loaded?~~ **Decided (spec `m6-save-load`,
+  M6):**
+  - **A save is a snapshot plus pack identity**: `world.save()` is the
+    world snapshot (now with the seed, `nextContainer` and changed tiles
+    as `[x, y, id]`) with the format version, the pack namespaces and
+    versions, and the start map id and size. Plain JSON, qualified ids,
+    no wall-clock time; shells keep their metadata in a wrapper next to it.
+  - **Restore is exact and rolls nothing**: `World.restore` rebuilds the
+    world through a constructor path without spawning, loot, clamp or
+    status updates, so a restored world has the same snapshot and the same
+    future hashes. A shared `assertRoundTrip` test helper guards this for
+    every later format change.
+  - **Pack version drift is a warning, id drift is an error**: unknown
+    archetypes, items, tiles, measurements, statuses, actions, recipes and
+    behavior states fail the restore (with JSON paths and *did you mean*),
+    as do other pack lists or maps; a different pack version, or an added
+    or removed measurement, only warns. Rule changes inside a pack are not
+    detected.
+  - **Saves live in browser `localStorage` slots and exported files**: a
+    quicksave (`F5`/`F9`) and three slots per pack list, plus file export
+    and import; the terminal saves to a file (`S`/`L`, `--load`) and
+    `check --save` validates one. No autosave, compression or cloud sync.
+    See `docs/saves.md`.
 
 ## 8. Next step
 

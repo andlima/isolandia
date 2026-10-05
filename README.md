@@ -34,7 +34,9 @@ http://localhost:5173/?packs=std,garden
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
 there. Right-click (or long-press) a tile for what you can do there, or
 press `E` for your own cell (see [docs/ui.md](docs/ui.md)). `C` opens the
-crafting panel. Space recenters the camera.
+crafting panel. Space recenters the camera. `F5` quicksaves, `F9`
+quickloads and `O` opens the Game panel with three save slots and file
+export/import (see [docs/saves.md](docs/saves.md)).
 
 ### Terminal
 
@@ -42,10 +44,12 @@ The same simulation runs headless, rendered as top-down ASCII:
 
 ```bash
 npm run play -- packs/std packs/std-needs packs/zombie [--seed N]
+npm run play -- packs/std packs/std-needs packs/zombie --load isolandia-save.json
 ```
 
 `q` quits, `g` takes everything nearby, `1`–`9` uses an item, `d 1`–`9`
-drops one.
+drops one. `S` saves to `--save-file` (default `isolandia-save.json`) and
+`L` loads it.
 
 ## Packs
 
@@ -69,6 +73,7 @@ Validate a pack stack without running it:
 ```bash
 npm run check -- packs/std packs/vampire
 npm run check -- packs/std packs/garden
+npm run check -- packs/std packs/garden --save my-save.json   # validate a save too
 ```
 
 Every milestone is validated with two games of different genres, so genre
