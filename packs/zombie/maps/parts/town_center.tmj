@@ -573,7 +573,7 @@
   "tilesets": [
     {
       "firstgid": 1,
-      "source": "town.tsj"
+      "source": "town_center.tsj"
     }
   ],
   "tilewidth": 64,

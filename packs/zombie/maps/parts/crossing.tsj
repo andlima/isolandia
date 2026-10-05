@@ -1,0 +1,30 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "isometric",
+    "width": 64
+  },
+  "margin": 0,
+  "name": "crossing",
+  "spacing": 0,
+  "tilecount": 1,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "image": "../../assets/road.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "road"
+        }
+      ]
+    }
+  ],
+  "tilewidth": 64,
+  "type": "tileset",
+  "version": "1.10"
+}

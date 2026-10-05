@@ -1,0 +1,96 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "isometric",
+    "width": 64
+  },
+  "margin": 0,
+  "name": "garage",
+  "spacing": 0,
+  "tilecount": 7,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "image": "../../../std/assets/door.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:door"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "image": "../../../std/assets/floor.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:floor"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "image": "../../../std/assets/wall.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:wall"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "image": "../../assets/car_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "car"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "image": "../../assets/crate.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "crate"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "image": "../../assets/grass.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "grass"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "image": "../../assets/road.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "road"
+        }
+      ]
+    }
+  ],
+  "tilewidth": 64,
+  "type": "tileset",
+  "version": "1.10"
+}

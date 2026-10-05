@@ -1,0 +1,530 @@
+# The zombie city: a 256×256 composite of the part maps in maps/parts/
+# (edit those in Tiled; see README.md). Generated layout: a 5×5 grid of
+# 44×44 blocks between 3-wide roads, the old four-house town block in the
+# middle, stores and garages downtown, parks in the corners.
+maps:
+  - id: town_center
+    tiled: maps/parts/town_center.tmj
+  - id: house_a
+    tiled: maps/parts/house_a.tmj
+  - id: house_b
+    tiled: maps/parts/house_b.tmj
+  - id: store
+    tiled: maps/parts/store.tmj
+  - id: garage
+    tiled: maps/parts/garage.tmj
+  - id: park
+    tiled: maps/parts/park.tmj
+  - id: road_h
+    tiled: maps/parts/road_h.tmj
+  - id: road_v
+    tiled: maps/parts/road_v.tmj
+  - id: crossing
+    tiled: maps/parts/crossing.tmj
+  - id: house_c
+    tiled: maps/parts/house_c.tmj
+    # Something still lies upstairs in every one of these.
+    populate:
+      - { archetype: crawler, count: 1, floor: 1, room: bedroom }
+  - id: city
+    size: [256, 256]
+    fill: grass
+    player: [132, 127]               # on the road of town_center (placed at [106, 117])
+    parts:
+      - { map: crossing, at: [9, 9] }
+      - { map: crossing, at: [56, 9] }
+      - { map: crossing, at: [103, 9] }
+      - { map: crossing, at: [150, 9] }
+      - { map: crossing, at: [197, 9] }
+      - { map: crossing, at: [244, 9] }
+      - { map: crossing, at: [9, 56] }
+      - { map: crossing, at: [56, 56] }
+      - { map: crossing, at: [103, 56] }
+      - { map: crossing, at: [150, 56] }
+      - { map: crossing, at: [197, 56] }
+      - { map: crossing, at: [244, 56] }
+      - { map: crossing, at: [9, 103] }
+      - { map: crossing, at: [56, 103] }
+      - { map: crossing, at: [103, 103] }
+      - { map: crossing, at: [150, 103] }
+      - { map: crossing, at: [197, 103] }
+      - { map: crossing, at: [244, 103] }
+      - { map: crossing, at: [9, 150] }
+      - { map: crossing, at: [56, 150] }
+      - { map: crossing, at: [103, 150] }
+      - { map: crossing, at: [150, 150] }
+      - { map: crossing, at: [197, 150] }
+      - { map: crossing, at: [244, 150] }
+      - { map: crossing, at: [9, 197] }
+      - { map: crossing, at: [56, 197] }
+      - { map: crossing, at: [103, 197] }
+      - { map: crossing, at: [150, 197] }
+      - { map: crossing, at: [197, 197] }
+      - { map: crossing, at: [244, 197] }
+      - { map: crossing, at: [9, 244] }
+      - { map: crossing, at: [56, 244] }
+      - { map: crossing, at: [103, 244] }
+      - { map: crossing, at: [150, 244] }
+      - { map: crossing, at: [197, 244] }
+      - { map: crossing, at: [244, 244] }
+      - { map: road_h, at: [12, 9] }
+      - { map: road_h, at: [59, 9] }
+      - { map: road_h, at: [106, 9] }
+      - { map: road_h, at: [153, 9] }
+      - { map: road_h, at: [200, 9] }
+      - { map: road_h, at: [12, 56] }
+      - { map: road_h, at: [59, 56] }
+      - { map: road_h, at: [106, 56] }
+      - { map: road_h, at: [153, 56] }
+      - { map: road_h, at: [200, 56] }
+      - { map: road_h, at: [12, 103] }
+      - { map: road_h, at: [59, 103] }
+      - { map: road_h, at: [106, 103] }
+      - { map: road_h, at: [153, 103] }
+      - { map: road_h, at: [200, 103] }
+      - { map: road_h, at: [12, 150] }
+      - { map: road_h, at: [59, 150] }
+      - { map: road_h, at: [106, 150] }
+      - { map: road_h, at: [153, 150] }
+      - { map: road_h, at: [200, 150] }
+      - { map: road_h, at: [12, 197] }
+      - { map: road_h, at: [59, 197] }
+      - { map: road_h, at: [106, 197] }
+      - { map: road_h, at: [153, 197] }
+      - { map: road_h, at: [200, 197] }
+      - { map: road_h, at: [12, 244] }
+      - { map: road_h, at: [59, 244] }
+      - { map: road_h, at: [106, 244] }
+      - { map: road_h, at: [153, 244] }
+      - { map: road_h, at: [200, 244] }
+      - { map: road_v, at: [9, 12] }
+      - { map: road_v, at: [9, 59] }
+      - { map: road_v, at: [9, 106] }
+      - { map: road_v, at: [9, 153] }
+      - { map: road_v, at: [9, 200] }
+      - { map: road_v, at: [56, 12] }
+      - { map: road_v, at: [56, 59] }
+      - { map: road_v, at: [56, 106] }
+      - { map: road_v, at: [56, 153] }
+      - { map: road_v, at: [56, 200] }
+      - { map: road_v, at: [103, 12] }
+      - { map: road_v, at: [103, 59] }
+      - { map: road_v, at: [103, 106] }
+      - { map: road_v, at: [103, 153] }
+      - { map: road_v, at: [103, 200] }
+      - { map: road_v, at: [150, 12] }
+      - { map: road_v, at: [150, 59] }
+      - { map: road_v, at: [150, 106] }
+      - { map: road_v, at: [150, 153] }
+      - { map: road_v, at: [150, 200] }
+      - { map: road_v, at: [197, 12] }
+      - { map: road_v, at: [197, 59] }
+      - { map: road_v, at: [197, 106] }
+      - { map: road_v, at: [197, 153] }
+      - { map: road_v, at: [197, 200] }
+      - { map: road_v, at: [244, 12] }
+      - { map: road_v, at: [244, 59] }
+      - { map: road_v, at: [244, 106] }
+      - { map: road_v, at: [244, 153] }
+      - { map: road_v, at: [244, 200] }
+      - { map: park, at: [12, 12] }
+      - { map: park, at: [34, 12] }
+      - { map: house_a, at: [12, 34] }
+      - { map: house_b, at: [23, 34] }
+      - { map: house_c, at: [34, 34] }
+      - { map: house_a, at: [45, 34] }
+      - { map: house_b, at: [12, 45] }
+      - { map: house_c, at: [23, 45] }
+      - { map: house_a, at: [34, 45] }
+      - { map: house_b, at: [45, 45] }
+      - { map: house_b, at: [59, 12] }
+      - { map: house_c, at: [70, 12] }
+      - { map: house_a, at: [81, 12] }
+      - { map: house_b, at: [92, 12] }
+      - { map: house_c, at: [59, 23] }
+      - { map: house_a, at: [70, 23] }
+      - { map: house_b, at: [81, 23] }
+      - { map: house_c, at: [92, 23] }
+      - { map: house_a, at: [59, 34] }
+      - { map: house_b, at: [70, 34] }
+      - { map: house_c, at: [81, 34] }
+      - { map: house_a, at: [92, 34] }
+      - { map: house_b, at: [59, 45] }
+      - { map: house_c, at: [70, 45] }
+      - { map: house_a, at: [81, 45] }
+      - { map: house_b, at: [92, 45] }
+      - { map: house_c, at: [106, 12] }
+      - { map: house_a, at: [117, 12] }
+      - { map: house_b, at: [128, 12] }
+      - { map: house_c, at: [139, 12] }
+      - { map: house_a, at: [106, 23] }
+      - { map: house_b, at: [117, 23] }
+      - { map: house_c, at: [128, 23] }
+      - { map: house_a, at: [139, 23] }
+      - { map: house_b, at: [106, 34] }
+      - { map: house_c, at: [117, 34] }
+      - { map: house_a, at: [128, 34] }
+      - { map: house_b, at: [139, 34] }
+      - { map: house_c, at: [106, 45] }
+      - { map: house_a, at: [117, 45] }
+      - { map: house_b, at: [128, 45] }
+      - { map: house_c, at: [139, 45] }
+      - { map: house_a, at: [153, 12] }
+      - { map: house_b, at: [164, 12] }
+      - { map: house_c, at: [175, 12] }
+      - { map: house_a, at: [186, 12] }
+      - { map: house_b, at: [153, 23] }
+      - { map: house_c, at: [164, 23] }
+      - { map: house_a, at: [175, 23] }
+      - { map: house_b, at: [186, 23] }
+      - { map: house_c, at: [153, 34] }
+      - { map: house_a, at: [164, 34] }
+      - { map: house_b, at: [175, 34] }
+      - { map: house_c, at: [186, 34] }
+      - { map: house_a, at: [153, 45] }
+      - { map: house_b, at: [164, 45] }
+      - { map: house_c, at: [175, 45] }
+      - { map: house_a, at: [186, 45] }
+      - { map: park, at: [200, 12] }
+      - { map: park, at: [222, 12] }
+      - { map: house_b, at: [200, 34] }
+      - { map: house_c, at: [211, 34] }
+      - { map: house_a, at: [222, 34] }
+      - { map: house_b, at: [233, 34] }
+      - { map: house_c, at: [200, 45] }
+      - { map: house_a, at: [211, 45] }
+      - { map: house_b, at: [222, 45] }
+      - { map: house_c, at: [233, 45] }
+      - { map: house_c, at: [12, 59] }
+      - { map: house_a, at: [23, 59] }
+      - { map: house_b, at: [34, 59] }
+      - { map: house_c, at: [45, 59] }
+      - { map: house_a, at: [12, 70] }
+      - { map: house_b, at: [23, 70] }
+      - { map: house_c, at: [34, 70] }
+      - { map: house_a, at: [45, 70] }
+      - { map: house_b, at: [12, 81] }
+      - { map: house_c, at: [23, 81] }
+      - { map: house_a, at: [34, 81] }
+      - { map: house_b, at: [45, 81] }
+      - { map: house_c, at: [12, 92] }
+      - { map: house_a, at: [23, 92] }
+      - { map: house_b, at: [34, 92] }
+      - { map: house_c, at: [45, 92] }
+      - { map: store, at: [59, 59] }
+      - { map: store, at: [81, 59] }
+      - { map: garage, at: [59, 70] }
+      - { map: garage, at: [70, 70] }
+      - { map: garage, at: [81, 70] }
+      - { map: garage, at: [92, 70] }
+      - { map: house_a, at: [59, 81] }
+      - { map: house_b, at: [70, 81] }
+      - { map: house_c, at: [81, 81] }
+      - { map: house_a, at: [92, 81] }
+      - { map: house_b, at: [59, 92] }
+      - { map: house_c, at: [70, 92] }
+      - { map: house_a, at: [81, 92] }
+      - { map: house_b, at: [92, 92] }
+      - { map: house_b, at: [106, 59] }
+      - { map: house_c, at: [117, 59] }
+      - { map: house_a, at: [128, 59] }
+      - { map: house_b, at: [139, 59] }
+      - { map: house_c, at: [106, 70] }
+      - { map: house_a, at: [117, 70] }
+      - { map: house_b, at: [128, 70] }
+      - { map: house_c, at: [139, 70] }
+      - { map: house_a, at: [106, 81] }
+      - { map: house_b, at: [117, 81] }
+      - { map: house_c, at: [128, 81] }
+      - { map: house_a, at: [139, 81] }
+      - { map: house_b, at: [106, 92] }
+      - { map: house_c, at: [117, 92] }
+      - { map: house_a, at: [128, 92] }
+      - { map: house_b, at: [139, 92] }
+      - { map: store, at: [153, 59] }
+      - { map: store, at: [175, 59] }
+      - { map: garage, at: [153, 70] }
+      - { map: garage, at: [164, 70] }
+      - { map: garage, at: [175, 70] }
+      - { map: garage, at: [186, 70] }
+      - { map: house_c, at: [153, 81] }
+      - { map: house_a, at: [164, 81] }
+      - { map: house_b, at: [175, 81] }
+      - { map: house_c, at: [186, 81] }
+      - { map: house_a, at: [153, 92] }
+      - { map: house_b, at: [164, 92] }
+      - { map: house_c, at: [175, 92] }
+      - { map: house_a, at: [186, 92] }
+      - { map: house_a, at: [200, 59] }
+      - { map: house_b, at: [211, 59] }
+      - { map: house_c, at: [222, 59] }
+      - { map: house_a, at: [233, 59] }
+      - { map: house_b, at: [200, 70] }
+      - { map: house_c, at: [211, 70] }
+      - { map: house_a, at: [222, 70] }
+      - { map: house_b, at: [233, 70] }
+      - { map: house_c, at: [200, 81] }
+      - { map: house_a, at: [211, 81] }
+      - { map: house_b, at: [222, 81] }
+      - { map: house_c, at: [233, 81] }
+      - { map: house_a, at: [200, 92] }
+      - { map: house_b, at: [211, 92] }
+      - { map: house_c, at: [222, 92] }
+      - { map: house_a, at: [233, 92] }
+      - { map: house_b, at: [12, 106] }
+      - { map: house_c, at: [23, 106] }
+      - { map: house_a, at: [34, 106] }
+      - { map: house_b, at: [45, 106] }
+      - { map: house_c, at: [12, 117] }
+      - { map: house_a, at: [23, 117] }
+      - { map: house_b, at: [34, 117] }
+      - { map: house_c, at: [45, 117] }
+      - { map: house_a, at: [12, 128] }
+      - { map: house_b, at: [23, 128] }
+      - { map: house_c, at: [34, 128] }
+      - { map: house_a, at: [45, 128] }
+      - { map: house_b, at: [12, 139] }
+      - { map: house_c, at: [23, 139] }
+      - { map: house_a, at: [34, 139] }
+      - { map: house_b, at: [45, 139] }
+      - { map: house_c, at: [59, 106] }
+      - { map: house_a, at: [70, 106] }
+      - { map: house_b, at: [81, 106] }
+      - { map: house_c, at: [92, 106] }
+      - { map: house_a, at: [59, 117] }
+      - { map: house_b, at: [70, 117] }
+      - { map: house_c, at: [81, 117] }
+      - { map: house_a, at: [92, 117] }
+      - { map: house_b, at: [59, 128] }
+      - { map: house_c, at: [70, 128] }
+      - { map: house_a, at: [81, 128] }
+      - { map: house_b, at: [92, 128] }
+      - { map: house_c, at: [59, 139] }
+      - { map: house_a, at: [70, 139] }
+      - { map: house_b, at: [81, 139] }
+      - { map: house_c, at: [92, 139] }
+      - { map: town_center, at: [106, 117] }
+      - { map: house_a, at: [106, 106] }
+      - { map: house_b, at: [117, 106] }
+      - { map: house_a, at: [128, 106] }
+      - { map: house_b, at: [139, 106] }
+      - { map: house_a, at: [106, 138] }
+      - { map: house_b, at: [117, 138] }
+      - { map: house_a, at: [128, 138] }
+      - { map: house_b, at: [139, 138] }
+      - { map: house_b, at: [153, 106] }
+      - { map: house_c, at: [164, 106] }
+      - { map: house_a, at: [175, 106] }
+      - { map: house_b, at: [186, 106] }
+      - { map: house_c, at: [153, 117] }
+      - { map: house_a, at: [164, 117] }
+      - { map: house_b, at: [175, 117] }
+      - { map: house_c, at: [186, 117] }
+      - { map: house_a, at: [153, 128] }
+      - { map: house_b, at: [164, 128] }
+      - { map: house_c, at: [175, 128] }
+      - { map: house_a, at: [186, 128] }
+      - { map: house_b, at: [153, 139] }
+      - { map: house_c, at: [164, 139] }
+      - { map: house_a, at: [175, 139] }
+      - { map: house_b, at: [186, 139] }
+      - { map: house_c, at: [200, 106] }
+      - { map: house_a, at: [211, 106] }
+      - { map: house_b, at: [222, 106] }
+      - { map: house_c, at: [233, 106] }
+      - { map: house_a, at: [200, 117] }
+      - { map: house_b, at: [211, 117] }
+      - { map: house_c, at: [222, 117] }
+      - { map: house_a, at: [233, 117] }
+      - { map: house_b, at: [200, 128] }
+      - { map: house_c, at: [211, 128] }
+      - { map: house_a, at: [222, 128] }
+      - { map: house_b, at: [233, 128] }
+      - { map: house_c, at: [200, 139] }
+      - { map: house_a, at: [211, 139] }
+      - { map: house_b, at: [222, 139] }
+      - { map: house_c, at: [233, 139] }
+      - { map: house_a, at: [12, 153] }
+      - { map: house_b, at: [23, 153] }
+      - { map: house_c, at: [34, 153] }
+      - { map: house_a, at: [45, 153] }
+      - { map: house_b, at: [12, 164] }
+      - { map: house_c, at: [23, 164] }
+      - { map: house_a, at: [34, 164] }
+      - { map: house_b, at: [45, 164] }
+      - { map: house_c, at: [12, 175] }
+      - { map: house_a, at: [23, 175] }
+      - { map: house_b, at: [34, 175] }
+      - { map: house_c, at: [45, 175] }
+      - { map: house_a, at: [12, 186] }
+      - { map: house_b, at: [23, 186] }
+      - { map: house_c, at: [34, 186] }
+      - { map: house_a, at: [45, 186] }
+      - { map: store, at: [59, 153] }
+      - { map: store, at: [81, 153] }
+      - { map: garage, at: [59, 164] }
+      - { map: garage, at: [70, 164] }
+      - { map: garage, at: [81, 164] }
+      - { map: garage, at: [92, 164] }
+      - { map: house_b, at: [59, 175] }
+      - { map: house_c, at: [70, 175] }
+      - { map: house_a, at: [81, 175] }
+      - { map: house_b, at: [92, 175] }
+      - { map: house_c, at: [59, 186] }
+      - { map: house_a, at: [70, 186] }
+      - { map: house_b, at: [81, 186] }
+      - { map: house_c, at: [92, 186] }
+      - { map: house_c, at: [106, 153] }
+      - { map: house_a, at: [117, 153] }
+      - { map: house_b, at: [128, 153] }
+      - { map: house_c, at: [139, 153] }
+      - { map: house_a, at: [106, 164] }
+      - { map: house_b, at: [117, 164] }
+      - { map: house_c, at: [128, 164] }
+      - { map: house_a, at: [139, 164] }
+      - { map: house_b, at: [106, 175] }
+      - { map: house_c, at: [117, 175] }
+      - { map: house_a, at: [128, 175] }
+      - { map: house_b, at: [139, 175] }
+      - { map: house_c, at: [106, 186] }
+      - { map: house_a, at: [117, 186] }
+      - { map: house_b, at: [128, 186] }
+      - { map: house_c, at: [139, 186] }
+      - { map: store, at: [153, 153] }
+      - { map: store, at: [175, 153] }
+      - { map: garage, at: [153, 164] }
+      - { map: garage, at: [164, 164] }
+      - { map: garage, at: [175, 164] }
+      - { map: garage, at: [186, 164] }
+      - { map: house_a, at: [153, 175] }
+      - { map: house_b, at: [164, 175] }
+      - { map: house_c, at: [175, 175] }
+      - { map: house_a, at: [186, 175] }
+      - { map: house_b, at: [153, 186] }
+      - { map: house_c, at: [164, 186] }
+      - { map: house_a, at: [175, 186] }
+      - { map: house_b, at: [186, 186] }
+      - { map: house_b, at: [200, 153] }
+      - { map: house_c, at: [211, 153] }
+      - { map: house_a, at: [222, 153] }
+      - { map: house_b, at: [233, 153] }
+      - { map: house_c, at: [200, 164] }
+      - { map: house_a, at: [211, 164] }
+      - { map: house_b, at: [222, 164] }
+      - { map: house_c, at: [233, 164] }
+      - { map: house_a, at: [200, 175] }
+      - { map: house_b, at: [211, 175] }
+      - { map: house_c, at: [222, 175] }
+      - { map: house_a, at: [233, 175] }
+      - { map: house_b, at: [200, 186] }
+      - { map: house_c, at: [211, 186] }
+      - { map: house_a, at: [222, 186] }
+      - { map: house_b, at: [233, 186] }
+      - { map: park, at: [12, 200] }
+      - { map: park, at: [34, 200] }
+      - { map: house_c, at: [12, 222] }
+      - { map: house_a, at: [23, 222] }
+      - { map: house_b, at: [34, 222] }
+      - { map: house_c, at: [45, 222] }
+      - { map: house_a, at: [12, 233] }
+      - { map: house_b, at: [23, 233] }
+      - { map: house_c, at: [34, 233] }
+      - { map: house_a, at: [45, 233] }
+      - { map: house_a, at: [59, 200] }
+      - { map: house_b, at: [70, 200] }
+      - { map: house_c, at: [81, 200] }
+      - { map: house_a, at: [92, 200] }
+      - { map: house_b, at: [59, 211] }
+      - { map: house_c, at: [70, 211] }
+      - { map: house_a, at: [81, 211] }
+      - { map: house_b, at: [92, 211] }
+      - { map: house_c, at: [59, 222] }
+      - { map: house_a, at: [70, 222] }
+      - { map: house_b, at: [81, 222] }
+      - { map: house_c, at: [92, 222] }
+      - { map: house_a, at: [59, 233] }
+      - { map: house_b, at: [70, 233] }
+      - { map: house_c, at: [81, 233] }
+      - { map: house_a, at: [92, 233] }
+      - { map: house_b, at: [106, 200] }
+      - { map: house_c, at: [117, 200] }
+      - { map: house_a, at: [128, 200] }
+      - { map: house_b, at: [139, 200] }
+      - { map: house_c, at: [106, 211] }
+      - { map: house_a, at: [117, 211] }
+      - { map: house_b, at: [128, 211] }
+      - { map: house_c, at: [139, 211] }
+      - { map: house_a, at: [106, 222] }
+      - { map: house_b, at: [117, 222] }
+      - { map: house_c, at: [128, 222] }
+      - { map: house_a, at: [139, 222] }
+      - { map: house_b, at: [106, 233] }
+      - { map: house_c, at: [117, 233] }
+      - { map: house_a, at: [128, 233] }
+      - { map: house_b, at: [139, 233] }
+      - { map: house_c, at: [153, 200] }
+      - { map: house_a, at: [164, 200] }
+      - { map: house_b, at: [175, 200] }
+      - { map: house_c, at: [186, 200] }
+      - { map: house_a, at: [153, 211] }
+      - { map: house_b, at: [164, 211] }
+      - { map: house_c, at: [175, 211] }
+      - { map: house_a, at: [186, 211] }
+      - { map: house_b, at: [153, 222] }
+      - { map: house_c, at: [164, 222] }
+      - { map: house_a, at: [175, 222] }
+      - { map: house_b, at: [186, 222] }
+      - { map: house_c, at: [153, 233] }
+      - { map: house_a, at: [164, 233] }
+      - { map: house_b, at: [175, 233] }
+      - { map: house_c, at: [186, 233] }
+      - { map: park, at: [200, 200] }
+      - { map: park, at: [222, 200] }
+      - { map: house_a, at: [200, 222] }
+      - { map: house_b, at: [211, 222] }
+      - { map: house_c, at: [222, 222] }
+      - { map: house_a, at: [233, 222] }
+      - { map: house_b, at: [200, 233] }
+      - { map: house_c, at: [211, 233] }
+      - { map: house_a, at: [222, 233] }
+      - { map: house_b, at: [233, 233] }
+    # Denser downtown (the 8 blocks around town_center), sparser further
+    # out; town_center's own block is left to its handful of spawns.
+    populate:
+      - { archetype: shambler, count: 22, rect: [9, 9, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [56, 9, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [103, 9, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [150, 9, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [197, 9, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [9, 56, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [56, 56, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [103, 56, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [103, 56, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [150, 56, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [150, 56, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [197, 56, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [9, 103, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [56, 103, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [56, 103, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [150, 103, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [150, 103, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [197, 103, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [9, 150, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [56, 150, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [56, 150, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [103, 150, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [103, 150, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [150, 150, 50, 50] }
+      - { archetype: crawler, count: 6, rect: [150, 150, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [197, 150, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [9, 197, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [56, 197, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [103, 197, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [150, 197, 50, 50] }
+      - { archetype: shambler, count: 22, rect: [197, 197, 50, 50] }
+      # The fields around the town.
+      - { archetype: shambler, count: 12, rect: [0, 0, 256, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 247, 256, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 9, 9, 238] }
+      - { archetype: shambler, count: 12, rect: [247, 9, 9, 238] }

@@ -4,7 +4,7 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import { EMPTY_TILE, type ArchetypeDef, type BehaviorDef, type Definition, type EffectDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
+import { EMPTY_TILE, populateCandidates, type ArchetypeDef, type BehaviorDef, type Definition, type EffectDef, type MapDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
@@ -443,6 +443,26 @@ const NO_TAGS: ReadonlySet<string> = new Set();
 
 /** Seed of the loot RNG: derived from the world seed, independent of `world.rng`. */
 const LOOT_SALT = 0x6c6f6f74;
+/** Seed of the populate RNG: derived from the world seed, independent of `world.rng` and loot. */
+const POPULATE_SALT = 0x706f7075;
+
+/** Side of a chunk of the entity index, in tiles. */
+export const INDEX_CHUNK = 16;
+
+/** A* work since the world was created, for benchmarks and tests (not state: not saved or hashed). */
+export interface PathStats {
+  /** Searches run (including those rejected on region labels). */
+  searches: number;
+  /** Searches that failed on region labels, without expanding a node. */
+  regionRejects: number;
+  /** Searches that stopped at their budget. */
+  budgetHits: number;
+  /** Nodes expanded, in total. */
+  expanded: number;
+  /** Most nodes expanded by one NPC search, and by one player search. */
+  maxNpcExpanded: number;
+  maxPlayerExpanded: number;
+}
 
 /** 32-bit integer hash of two values (murmur3 finalizer). */
 function mix(a: number, b: number): number {
@@ -483,6 +503,24 @@ export class World {
   private readonly roomHas: Uint8Array;
   private readonly itemWeights: readonly number[];
   private pathfinder: Pathfinder | null = null;
+  /** Behavior think calls so far, for benchmarks and tests (not state: not saved or hashed). */
+  thinkCalls = 0;
+  /** A* work so far (see `PathStats`). */
+  readonly pathStats: PathStats = { searches: 0, regionRejects: 0, budgetHits: 0, expanded: 0, maxNpcExpanded: 0, maxPlayerExpanded: 0 };
+  /** Entity index: ids per (floor, 16×16 chunk), unordered. */
+  private readonly buckets: number[][];
+  private readonly chunkCols: number;
+  private readonly chunksPerFloor: number;
+  /** Bucket of each entity by id, as last indexed. */
+  private readonly bucketOf: number[] = [];
+  /** 1 at the ids of the entities dormant this tick (set at the start of `step`). */
+  private dormant = new Uint8Array(0);
+  /** Hearing scratch, by entity id: the stamp of the hearing pass that last touched it, its best distance², its noise. */
+  private hearStamp = new Uint32Array(0);
+  private hearBest = new Float64Array(0);
+  private hearPick = new Int32Array(0);
+  private hearGen = 0;
+  private readonly hearIds: number[] = [];
   /** Noises emitted this tick, in emission order; reused (cleared, not reallocated). */
   private readonly pending: Noise[] = [];
   /** Number of valid entries of `pending`. */
@@ -495,6 +533,12 @@ export class World {
   private readonly hasM: Uint8Array[];
   /** Per status: its `rates` term by measurement index (undefined = none). */
   private readonly statusRates: (NumberTerm | undefined)[][];
+  /**
+   * Per status, then per system: the `for` filter by archetype index, 1 = holds,
+   * 0 = never, 2 = evaluate per entity (decided once when `for` is a tag test on `self`).
+   */
+  private readonly statusFor: Uint8Array[];
+  private readonly systemFor: Uint8Array[];
   /** Scratch for the status update: next flags of every entity, row-major. */
   private statusNext = new Uint8Array(0);
   /** Activity source per action index. */
@@ -517,6 +561,9 @@ export class World {
     const map = def.maps[def.start.map]!;
     this.grid = new Grid(map, def.tiles);
     this.rng = new Rng(seed);
+    this.chunkCols = Math.ceil(map.width / INDEX_CHUNK);
+    this.chunksPerFloor = this.chunkCols * Math.ceil(map.height / INDEX_CHUNK);
+    this.buckets = Array.from({ length: this.chunksPerFloor * map.floors }, () => []);
     this.tagSets = def.archetypes.map((a) => new Set(a.tags));
     this.tileTagSets = def.tiles.map((t) => (t.tags.length ? new Set(t.tags) : NO_TAGS));
     const nm = def.measurements.length;
@@ -525,6 +572,10 @@ export class World {
       for (const idx of a.measurements) has[idx] = 1;
       return has;
     });
+    const forTable = (forFn: unknown, forTag: string | null) =>
+      Uint8Array.from(def.archetypes, (a) => (forFn === null ? 1 : forTag === null ? 2 : a.tags.includes(forTag) ? 1 : 0));
+    this.statusFor = def.statuses.map((s) => forTable(s.forFn, s.forTag));
+    this.systemFor = def.systems.map((s) => forTable(s.forFn, s.forTag));
     this.statusRates = def.statuses.map((s) => {
       const by = new Array<NumberTerm | undefined>(nm).fill(undefined);
       for (const r of s.rates) by[r.measurement] = r;
@@ -566,6 +617,7 @@ export class World {
       const start = map.playerStart!;
       this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, start.z, false);
       for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y, s.z);
+      this.populate(map, seed);
       this.rollLoot(seed);
     }
 
@@ -706,7 +758,124 @@ export class World {
       activity: null,
     };
     this.entities.push(e);
+    this.bucketOf.push(-1);
+    this.reindex(e);
     return e;
+  }
+
+  /**
+   * Place `populate` entities after the explicit spawns: entry by entry, each
+   * drawing `count` cells without replacement from its candidates (cells an
+   * earlier entry took are skipped), with a dedicated RNG.
+   */
+  private populate(map: MapDef, seed: number): void {
+    if (map.populate.length === 0) return;
+    const rng = new Rng(mix(seed, POPULATE_SALT));
+    const used = new Uint8Array(map.cells.length);
+    for (const p of map.populate) {
+      const free = populateCandidates(map, this.def.tiles, p).filter((i) => used[i] === 0);
+      const n = Math.min(p.count, free.length); // the loader guarantees count ≤ free
+      const archetype = this.def.archetypes[p.archetype]!;
+      for (let k = 0; k < n; k++) {
+        const j = k + Math.floor(rng.next() * (free.length - k));
+        const cell = free[j]!;
+        free[j] = free[k]!;
+        free[k] = cell;
+        used[cell] = 1;
+        const { x, y, z } = this.grid.cellOf(cell);
+        this.spawn(archetype, x, y, z);
+      }
+    }
+  }
+
+  // ── Entity index ────────────────────────────────────────────────────────
+
+  /** Index bucket of a position (clamped into the map). */
+  private bucketAt(x: number, y: number, z: number): number {
+    const { width, height, floors } = this.grid;
+    if (x >= 0 && y >= 0 && z >= 0 && x < width && y < height && z < floors) return z * this.chunksPerFloor + Math.floor(y / INDEX_CHUNK) * this.chunkCols + Math.floor(x / INDEX_CHUNK);
+    const cx = Math.floor(Math.min(Math.max(x, 0), width - 1) / INDEX_CHUNK);
+    const cy = Math.floor(Math.min(Math.max(y, 0), height - 1) / INDEX_CHUNK);
+    const cz = Math.min(Math.max(z, 0), floors - 1);
+    return cz * this.chunksPerFloor + cy * this.chunkCols + cx;
+  }
+
+  /** Move an entity to the index bucket of its position, if it changed chunk. */
+  private reindex(e: Entity): void {
+    const b = this.bucketAt(e.x, e.y, e.z);
+    const old = this.bucketOf[e.id]!;
+    if (b === old) return;
+    if (old >= 0) {
+      const ids = this.buckets[old]!;
+      const k = ids.indexOf(e.id);
+      ids[k] = ids[ids.length - 1]!;
+      ids.pop();
+    }
+    this.buckets[b]!.push(e.id);
+    this.bucketOf[e.id] = b;
+  }
+
+  /** Catch up with positions set from outside the simulation (cheap: one compare per entity). */
+  private syncIndex(): void {
+    for (const e of this.entities) this.reindex(e);
+  }
+
+  /**
+   * Entities within Chebyshev distance `r` of (x, y), on floor `z` or on any
+   * floor when `z` is omitted, in id order. Uses the chunk index.
+   */
+  entitiesNear(x: number, y: number, z: number | undefined, r: number): Entity[] {
+    this.syncIndex();
+    const out: Entity[] = [];
+    if (!(r >= 0)) return out;
+    const { width, height, floors } = this.grid;
+    const cx0 = Math.floor(Math.max(0, x - r) / INDEX_CHUNK);
+    const cx1 = Math.floor(Math.min(width - 1, x + r) / INDEX_CHUNK);
+    const cy0 = Math.floor(Math.max(0, y - r) / INDEX_CHUNK);
+    const cy1 = Math.floor(Math.min(height - 1, y + r) / INDEX_CHUNK);
+    const z0 = z === undefined ? 0 : z;
+    const z1 = z === undefined ? floors - 1 : z;
+    for (let cz = z0; cz <= z1; cz++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        for (let cx = cx0; cx <= cx1; cx++) {
+          for (const id of this.buckets[cz * this.chunksPerFloor + cy * this.chunkCols + cx] ?? []) {
+            const e = this.entities[id]!;
+            if (Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) <= r) out.push(e);
+          }
+        }
+      }
+    }
+    return out.sort((a, b) => a.id - b.id);
+  }
+
+  // ── Dormancy ────────────────────────────────────────────────────────────
+
+  /** Whether an NPC is beyond the active radius (Chebyshev on x, y, any floor) from the player now. Pure. */
+  isDormant(e: Entity): boolean {
+    const r = this.def.start.simulation.activeRadius;
+    const p = this.player;
+    return r !== null && e !== p && Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y)) > r;
+  }
+
+  /** Entities that are not dormant now (the player included). Pure. */
+  get activeCount(): number {
+    let n = 0;
+    for (const e of this.entities) if (!this.isDormant(e)) n++;
+    return n;
+  }
+
+  /** Set `dormant` for this tick: one Chebyshev check per entity. */
+  private markDormant(): void {
+    const n = this.entities.length;
+    if (this.dormant.length < n) this.dormant = new Uint8Array(n);
+    const d = this.dormant;
+    const r = this.def.start.simulation.activeRadius;
+    if (r === null) {
+      d.fill(0);
+      return;
+    }
+    const { x, y } = this.player;
+    for (const e of this.entities) d[e.id] = e !== this.player && Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) > r ? 1 : 0;
   }
 
   // ── Containers ──────────────────────────────────────────────────────────
@@ -859,8 +1028,9 @@ export class World {
   }
 
   /**
-   * Advance exactly one tick (1 / ticksPerSecond seconds): behaviors think
-   * (id order), every entity's movement intent (id order), player actions,
+   * Advance exactly one tick (1 / ticksPerSecond seconds): mark dormant NPCs
+   * (beyond the active radius: they neither think nor move this tick),
+   * behaviors think (id order), every entity's movement intent (id order), player actions,
    * activity work (id order), drift, due systems, hearing, clamp, status
    * update, defeat then victory check, `tick++`.
    * A no-op once the game has ended.
@@ -869,8 +1039,12 @@ export class World {
     if (this.ended) return;
     this.ctx.tick = this.tick;
     this.pendingCount = 0;
+    this.syncIndex();
+    this.markDormant();
     this.think();
+    const dormant = this.dormant;
     for (const e of this.entities) {
+      if (dormant[e.id] === 1) continue;
       if (e.intent || e.path) this.applyIntent(e);
       else if (e.moveCooldown > 0) e.moveCooldown--;
     }
@@ -888,7 +1062,12 @@ export class World {
   /** Phase 0: each behavior-driven entity switches state at most once, then issues its activity's intent. */
   private think(): void {
     const env = this.thinkEnv;
-    for (const e of this.entities) if (e.state >= 0) think(e, env);
+    const dormant = this.dormant;
+    for (const e of this.entities) {
+      if (e.state < 0 || dormant[e.id] === 1) continue;
+      think(e, env);
+      this.thinkCalls++;
+    }
   }
 
   /** Measurement drift: `rate` plus the `rates` of the statuses active now. */
@@ -923,9 +1102,12 @@ export class World {
     const ctx = this.ctx;
     for (const sys of this.def.systems) {
       if (t % sys.period !== 0) continue;
+      const pre = this.systemFor[sys.index]!;
       for (const e of this.entities) {
+        const f = pre[e.archetype.index];
+        if (f === 0) continue;
         ctx.self = e;
-        if (sys.forFn && !sys.forFn(ctx)) continue;
+        if (f === 2 && !sys.forFn!(ctx)) continue;
         if (sys.whenFn && !sys.whenFn(ctx)) continue;
         this.runEffects(e, sys.effects);
       }
@@ -972,32 +1154,59 @@ export class World {
   /**
    * Phase 4: every entity except the source hears a noise within its radius
    * (3D euclidean with one floor = one tile, inclusive, walls and floors
-   * ignored) and keeps this tick's nearest one
-   * (ties: the earlier emission). O(noises × entities), no allocation.
+   * ignored) and keeps this tick's nearest one (ties: the earlier emission).
+   * Each noise visits only the index chunks its radius reaches; the result is
+   * the same as checking every (noise, entity) pair.
    */
   private hear(): void {
     const k = this.pendingCount;
     const noises = this.pending;
-    for (const e of this.entities) {
-      let best = Infinity;
-      let pick = -1;
-      for (let i = 0; i < k; i++) {
-        const n = noises[i]!;
-        if (n.source === e.id) continue;
-        const dx = n.x - e.x;
-        const dy = n.y - e.y;
-        const dz = n.z - e.z;
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d <= n.radius * n.radius && d < best) {
-          best = d;
-          pick = i;
+    const n = this.entities.length;
+    if (this.hearStamp.length < n) {
+      this.hearStamp = new Uint32Array(n);
+      this.hearBest = new Float64Array(n);
+      this.hearPick = new Int32Array(n);
+    }
+    const stamp = ++this.hearGen;
+    const { hearStamp, hearBest, hearPick, hearIds, entities } = this;
+    hearIds.length = 0;
+    const { width, height, floors } = this.grid;
+    for (let i = 0; i < k; i++) {
+      const s = noises[i]!;
+      const r2 = s.radius * s.radius;
+      const r = Math.floor(s.radius);
+      const cx0 = Math.floor(Math.max(0, s.x - r) / INDEX_CHUNK);
+      const cx1 = Math.floor(Math.min(width - 1, s.x + r) / INDEX_CHUNK);
+      const cy0 = Math.floor(Math.max(0, s.y - r) / INDEX_CHUNK);
+      const cy1 = Math.floor(Math.min(height - 1, s.y + r) / INDEX_CHUNK);
+      for (let cz = 0; cz < floors; cz++) {
+        for (let cy = cy0; cy <= cy1; cy++) {
+          for (let cx = cx0; cx <= cx1; cx++) {
+            for (const id of this.buckets[cz * this.chunksPerFloor + cy * this.chunkCols + cx]!) {
+              if (id === s.source) continue;
+              const e = entities[id]!;
+              const dx = s.x - e.x;
+              const dy = s.y - e.y;
+              const dz = s.z - e.z;
+              const d = dx * dx + dy * dy + dz * dz;
+              if (d > r2) continue;
+              if (hearStamp[id] !== stamp) {
+                hearStamp[id] = stamp;
+                hearIds.push(id);
+              } else if (d >= hearBest[id]!) continue;
+              hearBest[id] = d;
+              hearPick[id] = i;
+            }
+          }
         }
       }
-      if (pick < 0) continue;
-      const n = noises[pick]!;
-      e.heardX = n.x;
-      e.heardY = n.y;
-      e.heardZ = n.z;
+    }
+    for (const id of hearIds) {
+      const e = entities[id]!;
+      const s = noises[hearPick[id]!]!;
+      e.heardX = s.x;
+      e.heardY = s.y;
+      e.heardZ = s.z;
       e.heardTick = this.tick;
     }
   }
@@ -1016,19 +1225,22 @@ export class World {
     if (this.statusNext.length < n) this.statusNext = new Uint8Array(n);
     const next = this.statusNext;
     let o = 0;
+    const pre = this.statusFor;
     for (const e of this.entities) {
       ctx.self = e;
+      const a = e.archetype.index;
       for (let k = 0; k < ns; k++, o++) {
         const s = statuses[k]!;
-        if (s.forFn && !s.forFn(ctx)) next[o] = 0;
+        const f = pre[k]![a];
+        if (f === 0 || (f === 2 && !s.forFn!(ctx))) next[o] = 0;
         else if (e.st[k] === 1) next[o] = s.untilFn(ctx) ? 0 : 1;
         else next[o] = s.whenFn(ctx) ? 1 : 0;
       }
     }
     o = 0;
     for (const e of this.entities) {
-      e.st.set(next.subarray(o, o + ns));
-      o += ns;
+      const st = e.st;
+      for (let k = 0; k < ns; k++, o++) st[k] = next[o]!;
     }
   }
 
@@ -1056,11 +1268,19 @@ export class World {
     if (intent && p.activity) this.runner.end(p, 'cancelled');
     if (intent?.kind === 'goto') {
       p.intent = null;
-      this.pathfinder ??= new Pathfinder(this.grid);
+      const pf = (this.pathfinder ??= new Pathfinder(this.grid));
       const z = intent.z ?? p.z;
-      const path = intent.adjacent
-        ? this.pathfinder.findPathAdjacent(p.x, p.y, intent.x, intent.y, p.z, z)
-        : this.pathfinder.findPath(p.x, p.y, intent.x, intent.y, p.z, z);
+      const sim = this.def.start.simulation;
+      const isPlayer = p === this.player;
+      const budget = isPlayer ? sim.playerPathBudget : sim.npcPathBudget;
+      const path = intent.adjacent ? pf.findPathAdjacent(p.x, p.y, intent.x, intent.y, p.z, z, budget) : pf.findPath(p.x, p.y, intent.x, intent.y, p.z, z, budget);
+      const st = this.pathStats;
+      st.searches++;
+      st.expanded += pf.lastExpanded;
+      if (pf.lastRegionReject) st.regionRejects++;
+      if (pf.lastBudgetHit) st.budgetHits++;
+      if (isPlayer) st.maxPlayerExpanded = Math.max(st.maxPlayerExpanded, pf.lastExpanded);
+      else st.maxNpcExpanded = Math.max(st.maxNpcExpanded, pf.lastExpanded);
       p.path = path && path.length > 0 ? path : null;
       p.pathPos = 0;
       p.lastGoto = { x: intent.x, y: intent.y, z, ok: path !== null, tick: this.tick };
@@ -1264,6 +1484,7 @@ export class World {
     e.x += dx;
     e.y += dy;
     e.moveCooldown = e.archetype.ticksPerStep;
+    this.reindex(e);
     return true;
   }
 
@@ -1276,6 +1497,7 @@ export class World {
     e.stepTick = this.tick + 1;
     e.z += dz;
     e.moveCooldown = e.archetype.ticksPerStep;
+    this.reindex(e);
     return true;
   }
 

@@ -108,6 +108,7 @@ the browser, `MemoryStore` in tests).
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
 | `H` | Toggle the HUD text |
+| `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
 
 The climb keys are matched by `KeyboardEvent.key`, so `<` and `>` follow
@@ -120,4 +121,6 @@ loads it; lowercase `s` and `l` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add
-`Floor N` on multi-floor maps.
+`Floor N` on multi-floor maps. While any NPC is dormant (beyond the active
+radius, see `docs/packs.md#simulation`), the bottom line ends with
+`active N, dormant M`.

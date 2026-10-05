@@ -35,6 +35,10 @@ import {
   type MeasurementDef,
   type NumberTerm,
   type PackInfo,
+  type PopulateDef,
+  populateCandidates,
+  DEFAULT_SIMULATION,
+  type SimulationDef,
   type RecipeDef,
   type RoomDef,
   type RoomsDef,
@@ -86,6 +90,10 @@ const DEFAULT_TICKS_PER_TURN = 1;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
 const ASCII_MAP_FIELDS = ['legend', 'rows', 'floors', 'rooms'] as const;
+/** Fields only a composite map takes (`rooms` and `populate` are shared). */
+const COMPOSITE_MAP_FIELDS = ['size', 'fill', 'parts', 'player'] as const;
+const MAP_FIELDS = ['id', 'tiled', ...ASCII_MAP_FIELDS, ...COMPOSITE_MAP_FIELDS, 'populate'];
+const isComposite = (v: { [k: string]: unknown }): boolean => COMPOSITE_MAP_FIELDS.some((k) => v[k] !== undefined);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
@@ -145,7 +153,10 @@ class Loader {
     const tiles = this.defined.tiles.map((d) => this.tile(d));
     this.tileDefs = tiles;
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements, items));
-    const maps = this.defined.maps.map((d) => this.map(d));
+    // Composites read their parts, so every plain map is built first.
+    const maps: MapDef[] = [];
+    for (const d of this.defined.maps) if (!isComposite(d.entry.value)) maps[d.index] = this.map(d);
+    for (const d of this.defined.maps) if (isComposite(d.entry.value)) maps[d.index] = this.compositeMap(d, maps);
     const loot = this.defined.loot.map((d) => this.lootTable(d));
     this.checkLootCycles(loot);
     const distributions = this.distributions(tiles, loot, items);
@@ -248,7 +259,7 @@ class Loader {
    * Compile a numeric (or boolean) expression; reports and returns null on
    * error. `what` names the expected result in the type error.
    */
-  private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number } | null {
+  private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number; selfTag?: string } | null {
     const expr = this.compile(source, scope, src);
     if (!expr) return null;
     if (expr.type !== 'number' && expr.type !== 'boolean' && expr.type !== 'any') {
@@ -283,17 +294,23 @@ class Loader {
    * a boolean literal. Returns undefined when absent, null after an error.
    */
   private condition(f: Fields, key: string, scope: Scope, required = false): Compiled | null | undefined {
+    const c = this.conditionExpr(f, key, scope, required);
+    return c ? c.fn : c;
+  }
+
+  /** Like `condition`, keeping the compiled expression's metadata (`selfTag`). */
+  private conditionExpr(f: Fields, key: string, scope: Scope, required = false): { fn: Compiled; selfTag?: string } | null | undefined {
     const v = f.raw(key);
     if (v === undefined || v === null) {
       if (required) f.present(key);
       return required ? null : undefined;
     }
-    if (typeof v === 'boolean') return () => v;
+    if (typeof v === 'boolean') return { fn: () => v };
     if (typeof v !== 'string') {
       this.sink.add(f.at(key), `field '${key}' must be an expression (string) or true/false`);
       return null;
     }
-    return this.expr(v, scope, f.at(key), 'a boolean or a number')?.fn ?? null;
+    return this.expr(v, scope, f.at(key), 'a boolean or a number') ?? null;
   }
 
   /** A number or numeric expression, folded to a constant when possible; null after an error. */
@@ -621,7 +638,7 @@ class Loader {
   private readTiledMaps(): void {
     for (const d of this.defined.maps) {
       const v = d.entry.value;
-      if (v['tiled'] === undefined) continue;
+      if (v['tiled'] === undefined || isComposite(v)) continue;
       this.tiledMaps[d.index] = null;
       const src = at(d.entry.src, 'tiled');
       const mixed = ASCII_MAP_FIELDS.filter((k) => v[k] !== undefined);
@@ -663,15 +680,16 @@ class Loader {
   private map(d: Defined): MapDef {
     const tiled = this.tiledMaps[d.index];
     if (tiled !== undefined) {
-      new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
-      if (!tiled) return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1) };
+      const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
+      if (!tiled) return this.emptyMap(d);
       const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, z: r.z, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
       const { width, height, floors, cells, facings, spawns, playerStart } = tiled;
       this.checkLinks(cells, width, height, floors, () => at(d.entry.src, 'tiled'));
-      return { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors) };
+      const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: false };
+      return this.withPopulate(map, f, d.scope);
     }
     const before = this.sink.count;
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
 
     interface Legend {
       tile: number;
@@ -788,8 +806,245 @@ class Loader {
       });
     });
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, (i) => layers[Math.floor(i / (width * height))]!.at(Math.floor(i / width) % height));
-    const rooms = this.rooms(f, width, height, floors);
-    return { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms };
+    const rooms = this.roomSets(this.roomRects(f, width, height, floors), width, height, floors);
+    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms, populate: [], composite: false };
+    return this.sink.count === before ? this.withPopulate(map, f, d.scope) : map;
+  }
+
+  private emptyMap(d: Defined, composite = false): MapDef {
+    return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), populate: [], composite };
+  }
+
+  /** `map` with its own `populate` entries read and checked against its cells. */
+  private withPopulate(map: MapDef, f: Fields, scope: Scope): MapDef {
+    const own = this.populateEntries(f, scope, map.width, map.height, map.floors);
+    if (!own.length) return map;
+    const populate = own.map((o) => o.def);
+    const out = { ...map, populate };
+    this.checkPopulate(out, own.map((o) => o.src));
+    return out;
+  }
+
+  /**
+   * A composite map: part maps copied in at their `at`, `fill` on the
+   * uncovered floor-0 cells, the parts' spawns, rooms and populate entries
+   * offset, then the composite's own `rooms`, `populate` and `player`.
+   */
+  private compositeMap(d: Defined, maps: readonly MapDef[]): MapDef {
+    const before = this.sink.count;
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
+    const mixed = ['tiled', 'legend', 'rows', 'floors'].filter((k) => f.has(k));
+    if (mixed.length) {
+      this.sink.add(f.at(mixed[0]!), `a composite map (${COMPOSITE_MAP_FIELDS.join(', ')}) cannot also take ASCII or Tiled fields (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
+      return this.emptyMap(d, true);
+    }
+    const size = f.raw('size');
+    const intList = (v: Json | undefined, n: number[]): v is number[] => Array.isArray(v) && n.includes(v.length) && v.every((x) => typeof x === 'number' && Number.isInteger(x));
+    if (!f.present('size')) return this.emptyMap(d, true);
+    if (!intList(size, [2]) || size[0]! < 1 || size[1]! < 1) {
+      this.sink.add(f.at('size'), `field 'size' must be [width, height], two integers ≥ 1, got ${JSON.stringify(size)}`);
+      return this.emptyMap(d, true);
+    }
+    const [width, height] = size as [number, number];
+
+    interface Placed {
+      map: MapDef;
+      x: number;
+      y: number;
+      src: Src;
+    }
+    const placed: Placed[] = [];
+    (f.list('parts') ?? []).forEach((raw, k) => {
+      const src = f.at('parts', k);
+      if (!isObject(raw)) {
+        this.sink.add(src, `parts must be mappings like { map: house, at: [x, y] }`);
+        return;
+      }
+      const pf = new Fields(this.sink, src, raw, ['map', 'at'], 'part');
+      const ref = pf.has('map') ? this.symbols.ref('map', pf.raw('map'), d.scope, pf.at('map'), this.sink) : pf.string('map');
+      const pos = pf.raw('at');
+      let ok = true;
+      if (pos === undefined || pos === null) ok = pf.present('at');
+      else if (!intList(pos, [2])) {
+        this.sink.add(pf.at('at'), `field 'at' must be [x, y], two integers, got ${JSON.stringify(pos)}`);
+        ok = false;
+      }
+      if (!ref || typeof ref !== 'object' || !ok) return;
+      if (isComposite(this.defined.maps[ref.index]!.entry.value)) {
+        this.sink.add(pf.at('map'), `part ${k} is '${ref.id}', a composite map: composites cannot be nested`);
+        return;
+      }
+      const map = maps[ref.index]!;
+      if (map.width === 0) return; // already reported
+      const [x, y] = pos as [number, number];
+      if (x < 0 || y < 0 || x + map.width > width || y + map.height > height) {
+        this.sink.add(pf.at('at'), `part ${k} ('${map.id}', ${map.width}×${map.height}) at [${x}, ${y}] lies outside the map (size ${width}×${height})`);
+        return;
+      }
+      placed.push({ map, x, y, src });
+    });
+    // Overlaps: every part covers its whole rectangle on floor 0 at least.
+    const index = (p: Placed) => p.src.path[p.src.path.length - 1];
+    for (let a = 0; a < placed.length; a++) {
+      for (let b = a + 1; b < placed.length; b++) {
+        const pa = placed[a]!;
+        const pb = placed[b]!;
+        const x0 = Math.max(pa.x, pb.x);
+        const y0 = Math.max(pa.y, pb.y);
+        if (x0 < Math.min(pa.x + pa.map.width, pb.x + pb.map.width) && y0 < Math.min(pa.y + pa.map.height, pb.y + pb.map.height)) {
+          this.sink.add(pb.src, `parts ${index(pa)} ('${pa.map.id}') and ${index(pb)} ('${pb.map.id}') overlap, first at (${x0}, ${y0})`);
+        }
+      }
+    }
+    if (this.sink.count !== before) return this.emptyMap(d, true);
+
+    const floors = Math.max(1, ...placed.map((p) => p.map.floors));
+    const area = width * height;
+    const cells = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const facings = new Array<Facing | null>(area * floors).fill(null);
+    const covered = new Uint8Array(area);
+    const spawns: SpawnDef[] = [];
+    const rects: RoomDef[] = [];
+    const populate: PopulateDef[] = [];
+    const popSrc: Src[] = [];
+    for (const p of placed) {
+      const m = p.map;
+      for (let z = 0; z < m.floors; z++) {
+        for (let y = 0; y < m.height; y++) {
+          for (let x = 0; x < m.width; x++) {
+            const from = (z * m.height + y) * m.width + x;
+            const to = (z * height + p.y + y) * width + p.x + x;
+            cells[to] = m.cells[from]!;
+            facings[to] = m.facings[from] ?? null;
+            if (z === 0) covered[(p.y + y) * width + p.x + x] = 1;
+          }
+        }
+      }
+      for (const s of m.spawns) spawns.push({ x: s.x + p.x, y: s.y + p.y, z: s.z, archetype: s.archetype });
+      for (const r of m.rooms.rects) rects.push({ ...r, x: r.x + p.x, y: r.y + p.y });
+      for (const e of m.populate) {
+        populate.push({ ...e, x: e.x + p.x, y: e.y + p.y });
+        popSrc.push(p.src);
+      }
+    }
+    const uncovered = covered.indexOf(0);
+    if (uncovered >= 0) {
+      const fill = f.has('fill') ? this.symbols.ref('tile', f.raw('fill'), d.scope, f.at('fill'), this.sink) : null;
+      if (!f.has('fill')) {
+        const n = covered.reduce((a, c) => a + (c ? 0 : 1), 0);
+        this.sink.add(d.entry.src, `missing required field 'fill': ${n} floor-0 cell${n === 1 ? ' is' : 's are'} not covered by any part (first at (${uncovered % width}, ${Math.floor(uncovered / width)}))`);
+      } else if (fill) {
+        for (let i = 0; i < area; i++) if (!covered[i]) cells[i] = fill.index;
+      }
+    } else if (f.has('fill')) this.symbols.ref('tile', f.raw('fill'), d.scope, f.at('fill'), this.sink);
+
+    let playerStart: { x: number; y: number; z: number } | null = null;
+    if (f.has('player')) {
+      const v = f.raw('player');
+      if (!intList(v, [2, 3])) this.sink.add(f.at('player'), `field 'player' must be [x, y] or [x, y, z], integers, got ${JSON.stringify(v)}`);
+      else {
+        const [x, y, z = 0] = v;
+        const t = x! >= 0 && y! >= 0 && z >= 0 && x! < width && y! < height && z < floors ? cells[(z * height + y!) * width + x!]! : undefined;
+        if (t === undefined) this.sink.add(f.at('player'), `player start ${JSON.stringify(v)} is outside the map (${width}×${height}, ${floors} floor${floors === 1 ? '' : 's'})`);
+        else if (t === EMPTY_TILE && z === 0 && !f.has('fill')) {
+          // Already reported as a missing fill.
+        } else if (t === EMPTY_TILE || !this.tileDefs[t]!.walkable) {
+          this.sink.add(f.at('player'), `player start ${JSON.stringify(v)} is on ${t === EMPTY_TILE ? 'an empty cell' : `'${this.tileDefs[t]!.id}' (not walkable)`}`);
+        } else playerStart = { x: x!, y: y!, z };
+      }
+    }
+    rects.push(...this.roomRects(f, width, height, floors));
+    if (this.sink.count === before) this.checkLinks(cells, width, height, floors, () => d.entry.src);
+    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: true };
+    const own = this.populateEntries(f, d.scope, width, height, floors);
+    const out = { ...map, populate: [...populate, ...own.map((o) => o.def)] };
+    if (this.sink.count !== before) return this.emptyMap(d, true); // reported; keeps `start` quiet
+    this.checkPopulate(out, [...popSrc, ...own.map((o) => o.src)]);
+    return out;
+  }
+
+  /** A map's own `populate` entries (rects in its coordinates); invalid entries are reported and skipped. */
+  private populateEntries(f: Fields, scope: Scope, width: number, height: number, floors: number): { def: PopulateDef; src: Src }[] {
+    const out: { def: PopulateDef; src: Src }[] = [];
+    (f.list('populate') ?? []).forEach((raw, k) => {
+      const src = f.at('populate', k);
+      if (!isObject(raw)) {
+        this.sink.add(src, `populate entries must be mappings like { archetype: guard, count: 10 }`);
+        return;
+      }
+      const pf = new Fields(this.sink, src, raw, ['archetype', 'count', 'rect', 'floor', 'room'], 'populate');
+      const arch = pf.has('archetype') ? this.symbols.ref('archetype', pf.raw('archetype'), scope, pf.at('archetype'), this.sink) : pf.string('archetype');
+      let ok = !!arch && typeof arch === 'object';
+      const count = pf.raw('count');
+      if (count === undefined || count === null) ok = pf.present('count') && ok;
+      else if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+        this.sink.add(pf.at('count'), `field 'count' must be an integer ≥ 1, got ${JSON.stringify(count)}`);
+        ok = false;
+      }
+      let rect = [0, 0, width, height];
+      if (pf.has('rect')) {
+        const r = pf.raw('rect');
+        if (!Array.isArray(r) || r.length !== 4 || !r.every((v) => typeof v === 'number' && Number.isInteger(v))) {
+          this.sink.add(pf.at('rect'), `field 'rect' must be four integers [x, y, w, h], got ${JSON.stringify(r)}`);
+          ok = false;
+        } else if ((r[2] as number) < 1 || (r[3] as number) < 1) {
+          this.sink.add(pf.at('rect'), `populate rect ${JSON.stringify(r)} is empty: w and h must be ≥ 1`);
+          ok = false;
+        } else if ((r[0] as number) < 0 || (r[1] as number) < 0 || (r[0] as number) + (r[2] as number) > width || (r[1] as number) + (r[3] as number) > height) {
+          this.sink.add(pf.at('rect'), `populate rect ${JSON.stringify(r)} is out of bounds: the map is ${width}×${height}`);
+          ok = false;
+        } else rect = r as number[];
+      }
+      let z = 0;
+      if (pf.has('floor')) {
+        const v = pf.raw('floor');
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= floors) {
+          this.sink.add(pf.at('floor'), `populate 'floor' must be an existing floor (0${floors > 1 ? `–${floors - 1}` : ''}), got ${JSON.stringify(v)}`);
+          ok = false;
+        } else z = v;
+      }
+      let room: number | null = null;
+      if (pf.has('room')) {
+        const v = pf.raw('room');
+        const r = typeof v === 'string' ? this.roomTag(v) : { error: `field 'room' must be a room tag (string), got ${JSON.stringify(v)}` };
+        if ('error' in r) {
+          this.sink.add(pf.at('room'), r.error);
+          ok = false;
+        } else room = r.index;
+      }
+      if (!ok) return;
+      const [x, y, w, h] = rect as [number, number, number, number];
+      out.push({ def: { archetype: (arch as { index: number }).index, count: count as number, x, y, w, h, z, room }, src });
+    });
+    return out;
+  }
+
+  /**
+   * Each populate entry's `count` must fit its candidate cells, minus the
+   * cells earlier entries may take from them (cells are never reused), so the
+   * number placed never depends on the seed.
+   */
+  private checkPopulate(map: MapDef, srcs: readonly Src[]): void {
+    const cands = map.populate.map((p) => populateCandidates(map, this.tileDefs, p));
+    const mark = new Int32Array(map.cells.length).fill(-1);
+    map.populate.forEach((p, k) => {
+      const mine = cands[k]!;
+      for (const i of mine) mark[i] = k;
+      let taken = 0;
+      for (let j = 0; j < k; j++) {
+        const q = map.populate[j]!;
+        if (q.z !== p.z || q.x >= p.x + p.w || p.x >= q.x + q.w || q.y >= p.y + p.h || p.y >= q.y + q.h) continue;
+        let shared = 0;
+        for (const i of cands[j]!) if (mark[i] === k) shared++;
+        taken += Math.min(q.count, shared);
+      }
+      const what = `populate count ${p.count} of '${this.defined.archetypes[p.archetype]!.id}' in '${map.id}'`;
+      if (p.count > mine.length) {
+        this.sink.add(srcs[k]!, `${what} is more than its ${mine.length} candidate cell${mine.length === 1 ? '' : 's'} (walkable, no container, not the player start, in its rect, floor and room)`);
+      } else if (p.count > mine.length - taken) {
+        this.sink.add(srcs[k]!, `${what} may not fit: earlier entries can take ${taken} of its ${mine.length} candidate cells`);
+      }
+    });
   }
 
   /**
@@ -847,7 +1102,8 @@ class Loader {
     return { error: `unknown room tag '${tag}'${s ? ` (did you mean '${s}'?)` : ''}` };
   }
 
-  private rooms(f: Fields, width: number, height: number, floors: number): RoomsDef {
+  /** Validated `rooms` rects of a map entry. */
+  private roomRects(f: Fields, width: number, height: number, floors: number): RoomDef[] {
     const rects: RoomDef[] = [];
     (f.list('rooms') ?? []).forEach((raw, i) => {
       const src = f.at('rooms', i);
@@ -890,7 +1146,7 @@ class Loader {
       const idx = [...new Set(tags.map((t) => this.roomTags.indexOf(t)).filter((k) => k >= 0))].sort((a, b) => a - b);
       rects.push({ x: x!, y: y!, z, w: w!, h: h!, tags: idx });
     });
-    return this.roomSets(rects, width, height, floors);
+    return rects;
   }
 
   /** Per-cell room tag sets for validated rects (shared by ASCII and Tiled maps). */
@@ -1064,7 +1320,9 @@ class Loader {
   private status(d: Defined): StatusDef {
     const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
     const label = f.string('label') ?? d.id;
-    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forFn = forExpr?.fn ?? null;
+    const forTag = forExpr?.selfTag ?? null;
     const whenFn = this.condition(f, 'when', d.scope, true) ?? always;
     const untilFn = this.condition(f, 'until', d.scope) ?? ((c) => !whenFn(c));
     const rates: StatusRate[] = [];
@@ -1076,7 +1334,7 @@ class Loader {
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
     }
-    return { id: d.id, index: d.index, label, forFn, whenFn, untilFn, rates };
+    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates };
   }
 
   private system(d: Defined): SystemDef {
@@ -1084,11 +1342,13 @@ class Loader {
     let every = f.number('every', false) ?? DEFAULT_EVERY;
     const period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
     if (every <= 0) every = DEFAULT_EVERY;
-    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forFn = forExpr?.fn ?? null;
+    const forTag = forExpr?.selfTag ?? null;
     const whenFn = this.condition(f, 'when', d.scope) ?? null;
 
     const effects = this.effects(f, d.scope);
-    return { id: d.id, index: d.index, every, period, forFn, whenFn, effects };
+    return { id: d.id, index: d.index, every, period, forFn, forTag, whenFn, effects };
   }
 
   /** Sim seconds (> 0, a whole number of ticks) → ticks; reports and returns null otherwise. */
@@ -1461,7 +1721,8 @@ class Loader {
       this.sink.add(extra.entry.src, `duplicate 'start': already defined in pack '${s.source.pack}' (${s.source.file})`);
     }
     const { entry, scope } = first!;
-    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat', 'victory'], 'start');
+    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat', 'victory', 'simulation'], 'start');
+    const simulation = this.simulation(f);
     const defeat = this.outcome(f, 'defeat', scope, DEFAULT_DEFEAT_MESSAGE);
     const victory = this.outcome(f, 'victory', scope, DEFAULT_VICTORY_MESSAGE);
     const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), scope, f.at('map'), this.sink) : f.string('map');
@@ -1471,13 +1732,33 @@ class Loader {
     if (m && !m.playerStart) {
       const tiled = this.tiledMaps[map.index];
       // A Tiled map that failed to read has already been reported.
-      if (tiled !== null) {
-        const how = tiled ? `a 'player' object in the Tiled map` : `a legend entry with 'player: true'`;
+      if (tiled !== null && !(m.composite && m.width === 0)) {
+        const how = m.composite ? `a 'player' field on the composite map` : tiled ? `a 'player' object in the Tiled map` : `a legend entry with 'player: true'`;
         this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (${how})`);
       }
       return null;
     }
-    return { map: map.index, player: player.index, defeat, victory };
+    return { map: map.index, player: player.index, defeat, victory, simulation };
+  }
+
+  /** `start.simulation`: optional scale settings, defaults otherwise. */
+  private simulation(f: Fields): SimulationDef {
+    const raw = f.mapping('simulation');
+    if (!raw) return DEFAULT_SIMULATION;
+    const sf = new Fields(this.sink, f.at('simulation'), raw, ['active_radius', 'npc_path_budget', 'player_path_budget'], 'simulation');
+    const int = (key: string, min: number, fallback: number, none = false): number | null => {
+      const v = sf.raw(key);
+      if (v === undefined || v === null) return fallback;
+      if (none && v === 'none') return null;
+      if (typeof v === 'number' && Number.isInteger(v) && v >= min) return v;
+      this.sink.add(sf.at(key), `field '${key}' must be an integer ≥ ${min}${none ? ` or 'none'` : ''}, got ${JSON.stringify(v)}`);
+      return fallback;
+    };
+    return {
+      activeRadius: int('active_radius', 0, DEFAULT_SIMULATION.activeRadius!, true),
+      npcPathBudget: int('npc_path_budget', 1, DEFAULT_SIMULATION.npcPathBudget)!,
+      playerPathBudget: int('player_path_budget', 1, DEFAULT_SIMULATION.playerPathBudget)!,
+    };
   }
 
   private clock(): ClockDef {

@@ -368,7 +368,10 @@ function rewriteEntry(files: Record<string, string>, local: string, tiled: strin
     if (!isSeq(maps)) continue;
     const i = maps.items.findIndex((m) => (m as { get?: (k: string) => unknown }).get?.('id') === local);
     if (i < 0) continue;
-    doc.setIn(['maps', i], doc.createNode({ id: local, tiled }));
+    // A plain map keeps its own populate; a composite is flattened (see `roundTrip`).
+    const entry = maps.items[i] as { get?: (k: string) => unknown; toJSON?: () => Record<string, unknown> };
+    const populate = entry.get?.('size') === undefined ? (entry.toJSON?.()['populate'] as unknown) : undefined;
+    doc.setIn(['maps', i], doc.createNode(populate === undefined ? { id: local, tiled } : { id: local, tiled, populate }));
     out[f] = doc.toString();
     return out;
   }
@@ -390,6 +393,17 @@ function roundTrip(sources: PackSource[]): void {
     const r = loadPacks(replaced);
     assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
     const back = r.definition;
+    if (map.composite) {
+      // A composite exports as the plain map it composes: the same cells, but spawns and rooms come back
+      // per floor (a plain map's order), and its populate entries (resolved from its parts) live in YAML only.
+      const b = back.maps[map.index]!;
+      const sorted = (xs: readonly unknown[]) => xs.map((x) => JSON.stringify(x)).sort();
+      assert.deepEqual([b.width, b.height, b.floors, b.playerStart, b.composite], [map.width, map.height, map.floors, map.playerStart, false]);
+      assert.ok(JSON.stringify(b.cells) === JSON.stringify(map.cells) && JSON.stringify(b.facings) === JSON.stringify(map.facings), `cells of ${map.id}`);
+      assert.deepEqual(sorted(b.spawns), sorted(map.spawns), `spawns of ${map.id}`);
+      assert.deepEqual(sorted(b.rooms.rects), sorted(map.rooms.rects), `rooms of ${map.id}`);
+      continue;
+    }
     assert.deepEqual(back.maps[map.index], map, `round trip of ${map.id}`);
     assert.deepEqual(back.roomTags, def.roomTags);
     // Byte-stable: the same map exports to the same files, also after the round trip.

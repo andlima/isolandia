@@ -128,7 +128,7 @@ clock:
   start: "20:00"
 
 start:
-  map: mansion
+  map: estate
   player: vampire
   defeat:
     when: "self.hp <= 0"

@@ -13,6 +13,23 @@ export const GAMES = {
   garden: ['packs/std', 'packs/garden'],
 } as const;
 
+/**
+ * Where each genre's original map sits in its composite start map: genre
+ * scenarios written for the old single maps add these to their coordinates
+ * (`zmb:town_center` in `zmb:city`, `vamp:mansion` in `vamp:estate`; the
+ * garden is not a composite).
+ */
+export const GENRE_AT = {
+  zombie: { x: 106, y: 117 },
+  vampire: { x: 37, y: 41 },
+  garden: { x: 0, y: 0 },
+} as const;
+
+/** A cell of a genre's original map, in its start map's coordinates. */
+export function genreCell(name: keyof typeof GENRE_AT, x: number, y: number): [number, number] {
+  return [x + GENRE_AT[name].x, y + GENRE_AT[name].y];
+}
+
 export const MANIFEST_T = 'namespace: t\nname: Test\nversion: 1.0.0\n';
 
 export const TILES_T = `tiles:

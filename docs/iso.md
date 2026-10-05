@@ -148,6 +148,31 @@ rules in `src/iso/cutaway.ts`):
   issues a goto with that `z`.
 - The HUD shows `Floor N` when the map has more than one floor.
 
+## Lazy chunks and culling
+
+The scene never builds the whole map (`src/iso/scene.ts`; the bookkeeping
+is the Pixi-free `src/iso/chunks.ts`, tested headless):
+
+- **Render chunks** are 16×16 cells of one floor. A chunk's ground
+  container and raised blocks are built **the first time it is near the
+  view**: visible (its iso bounds, grown for tall blocks, meet the view
+  plus a 96 px margin), or one chunk away from a visible one on the same
+  floor.
+- Built chunks live in an **LRU**; past `MAX_BUILT_CHUNKS` (160) the least
+  recently needed are **destroyed** (sprites and containers), never one
+  needed this frame. Built chunks that leave the view are hidden.
+- **Map edits** (`world.tileVersion`) rebuild only the built chunks whose
+  cells changed; an unbuilt chunk is built from the live grid, so it picks
+  up its edits when it is first built.
+- **Culling.** Entity and ground-pile sprites exist only while their cell
+  (an entity's interpolated position and floor) is in a **built, visible**
+  chunk: they are created when they enter one and destroyed when they
+  leave. A new sprite takes the entity's current facing and its depth
+  bucket, so depth sorting and facing carry over.
+- `scene.update()` returns stats: built, visible and total chunks, entities
+  drawn on visible floors, and live sprites. The browser's F3 line shows
+  them (see `docs/ui.md`).
+
 ## Sprites and placeholders
 
 Tiles and archetypes may reference an asset (`sprite:`; see

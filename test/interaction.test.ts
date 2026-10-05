@@ -4,7 +4,7 @@ import { add, hudModel, loadPacksOrThrow, reasonText, World, type Action, type A
 import { readPack } from '../src/node/read-pack.ts';
 import { clampMenu, contextMenu, menuTitle, moveSelection, runMenuItem } from '../src/web/menu.ts';
 import { clickIntent } from '../src/web/panels.ts';
-import { fixture, GAMES } from './helpers.ts';
+import { fixture, GAMES, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -447,7 +447,7 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 
 test('menu: zombie window from afar, without and with materials', () => {
   const w = game('zombie');
-  const [wx, wy] = [16, 3];
+  const [wx, wy] = genreCell('zombie', 16, 3);
   assert.equal(w.grid.tileAt(wx, wy)!.id, 'zmb:window');
   assert.ok(Math.max(Math.abs(w.player.x - wx), Math.abs(w.player.y - wy)) > 1);
   const ids = w.def.ids.items;
@@ -472,20 +472,22 @@ test('menu: zombie window from afar, without and with materials', () => {
 
 test('menu: vampire shutters from afar, and rest on your own cell', () => {
   const w = game('vampire');
-  const shutter = contextMenu(w, 3, 0).find((i) => i.label === 'Close shutters')!;
-  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: 3, y: 0, z: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: 3, y: 0, z: 0 } } });
+  const [sx, sy] = genreCell('vampire', 3, 0);
+  const shutter = contextMenu(w, sx, sy).find((i) => i.label === 'Close shutters')!;
+  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: sx, y: sy, z: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: sx, y: sy, z: 0 } } });
   assert.equal(shutter.disabled, false);
   const { x, y } = w.player;
   const rest = contextMenu(w, x, y).find((i) => i.label === 'Rest')!;
   assert.deepEqual([rest.disabled, rest.hint], [true, 'Only in the crypt']);
   assert.ok(!contextMenu(w, x, y).some((i) => i.label === 'Walk here'));
   // Over in the crypt.
-  w.queueIntent({ kind: 'goto', x: 10, y: 2, z: 0 });
-  for (let i = 0; i < 200 && (w.player.x !== 10 || w.player.y !== 2); i++) w.step();
-  const ok = contextMenu(w, 10, 2).find((i) => i.label === 'Rest')!;
+  const [cx, cy] = genreCell('vampire', 10, 2);
+  w.queueIntent({ kind: 'goto', x: cx, y: cy, z: 0 });
+  for (let i = 0; i < 200 && (w.player.x !== cx || w.player.y !== cy); i++) w.step();
+  const ok = contextMenu(w, cx, cy).find((i) => i.label === 'Rest')!;
   assert.deepEqual(ok, { label: 'Rest', disabled: false, run: { actions: [{ kind: 'act', action: 'vamp:rest' }] } });
-  assert.equal(menuTitle(w, 10, 2), `${w.grid.tileAt(10, 2)!.label} · hall`);
-  assert.equal(menuTitle(w, 3, 0), w.grid.tileAt(3, 0)!.label);
+  assert.equal(menuTitle(w, cx, cy), `${w.grid.tileAt(cx, cy)!.label} · hall`);
+  assert.equal(menuTitle(w, sx, sy), w.grid.tileAt(sx, sy)!.label);
   assert.equal(menuTitle(w, -1, 0), '');
 });
 

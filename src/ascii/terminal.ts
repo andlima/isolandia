@@ -273,6 +273,13 @@ export interface TerminalSaves {
   load(): { world: World | null; message: string };
 }
 
+/** `active N, dormant M` for the status line, or '' while no NPC is dormant. */
+export function simStatus(world: World): string {
+  const active = world.activeCount;
+  const dormant = world.entities.length - active;
+  return dormant > 0 ? `active ${active}, dormant ${dormant}` : '';
+}
+
 /** How long a save/load message stays on the help line. */
 const STATUS_MS = 4000;
 
@@ -298,7 +305,8 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
       const height = Math.max(5, (stdout.rows ?? 24) - hudRows);
       const frame = renderAscii(world, { width, height });
       if (message && Date.now() - messageAt > STATUS_MS) message = '';
-      const line = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : message || help;
+      const sim = simStatus(world);
+      const line = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : (message || help) + (sim ? `  |  ${sim}` : '');
       stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${line}\x1b[0m\x1b[J`);
     };
 

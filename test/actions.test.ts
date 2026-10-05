@@ -19,7 +19,7 @@ import {
 import { readPack } from '../src/node/read-pack.ts';
 import { activityBar } from '../src/web/hud.ts';
 import { lootView } from '../src/web/panels.ts';
-import { fixture, GAMES } from './helpers.ts';
+import { fixture, GAMES, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -836,14 +836,16 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   assert.deepEqual(needed(), []);
 
   // The bedroom window of the north-west house, from inside.
-  const [wx, wy] = [16, 3];
+  const T = (x: number, y: number) => genreCell('zombie', x, y);
+  const [wx, wy] = T(16, 3);
+  const [ix, iy] = T(15, 3);
   assert.equal(cell(w, wx, wy), 'zmb:window');
-  walk(w, 15, 3);
+  walk(w, ix, iy);
   const offered = w.availableActions().find((a) => a.action === 'zmb:barricade' && a.x === wx && a.y === wy);
   assert.equal(offered?.ok, true);
   const planks = have('zmb:plank');
   const nails = have('zmb:nails');
-  const shambler = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && Math.hypot(e.x - 15, e.y - 3) <= 14);
+  const shambler = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && Math.hypot(e.x - ix, e.y - iy) <= 14);
   w.queueAction({ kind: 'act', action: 'zmb:barricade', x: wx, y: wy, z: 0 });
   w.step();
   const start = w.lastAction!;
@@ -859,9 +861,9 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   assert.equal(have('zmb:plank'), planks - 2);
   assert.equal(have('zmb:nails'), nails - 4);
   assert.equal(have('zmb:hammer'), 1);
-  assert.ok(w.noises.some((n) => n.x === 15 && n.y === 3 && n.radius >= 12), 'the hammering is heard at completion');
+  assert.ok(w.noises.some((n) => n.x === ix && n.y === iy && n.radius >= 12), 'the hammering is heard at completion');
   if (shambler) assert.equal(shambler.heardTick, start.tick + 60);
-  assert.ok(!lineOfSight(w.grid, 19, 3, 14, 3), 'the barricade blocks the view in');
+  assert.ok(!lineOfSight(w.grid, ...T(19, 3), ...T(14, 3)), 'the barricade blocks the view in');
   assert.ok(!w.availableActions().some((a) => a.action === 'zmb:barricade' && a.x === wx));
 });
 
@@ -890,19 +892,20 @@ test('zombie: a bandage takes 3 s and a nearby noise wastes the attempt', () => 
 test('vampire: shutter a window, then rest by a coffin until a bat screech wakes you', () => {
   const w = game('vampire', 1);
   const hp = () => w.value(w.player, 'std:hp')!;
+  const M = (x: number, y: number) => genreCell('vampire', x, y);
   // Shutters on the west room's north window.
-  walk(w, 3, 1);
-  assert.equal(cell(w, 3, 0), 'vamp:window');
-  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: 3, y: 0, z: 0 });
+  walk(w, ...M(3, 1));
+  assert.equal(cell(w, ...M(3, 0)), 'vamp:window');
+  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(3, 0)[0], y: M(3, 0)[1], z: 0 });
   steps(w, 21);
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
-  assert.equal(cell(w, 3, 0), 'vamp:shuttered_window');
-  assert.equal(w.grid.opaque[3], 1);
+  assert.equal(cell(w, ...M(3, 0)), 'vamp:shuttered_window');
+  assert.equal(w.grid.opaque[w.grid.index(...M(3, 0))], 1);
 
   // Rest is only offered on the crypt floor.
   assert.equal(w.availableActions().find((a) => a.action === 'vamp:rest')!.reason, 'cannot_act');
-  walk(w, 10, 2);
-  assert.equal(w.grid.tileAt(10, 2)!.id, 'vamp:crypt');
+  walk(w, ...M(10, 2));
+  assert.equal(w.grid.tileAt(...M(10, 2))!.id, 'vamp:crypt');
   assert.equal(w.availableActions().find((a) => a.action === 'vamp:rest')!.ok, true);
 
   // By the coffin, the hall's bat spots the vampire and screeches: the rest is
@@ -918,8 +921,8 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   assert.ok(hp() < 45, `${hp()}`);
 
   // Down in the wine cellar's crypt floor, out of the bats' sight, a rest completes.
-  walk(w, 20, 11);
-  assert.equal(w.grid.tileAt(20, 11)!.id, 'vamp:crypt');
+  walk(w, ...M(20, 11));
+  assert.equal(w.grid.tileAt(...M(20, 11))!.id, 'vamp:crypt');
   const before = hp();
   let rested = false;
   for (let attempt = 0; attempt < 10 && !rested; attempt++) {

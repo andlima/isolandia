@@ -47,7 +47,7 @@ test('loads std + std-needs + zombie', () => {
     ['std:hp', 'std_needs:hunger', 'std_needs:thirst', 'std_needs:fatigue'],
   );
   assert.equal(def.archetypes[def.start.player]!.id, 'zmb:survivor');
-  assert.equal(def.maps[def.start.map]!.id, 'zmb:town');
+  assert.equal(def.maps[def.start.map]!.id, 'zmb:city');
   // Short reference `hp` in zmb resolved through depends to std:hp.
   const shambler = def.archetypes[def.ids.archetypes['zmb:shambler']!]!;
   assert.deepEqual(shambler.measurements, [def.ids.measurements['std:hp']]);
@@ -68,7 +68,7 @@ test('loads std + vampire (no std-needs), with an expression max tied to std:hp'
   assert.equal(typeof blood.rateFn, 'function'); // reads world.is_day
   // A humanoid from std spawned via the vampire map legend.
   const humanoid = r.definition.ids.archetypes['std:humanoid'];
-  assert.ok(r.definition.maps[0]!.spawns.some((s) => s.archetype === humanoid));
+  assert.ok(r.definition.maps[r.definition.start.map]!.spawns.some((s) => s.archetype === humanoid));
 });
 
 test('loads std + garden, with a start.victory and no defeat', () => {

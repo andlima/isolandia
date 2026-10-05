@@ -1,0 +1,73 @@
+# The estate around the mansion: a composite map (docs/packs.md#composite-maps)
+# of the mansion (Tiled) and two ASCII part maps, each placed several times.
+# Outside, the sun falls on open ground (`sunbeam`); only the buildings shade.
+maps:
+  # A walled plot of crypt floor and coffins, with a gate on the south side.
+  # Bats roost among the graves (8 per plot).
+  - id: graveyard
+    legend:
+      "#": { tile: wall }
+      "+": { tile: door }
+      "_": { tile: crypt }
+      "=": { tile: coffin, facing: s }
+      "'": { tile: sunbeam }
+    rows:
+      - "##############"
+      - "#____________#"
+      - "#_=_=_=_=_=__#"
+      - "#____________#"
+      - "#_=_=_=_=_=__#"
+      - "#____________#"
+      - "#_=_=_=_=_=__#"
+      - "#____________#"
+      - "######+#######"
+      - "''''''''''''''"
+    populate:
+      - { archetype: bat, count: 8 }
+  # A village cottage: carpet and creaky boards, a chest of heirlooms and
+  # bookshelves (empty: only the mansion's library is stocked).
+  - id: cottage
+    legend:
+      "#": { tile: wall }
+      "+": { tile: door }
+      '"': { tile: window }
+      ".": { tile: carpet }
+      ",": { tile: creaky }
+      "X": { tile: chest, facing: s }
+      "L": { tile: bookshelf, facing: s }
+      "'": { tile: sunbeam }
+    rows:
+      - '###"##"###'
+      - "#X.,...LL#"
+      - "#........#"
+      - '"........"'
+      - "#...,....#"
+      - "#........#"
+      - "####+#####"
+      - "''''''''''"
+    rooms:
+      - { rect: [1, 1, 8, 5], tags: [cottage] }
+    populate:
+      - { archetype: bat, count: 1, room: cottage }
+  - id: estate
+    size: [96, 96]
+    fill: sunbeam
+    player: [48, 45]                 # in the great hall (the mansion is at [37, 41])
+    parts:
+      - { map: mansion, at: [37, 41] }
+      - { map: graveyard, at: [6, 6] }
+      - { map: graveyard, at: [76, 6] }
+      - { map: graveyard, at: [6, 30] }
+      - { map: graveyard, at: [76, 30] }
+      - { map: cottage, at: [6, 80] }
+      - { map: cottage, at: [20, 80] }
+      - { map: cottage, at: [34, 80] }
+      - { map: cottage, at: [52, 80] }
+      - { map: cottage, at: [66, 80] }
+      - { map: cottage, at: [80, 80] }
+    # Bats over the grounds; the mansion's surroundings start clear.
+    populate:
+      - { archetype: bat, count: 40, rect: [0, 0, 96, 28] }
+      - { archetype: bat, count: 30, rect: [0, 60, 96, 36] }
+      - { archetype: bat, count: 20, rect: [0, 28, 30, 32] }
+      - { archetype: bat, count: 20, rect: [66, 28, 30, 32] }

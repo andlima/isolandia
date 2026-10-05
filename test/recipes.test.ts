@@ -18,7 +18,7 @@ import {
 import { readPack } from '../src/node/read-pack.ts';
 import { contextMenu, runMenuItem } from '../src/web/menu.ts';
 import { craftingRowText, craftingView } from '../src/web/panels.ts';
-import { fixture, GAMES } from './helpers.ts';
+import { fixture, GAMES, GENRE_AT, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -595,20 +595,21 @@ function walk(w: World, x: number, y: number, adjacent = false): void {
 }
 
 test('zombie: loot canned beans, walk to a stove via the menu, cook and eat them; tear rags into a bandage', () => {
-  const w = game('zombie', 1);
+  const w = game('zombie', 2);
   const id = (s: string) => w.def.ids.items[s]!;
   const have = (s: string) => countOf(w.player.inv!, id(s));
-  // The north-east kitchen's cupboard holds a can (seed 1).
-  const cupboard = w.containersAt(30, 2)[0]!;
+  const T = (x: number, y: number) => genreCell('zombie', x, y);
+  // The north-east kitchen's cupboard holds a can (seed 2; the city rolls loot for many more containers first).
+  const cupboard = w.containersAt(...T(30, 2))[0]!;
   assert.ok(countOf(cupboard, id('zmb:canned_beans')) >= 1);
-  walk(w, 30, 2, true);
+  walk(w, ...T(30, 2), true);
   w.queueAction({ kind: 'take', container: cupboard.id, item: 'zmb:canned_beans' });
   w.step();
   assert.ok(have('zmb:canned_beans') >= 1);
   const cans = have('zmb:canned_beans');
 
   // The south-east kitchen's stove, from afar.
-  const [sx, sy] = [31, 18];
+  const [sx, sy] = T(31, 18);
   assert.equal(w.grid.tileAt(sx, sy)!.id, 'zmb:stove');
   assert.ok(Math.max(Math.abs(w.player.x - sx), Math.abs(w.player.y - sy)) > 1);
   const item = contextMenu(w, sx, sy).find((i) => i.label === 'Cook: Hot beans')!;
@@ -651,11 +652,14 @@ test('zombie: loot canned beans, walk to a stove via the menu, cook and eat them
 
 test('zombie: the stoves keep the kitchens walkable and every container reachable', () => {
   const w = game('zombie', 1);
+  // The old town: town_center's 44×21 cells inside the city.
+  const { x: ox, y: oy } = GENRE_AT.zombie;
+  const inTown = (x: number, y: number) => x >= ox && y >= oy && x < ox + 44 && y < oy + 21;
   const stoves: [number, number][] = [];
-  for (let y = 0; y < w.grid.height; y++) for (let x = 0; x < w.grid.width; x++) if (w.grid.tileAt(x, y)!.id === 'zmb:stove') stoves.push([x, y]);
+  for (let y = oy; y < oy + 21; y++) for (let x = ox; x < ox + 44; x++) if (w.grid.tileAt(x, y)!.id === 'zmb:stove') stoves.push([x, y]);
   assert.equal(stoves.length, 4);
   for (const c of w.containers.values()) {
-    if (c.kind !== 'tile') continue;
+    if (c.kind !== 'tile' || !inTown(c.x, c.y)) continue;
     w.player.path = null;
     w.queueIntent({ kind: 'goto', x: c.x, y: c.y, z: c.z, adjacent: !w.grid.walkable(c.x, c.y, c.z) });
     w.step();
@@ -673,10 +677,11 @@ test('vampire: fill an empty vial at the font, then mix blood wine anywhere', ()
   const id = (s: string) => w.def.ids.items[s]!;
   const have = (s: string) => countOf(w.player.inv!, id(s));
   // Loot an empty vial and a bottle of wine from the library and the cellar (seed 1).
-  for (const [x, y, item] of [
+  for (const [mx, my, item] of [
     [7, 9, 'vamp:empty_vial'],
     [16, 12, 'vamp:wine'],
   ] as const) {
+    const [x, y] = genreCell('vampire', mx, my);
     const c = w.containersAt(x, y)[0]!;
     assert.ok(countOf(c, id(item)) >= 1, `${item} at ${x},${y}`);
     walk(w, x, y, true);
@@ -687,7 +692,7 @@ test('vampire: fill an empty vial at the font, then mix blood wine anywhere', ()
   const vials = have('vamp:blood_vial');
 
   // At the font: the menu offers Fill; it walks up and fills the vial.
-  const [fx, fy] = [13, 3];
+  const [fx, fy] = genreCell('vampire', 13, 3);
   assert.equal(w.grid.tileAt(fx, fy)!.id, 'vamp:font');
   const fill = contextMenu(w, fx, fy).find((i) => i.label === 'Fill: Blood vial')!;
   assert.equal(fill.disabled, false);

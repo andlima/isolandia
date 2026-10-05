@@ -1,4 +1,0 @@
-# Edit town.tmj in Tiled; see README.md for the layout.
-maps:
-  - id: town
-    tiled: maps/town.tmj

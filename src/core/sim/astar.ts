@@ -40,6 +40,12 @@ export class Pathfinder {
   private heapSeq = new Uint32Array(256);
   private heapSize = 0;
   private seq = 0;
+  /** Nodes expanded by the latest search (0 when it failed without searching). */
+  lastExpanded = 0;
+  /** Whether the latest search stopped at its budget. */
+  lastBudgetHit = false;
+  /** Whether the latest search failed on region labels, without searching. */
+  lastRegionReject = false;
 
   constructor(readonly grid: Grid) {
     const n = grid.width * grid.height * grid.floors;
@@ -53,44 +59,77 @@ export class Pathfinder {
   /**
    * Path as cell indices from start (exclusive) to goal (inclusive); empty
    * if start === goal; null if the goal is out of bounds, not walkable, or
-   * unreachable. `sz`/`gz` are the start and goal floors (default 0).
+   * unreachable, or when the search expands `budget` nodes without reaching
+   * it. A goal in another connected region than a walkable start (see
+   * `Grid.regions`) fails without searching. `sz`/`gz` are the start and
+   * goal floors (default 0).
    */
-  findPath(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0): Int32Array | null {
+  findPath(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
+    this.reset();
     const { walk } = this.grid;
     if (!this.grid.inBounds(sx, sy, sz) || !this.grid.inBounds(gx, gy, gz)) return null;
     const goal = this.grid.index(gx, gy, gz);
     if (walk[goal] !== 1) return null;
+    const start = this.grid.index(sx, sy, sz);
+    if (walk[start] === 1) {
+      const labels = this.grid.regions();
+      if (labels[start] !== labels[goal]) {
+        this.lastRegionReject = true;
+        return null;
+      }
+    }
     const gen = ++this.gen;
     this.goal[goal] = gen;
-    return this.search(sx, sy, sz, gx, gy, 0);
+    return this.search(sx, sy, sz, gx, gy, 0, budget);
+  }
+
+  private reset(): void {
+    this.lastExpanded = 0;
+    this.lastBudgetHit = false;
+    this.lastRegionReject = false;
   }
 
   /**
    * Shortest path to any walkable tile 8-adjacent to (gx, gy) on the goal's
    * floor `gz`, or to the goal itself when it is walkable (same return
-   * convention as `findPath`). One multi-goal search; ties are broken like
-   * `findPath`.
+   * convention and budget as `findPath`). One multi-goal search; ties are
+   * broken like `findPath`. Fails without searching when no goal cell shares
+   * a walkable start's region.
    */
-  findPathAdjacent(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0): Int32Array | null {
+  findPathAdjacent(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
+    this.reset();
     const { width, height, walk } = this.grid;
     if (!this.grid.inBounds(sx, sy, sz) || !this.grid.inBounds(gx, gy, gz)) return null;
+    const start = this.grid.index(sx, sy, sz);
+    const labels = walk[start] === 1 ? this.grid.regions() : null;
     const gen = ++this.gen;
     let any = false;
+    let reachable = labels === null;
     for (let y = Math.max(0, gy - 1); y <= Math.min(height - 1, gy + 1); y++) {
       for (let x = Math.max(0, gx - 1); x <= Math.min(width - 1, gx + 1); x++) {
         const i = this.grid.index(x, y, gz);
         if (walk[i] === 1) {
           this.goal[i] = gen;
           any = true;
+          if (labels && labels[i] === labels[start]) reachable = true;
         }
       }
     }
+    if (!any) return null;
+    if (!reachable) {
+      this.lastRegionReject = true;
+      return null;
+    }
     // Every goal is within octile distance √2 of (gx, gy), so this stays admissible.
-    return any ? this.search(sx, sy, sz, gx, gy, SQRT2) : null;
+    return this.search(sx, sy, sz, gx, gy, SQRT2, budget);
   }
 
-  /** A* towards the cells stamped in `goal` for the current generation; h = octile to (gx, gy) − slack. */
-  private search(sx: number, sy: number, sz: number, gx: number, gy: number, slack: number): Int32Array | null {
+  /**
+   * A* towards the cells stamped in `goal` for the current generation; h =
+   * octile to (gx, gy) − slack. Gives up (null) once `budget` nodes have been
+   * expanded without reaching a goal.
+   */
+  private search(sx: number, sy: number, sz: number, gx: number, gy: number, slack: number, budget: number): Int32Array | null {
     const grid = this.grid;
     const { width, height, walk } = grid;
     const multi = grid.floors > 1;
@@ -108,11 +147,21 @@ export class Pathfinder {
     seen[start] = gen;
     this.push(start, h(sx, sy));
 
+    let expanded = 0;
     while (this.heapSize > 0) {
       const cur = this.pop();
       if (closed[cur] === gen) continue;
       closed[cur] = gen;
-      if (goal[cur] === gen) return this.reconstruct(cur);
+      if (goal[cur] === gen) {
+        this.lastExpanded = expanded;
+        return this.reconstruct(cur);
+      }
+      if (expanded >= budget) {
+        this.lastExpanded = expanded;
+        this.lastBudgetHit = true;
+        return null;
+      }
+      expanded++;
 
       const cx = cur % width;
       const rest = (cur - cx) / width;
@@ -145,6 +194,7 @@ export class Pathfinder {
         this.push(ni, ng + h(cx, cy));
       }
     }
+    this.lastExpanded = expanded;
     return null;
   }
 

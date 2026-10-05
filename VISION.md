@@ -156,7 +156,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
 | M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
-| M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
+| M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town | ✅ done |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
 | M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
@@ -176,8 +176,12 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 - **Isometric art is expensive**, and it is what makes one genre *look*
   like another. Start with placeholders (colored blocks, Kenney packs)
   until ~M4.
-- **Performance:** compile expressions to closures at load; LOD
-  simulation for distant chunks; per-chunk depth sorting.
+- **Performance:** compile expressions to closures at load; per-chunk
+  depth sorting; NPCs beyond an active radius go dormant (M6). Measured on
+  the 256×256 zombie city with 961 entities (`docs/perf.md`): **0.22 ms avg,
+  0.38 ms p95 per tick** in Node (0.35 / 0.59 ms without dormancy), far
+  under the 10 ms target. Browser fps on the city is still a manual
+  follow-up (as in S0). LOD for drift and systems is not needed yet.
 - **Scope:** Zomboid has more than a decade of development. The target is
   a small core in which switching genre = switching pack.
 - **YAML creep** (see §2): prefer new primitives or script hooks over ever
@@ -447,7 +451,44 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     player. Saves become version 2 (every cell gets a `z`); version 1 saves
     still load. See `docs/packs.md#floors` and `docs/iso.md#floors`.
 
+- ~~How does the world scale to a town?~~ **Decided (spec
+  `m6-chunked-world`, M6):**
+  - **Composite maps from parts, without nesting**: a `maps` entry with
+    `size`, `fill`, `parts` (`{ map, at }`), `player`, `rooms` and
+    `populate` is assembled at load from non-composite part maps (ASCII or
+    Tiled), placed any number of times; parts may not overlap or be
+    composites themselves. No rotation, mirroring or random selection.
+  - **Seeded `populate`**: zones on any map (applied per placement on a
+    part) scatter archetypes on candidate cells, without reuse, with a
+    dedicated RNG derived from the seed; counts are checked at load and
+    saves store the placed entities.
+  - **Derived dormancy beyond an active radius**: an NPC farther than
+    `start.simulation.active_radius` (Chebyshev, default 64) from the player
+    neither thinks nor moves that tick, but still drifts, runs systems and
+    statuses and hears. One O(n) pass per tick; never saved or hashed.
+  - **Budgeted A\* with region labels**: searches stop after a node budget
+    (NPC 4 000, player 60 000 by default), and connected-region labels
+    (recomputed lazily after `set_tile`) reject unreachable goals without
+    searching. A 16×16 entity index per floor serves `entitiesNear` and
+    hearing.
+  - **Lazy, evicted render chunks**: the iso scene builds a 16×16 chunk the
+    first time it is near the view, keeps at most 160 in an LRU and
+    destroys the rest; entity and pile sprites exist only in built, visible
+    chunks. F3 shows a perf line.
+
 ## 8. Next step
+
+M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
+`m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked
+world** (spec `m6-chunked-world`). The zombie game is a 256×256 city built
+from house, store, garage, park and road parts around the old town block,
+with ~960 dead (dense downtown, sparse at the edges) that rest while far
+away; the vampire's mansion stands in a 96×96 estate of graveyards and
+village cottages with ~150 bats.
+
+The next step is to author, via `spec-orchestrator`, the **M7 spec**:
+packs as mods (stacking, overrides, joint validation), with zombie and
+vampire as mods of the same base.
 
 M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
 **context menu** (spec `m5-context-menu`) and **recipes** (spec
@@ -456,10 +497,6 @@ hammering, cook canned beans on a kitchen stove and tear rags into
 bandages; the vampire closes shutters before dawn, rests on a crypt floor,
 fills empty vials at the blood font and mixes blood wine. Right-click a
 window or a stove across the room and the character walks up and starts.
-
-The next step is to author, via `spec-orchestrator`, the **M6 spec**: a
-chunked world, multiple floors, Tiled maps and save/load, for an
-explorable small town.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers

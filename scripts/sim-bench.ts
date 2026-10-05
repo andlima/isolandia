@@ -1,27 +1,115 @@
-// Headless sim tick-time benchmark: times Sim.step() without any rendering.
-// Usage: npm run bench:sim [-- --seed 1337 --ticks 600 --burst 100 --n 500,2000]
+// Headless sim tick-time benchmarks, without any rendering.
+//
+// Spike (S0) and stress worlds:
+//   npm run bench:sim [-- --seed 1337 --ticks 600 --burst 100 --n 500,2000]
+// The real World on a shipped game, with the player walking a fixed route
+// across the map so the active area moves (docs/perf.md):
+//   npm run bench:sim -- --packs std,std-needs,zombie [--ticks 3000] [--seed 1] [--active-radius 64|none]
 import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
 import { Sim } from '../spike/sim/sim.ts';
 import { mean, percentile } from '../spike/sim/stats.ts';
 import { generateWorld } from '../spike/sim/world.ts';
-import { loadPacks, World, type PackSource } from '../src/core/index.ts';
+import { formatError, loadPacks, World, type Definition, type PackSource } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 
 const { values } = parseArgs({
   options: {
-    seed: { type: 'string', default: '1337' },
-    ticks: { type: 'string', default: '600' },
+    seed: { type: 'string' },
+    ticks: { type: 'string' },
     burst: { type: 'string', default: '100' },
     n: { type: 'string', default: '500,2000' },
+    packs: { type: 'string' },
+    'active-radius': { type: 'string' },
   },
 });
-const seed = Number(values.seed);
-const ticks = Number(values.ticks);
+
+function fmt(ms: number): string {
+  return `${ms.toFixed(2)} ms`;
+}
+
+if (values.packs) {
+  benchWorld(values.packs.split(','), Number(values.seed ?? 1), Number(values.ticks ?? 3000), values['active-radius']);
+  process.exit(0);
+}
+
+/**
+ * The real World on a shipped game: load, create, then step `ticks` times
+ * while the player walks between waypoints near the map's corners and centre
+ * (re-planned whenever it stops). Reports tick times, active and dormant
+ * entities, and A* expansions per tick.
+ */
+function benchWorld(names: string[], seed: number, ticks: number, radius: string | undefined): void {
+  const t0 = performance.now();
+  const r = loadPacks(names.map((n) => readPack(`packs/${n}`)));
+  if (!r.ok) {
+    for (const e of r.errors) console.error(formatError(e));
+    process.exit(1);
+  }
+  let def: Definition = r.definition;
+  if (radius !== undefined) {
+    const activeRadius = radius === 'none' ? null : Number(radius);
+    def = { ...def, start: { ...def.start, simulation: { ...def.start.simulation, activeRadius } } };
+  }
+  const loadMs = performance.now() - t0;
+  const t1 = performance.now();
+  const w = World.create(def, seed);
+  const createMs = performance.now() - t1;
+  const { width, height } = w.grid;
+  const route = [
+    [0.5, 0.5],
+    [0.1, 0.1],
+    [0.9, 0.1],
+    [0.9, 0.9],
+    [0.1, 0.9],
+    [0.5, 0.5],
+  ].map(([fx, fy]) => ({ x: Math.floor(fx! * (width - 1)), y: Math.floor(fy! * (height - 1)) }));
+  let leg = 0;
+  const times = new Float64Array(ticks);
+  const expanded = new Float64Array(ticks);
+  let activeSum = 0;
+  let activeMin = Infinity;
+  let activeMax = 0;
+  for (let t = 0; t < ticks; t++) {
+    const p = w.player;
+    if (!p.path && !p.intent) {
+      // Next waypoint (skipping ones that cannot be reached), or wait at the end of the route.
+      if (leg < route.length && w.lastGoto && w.lastGoto.tick === w.tick - 1 && !w.lastGoto.ok) leg++;
+      while (leg < route.length && Math.max(Math.abs(p.x - route[leg]!.x), Math.abs(p.y - route[leg]!.y)) <= 1) leg++;
+      if (leg < route.length) w.queueIntent({ kind: 'goto', x: route[leg]!.x, y: route[leg]!.y, z: 0, adjacent: true });
+    }
+    const active = w.activeCount;
+    activeSum += active;
+    activeMin = Math.min(activeMin, active);
+    activeMax = Math.max(activeMax, active);
+    const e0 = w.pathStats.expanded;
+    const s = performance.now();
+    w.step();
+    times[t] = performance.now() - s;
+    expanded[t] = w.pathStats.expanded - e0;
+  }
+  let max = 0;
+  for (const x of times) if (x > max) max = x;
+  let emax = 0;
+  for (const x of expanded) if (x > emax) emax = x;
+  const st = w.pathStats;
+  const n = w.entities.length;
+  const map = def.maps[def.start.map]!;
+  console.log(`${names.join(',')}: ${map.id} ${width}×${height}×${w.grid.floors}, ${n} entities, seed ${seed}, ${ticks} ticks (Node ${process.version})`);
+  console.log(`active radius ${def.start.simulation.activeRadius ?? 'none'}; load ${loadMs.toFixed(0)} ms, create ${createMs.toFixed(0)} ms; player reached waypoint ${leg}/${route.length}\n`);
+  console.log('| tick avg | tick p95 | tick max | active avg (min–max) | dormant avg | A* expanded/tick avg | max | searches | region rejects | budget hits |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|');
+  const activeAvg = activeSum / ticks;
+  console.log(
+    `| ${fmt(mean(times))} | ${fmt(percentile(times, 95))} | ${fmt(max)} | ${activeAvg.toFixed(0)} (${activeMin}–${activeMax}) | ${(n - activeAvg).toFixed(0)} | ${mean(expanded).toFixed(1)} | ${emax} | ${st.searches} | ${st.regionRejects} | ${st.budgetHits} |`,
+  );
+}
+
+const seed = Number(values.seed ?? 1337);
+const ticks = Number(values.ticks ?? 600);
 const burst = Math.min(Number(values.burst), ticks);
 const counts = values.n.split(',').map(Number);
 
-const fmt = (ms: number): string => `${ms.toFixed(2)} ms`;
 const row = (xs: Float64Array): string[] => {
   let max = 0;
   for (const x of xs) if (x > max) max = x;
@@ -100,7 +188,7 @@ systems:
   return { label: 'stress', files: { 'pack.yaml': 'namespace: s\nname: Stress\nversion: 1.0.0\n', 'content.yaml': content } };
 }
 
-const worldTicks = Number(values.ticks) * 5;
+const worldTicks = ticks * 5;
 console.log(`\nWorld.step(), ${SIZE}×${SIZE} map, ${worldTicks} ticks\n`);
 console.log('| variant | entities | ticks/s | avg tick |');
 console.log('|---|---|---|---|');

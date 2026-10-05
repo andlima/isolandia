@@ -6,7 +6,7 @@
     "width": 64
   },
   "margin": 0,
-  "name": "town",
+  "name": "town_center",
   "spacing": 0,
   "tilecount": 21,
   "tiledversion": "1.10.2",
@@ -14,7 +14,7 @@
   "tiles": [
     {
       "id": 0,
-      "image": "../../std/assets/door.svg",
+      "image": "../../../std/assets/door.svg",
       "properties": [
         {
           "name": "tile",
@@ -25,7 +25,7 @@
     },
     {
       "id": 1,
-      "image": "../../std/assets/floor.svg",
+      "image": "../../../std/assets/floor.svg",
       "properties": [
         {
           "name": "tile",
@@ -36,7 +36,7 @@
     },
     {
       "id": 2,
-      "image": "../../std/assets/landing.svg",
+      "image": "../../../std/assets/landing.svg",
       "properties": [
         {
           "name": "tile",
@@ -47,7 +47,7 @@
     },
     {
       "id": 3,
-      "image": "../../std/assets/stairs_w.svg",
+      "image": "../../../std/assets/stairs_w.svg",
       "properties": [
         {
           "name": "facing",
@@ -63,7 +63,7 @@
     },
     {
       "id": 4,
-      "image": "../../std/assets/wall.svg",
+      "image": "../../../std/assets/wall.svg",
       "properties": [
         {
           "name": "tile",
@@ -74,7 +74,7 @@
     },
     {
       "id": 5,
-      "image": "../assets/bed_s.svg",
+      "image": "../../assets/bed_s.svg",
       "properties": [
         {
           "name": "tile",
@@ -85,7 +85,7 @@
     },
     {
       "id": 6,
-      "image": "../assets/bed_s.svg",
+      "image": "../../assets/bed_s.svg",
       "properties": [
         {
           "name": "facing",
@@ -101,7 +101,7 @@
     },
     {
       "id": 7,
-      "image": "../assets/cabinet_s.svg",
+      "image": "../../assets/cabinet_s.svg",
       "properties": [
         {
           "name": "tile",
@@ -112,7 +112,7 @@
     },
     {
       "id": 8,
-      "image": "../assets/car_s.svg",
+      "image": "../../assets/car_s.svg",
       "properties": [
         {
           "name": "facing",
@@ -128,7 +128,7 @@
     },
     {
       "id": 9,
-      "image": "../assets/car_w.svg",
+      "image": "../../assets/car_w.svg",
       "properties": [
         {
           "name": "facing",
@@ -144,7 +144,7 @@
     },
     {
       "id": 10,
-      "image": "../assets/crate.svg",
+      "image": "../../assets/crate.svg",
       "properties": [
         {
           "name": "tile",
@@ -155,7 +155,7 @@
     },
     {
       "id": 11,
-      "image": "../assets/cupboard_s.svg",
+      "image": "../../assets/cupboard_s.svg",
       "properties": [
         {
           "name": "tile",
@@ -166,7 +166,7 @@
     },
     {
       "id": 12,
-      "image": "../assets/dresser_s.svg",
+      "image": "../../assets/dresser_s.svg",
       "properties": [
         {
           "name": "tile",
@@ -177,7 +177,7 @@
     },
     {
       "id": 13,
-      "image": "../assets/dresser_s.svg",
+      "image": "../../assets/dresser_s.svg",
       "properties": [
         {
           "name": "facing",
@@ -193,7 +193,7 @@
     },
     {
       "id": 14,
-      "image": "../assets/fridge_w.svg",
+      "image": "../../assets/fridge_w.svg",
       "properties": [
         {
           "name": "facing",
@@ -209,7 +209,7 @@
     },
     {
       "id": 15,
-      "image": "../assets/fridge_s.svg",
+      "image": "../../assets/fridge_s.svg",
       "properties": [
         {
           "name": "facing",
@@ -225,7 +225,7 @@
     },
     {
       "id": 16,
-      "image": "../assets/glass.svg",
+      "image": "../../assets/glass.svg",
       "properties": [
         {
           "name": "tile",
@@ -236,7 +236,7 @@
     },
     {
       "id": 17,
-      "image": "../assets/grass.svg",
+      "image": "../../assets/grass.svg",
       "properties": [
         {
           "name": "tile",
@@ -247,7 +247,7 @@
     },
     {
       "id": 18,
-      "image": "../assets/road.svg",
+      "image": "../../assets/road.svg",
       "properties": [
         {
           "name": "tile",
@@ -258,7 +258,7 @@
     },
     {
       "id": 19,
-      "image": "../assets/stove.svg",
+      "image": "../../assets/stove.svg",
       "properties": [
         {
           "name": "tile",
@@ -269,7 +269,7 @@
     },
     {
       "id": 20,
-      "image": "../assets/window.svg",
+      "image": "../../assets/window.svg",
       "properties": [
         {
           "name": "tile",

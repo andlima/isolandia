@@ -1,0 +1,117 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "isometric",
+    "width": 64
+  },
+  "margin": 0,
+  "name": "store",
+  "spacing": 0,
+  "tilecount": 8,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "image": "../../../std/assets/door.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:door"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "image": "../../../std/assets/floor.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:floor"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "image": "../../../std/assets/wall.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:wall"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "image": "../../assets/cupboard_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "n"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "cupboard"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "image": "../../assets/cupboard_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "cupboard"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "image": "../../assets/grass.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "grass"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "image": "../../assets/road.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "road"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "image": "../../assets/window.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "window"
+        }
+      ]
+    }
+  ],
+  "tilewidth": 64,
+  "type": "tileset",
+  "version": "1.10"
+}

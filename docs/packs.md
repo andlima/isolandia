@@ -40,9 +40,9 @@ packs/zombie/
   archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
   assets/car_s.svg     # images referenced by the `assets` domain
-  maps/town.yaml       # { id: town, tiled: maps/town.tmj }
-  maps/town.tmj        # Tiled map + tileset (read only when a map references them)
-  maps/town.tsj
+  maps/city.yaml       # part maps ({ id: house_a, tiled: maps/parts/house_a.tmj }) and the composite city
+  maps/parts/house_a.tmj  # Tiled map + tileset (read only when a map references them)
+  maps/parts/house_a.tsj
   start.yaml
   clock.yaml
   survival.yaml        # statuses and systems
@@ -474,16 +474,104 @@ entry that referenced the file.
 image-collection tileset, to start editing in Tiled:
 
 ```sh
-npm run map:export -- packs/std packs/std-needs packs/zombie --map town --out packs/zombie/maps
+npm run map:export -- packs/std packs/std-needs packs/zombie --map town_center --out packs/zombie/maps/parts
 ```
 
-It writes `town.tmj` (one `ground` tile layer and one `objects` layer with
+It writes `town_center.tmj` (one `ground` tile layer and one `objects` layer with
 the player, a `spawn` point per spawn at the cell centre, and a `room`
 rectangle per room; a multi-floor map gets one `floor N` group per floor,
 with the `floor` property, holding those two layers, and empty cells are
-gid 0) and `town.tsj` (one tile per tile/facing pair used,
+gid 0) and `town_center.tsj` (one tile per tile/facing pair used,
 with the tile's image for that facing as a preview). The output is
 byte-stable, and loading it gives the same map as the ASCII original.
+
+#### Composite maps
+
+A big map is assembled from reusable **part maps**: a house drawn once and
+placed twenty times. A composite `maps` entry has no cells of its own:
+
+```yaml
+# packs/zombie/maps/city.yaml (abridged)
+maps:
+  - id: house_a
+    tiled: maps/parts/house_a.tmj
+  - id: city
+    size: [256, 256]       # [w, h], each ≥ 1
+    fill: grass            # floor-0 cells no part covers
+    player: [132, 127]     # [x, y] or [x, y, z]; required on a start map
+    parts:
+      - { map: town_center, at: [106, 117] }
+      - { map: house_a, at: [12, 12] }
+      - { map: house_a, at: [23, 12] }   # a part may appear many times
+    rooms:                 # extra rooms, in composite coordinates (as ASCII `rooms`)
+      - { rect: [0, 0, 256, 9], tags: [fields] }
+    populate:              # see below
+      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+```
+
+| Field | Notes |
+|---|---|
+| `size` | Required, `[w, h]` with each ≥ 1. |
+| `fill` | Tile for floor-0 cells no part covers. Required when any floor-0 cell is uncovered. Upper floors stay empty where uncovered. |
+| `parts` | `{ map, at: [x, y] }` entries. `map` is any non-composite map (ASCII or Tiled), local or qualified. |
+| `player` | The player start; required on a start map. Part maps' own player markers are **ignored**. |
+| `rooms` | Extra rooms (with optional `floor`), added after the parts' rooms. |
+| `populate` | Optional, see [populate](#populate). |
+
+Composition:
+
+- The composite has as many floors as its tallest part. A part covers its
+  whole rectangle on floor 0 (its own empty cells stay empty); only floor-0
+  cells no part covers get `fill`.
+- Each part's cells, facings, spawns, rooms and populate entries are offset
+  by `at`. Spawns are ordered by part, then `z`, then row-major (so entity
+  ids follow the part order).
+- Link (`climb`) validation runs on the composed map.
+- A map used only as a part needs no player marker.
+
+Load errors: a part outside `size`; **two parts overlapping** (reported with
+both part indices and the first shared cell); a part that is itself a
+composite (no nesting); an unknown part map (with *did you mean*); `player`
+outside the map or on a non-walkable cell; `fill` missing while cells are
+uncovered; and mixing composite fields (`size`, `fill`, `parts`, `player`)
+with ASCII (`legend`, `rows`, `floors`) or `tiled` fields.
+
+`npm run map:export` on a composite writes the plain map it composes (its
+populate entries stay in YAML).
+
+#### Populate
+
+`populate` scatters many NPCs with a seeded RNG. It is allowed on **any**
+map; on a part map it is applied **once per placement**, offset by `at`.
+
+```yaml
+populate:
+  - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+  - { archetype: crawler, count: 1, floor: 1, room: bedroom }
+```
+
+| Field | Notes |
+|---|---|
+| `archetype` | Required. |
+| `count` | Integer ≥ 1. |
+| `rect` | `[x, y, w, h]` inside the map; defaults to the whole map. |
+| `floor` | Default 0. |
+| `room` | A room tag: only cells in such a room. |
+
+**Candidate cells** are walkable, inside the rect, on the floor, in the room
+(when given), not a container tile, and not the player start. At world
+creation, right after the explicit spawns, entries are applied in order
+(the parts' entries first, then the composite's own): each draws `count`
+cells **without replacement**, skipping cells an earlier entry took, so a
+cell gets at most one populated entity (it may still hold an explicit
+spawn). Entity ids follow placement order. Draws use a dedicated RNG
+derived from the seed (its own salt, like loot): `world.rng` and loot rolls
+are unaffected.
+
+Candidates do not depend on the seed, so counts are checked at load: a
+`count` above the entry's candidates (per placement) is an error, and so is
+one that might not fit after the cells earlier overlapping entries can take.
+Saves store the placed entities; `restore` never re-populates.
 
 ### `systems`
 
@@ -1185,11 +1273,13 @@ are driven by their archetype's [behavior](#behaviors).
 
 `World.step()` runs these phases in order:
 
-0. **think**: [behaviors](#behaviors) switch state (at most once) and
-   issue movement intents, in ascending id order (the player is skipped);
+0. **think**: NPCs beyond the active radius are marked dormant for the
+   tick (see [simulation](#simulation)); the other [behaviors](#behaviors)
+   switch state (at most once) and issue movement intents, in ascending id
+   order (the player is skipped);
 1. three steps:
    1. apply **each entity's** movement intent, in ascending id order (the
-      player is id 0); applying one cancels that entity's
+      player is id 0; dormant NPCs are skipped); applying one cancels that entity's
       [activity](#actions);
    2. the queued (player) actions, in FIFO order; each cancels the
       player's activity first, and may start a new one (a 0-second action
@@ -1230,6 +1320,10 @@ start:
   victory:            # optional
     when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
     message: "You got the car running!"
+  simulation:         # optional, all fields optional
+    active_radius: 64        # tiles (Chebyshev), or `none`
+    npc_path_budget: 4000    # A* nodes per NPC search
+    player_path_budget: 60000
 ```
 
 Exactly one `start` must exist across all loaded packs. Typically the last
@@ -1253,6 +1347,32 @@ queued intents and actions are ignored, and the browser panels become
 read-only. `victory` is part of `snapshot()` and `hash()`, and a world has
 at most one of the two outcomes. A pack may define either, both or
 neither.
+
+#### Simulation
+
+`start.simulation` tunes the cost of big maps:
+
+- **`active_radius`** (default 64): at the start of each tick, an NPC
+  whose Chebyshev distance on `(x, y)` from the player (any floor) exceeds
+  the radius is **dormant** for that tick: it does not think, does not
+  apply its intent or advance its path (both are kept), and does not count
+  its `moveCooldown` down. It still drifts, runs systems, updates statuses,
+  hears noises and counts for defeat and victory. Dormancy is derived from
+  positions, never saved or hashed (`world.isDormant(e)`,
+  `world.activeCount`). `none` disables it. On maps smaller than the radius
+  nothing is ever dormant.
+- **`npc_path_budget`** / **`player_path_budget`** (defaults 4 000 /
+  60 000): A* gives up after expanding that many nodes and the goto fails,
+  as for an unreachable goal (behaviors take their failure or `done` path).
+  Before searching, the grid's **connected-region labels** (8-way moves
+  without corner cutting, plus links; recomputed lazily after `set_tile`)
+  reject a goal in another region than the start at once; with
+  `adjacent: true` the goto fails only when no walkable neighbour of the
+  goal shares the start's region.
+
+The world also keeps entities in a **16×16 chunk index** per floor
+(`world.entitiesNear(x, y, z?, r)`, id order); hearing uses it, with the
+same result as checking every pair.
 
 ### `clock`
 

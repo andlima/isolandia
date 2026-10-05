@@ -18,10 +18,14 @@ export class Grid {
   readonly opaque: Uint8Array;
   /**
    * Bumped by every `setTile`. Pathfinding and line of sight read `walk` and
-   * `opaque` live (nothing is cached across calls), so only renderers and
-   * other caches need to compare it.
+   * `opaque` live; region labels (`regions`), renderers and other caches
+   * compare it.
    */
   version = 0;
+  /** Connected-region label per cell (-1 where not walkable), as of `labelsVersion`. */
+  private labels: Int32Array | null = null;
+  private labelsVersion = -1;
+  private labelCount = 0;
   /** Cells whose tile differs from the map: cell index → tile index. */
   readonly changed = new Map<number, number>();
   private readonly original: readonly number[];
@@ -120,6 +124,64 @@ export class Grid {
     const own = this.cells[i]!;
     const far = this.cells[j]!;
     return (own !== EMPTY_TILE && this.climb[own] === dz) || (far !== EMPTY_TILE && this.climb[far] === -dz);
+  }
+
+  /**
+   * Connected-region label per cell index, -1 where the cell is not walkable.
+   * Two walkable cells share a label exactly when A* can walk between them:
+   * the 8 moves without corner cutting (which connect the same cells as the
+   * 4 orthogonal ones) plus links. Computed on the first call and again after
+   * any `setTile`; the array is reused, so read it right away.
+   */
+  regions(): Int32Array {
+    if (this.labels && this.labelsVersion === this.version) return this.labels;
+    const n = this.cells.length;
+    const labels = (this.labels ??= new Int32Array(n));
+    labels.fill(-1);
+    const queue = new Int32Array(n);
+    const { walk, width, height } = this;
+    const multi = this.floors > 1;
+    let label = 0;
+    let tail = 0;
+    const visit = (j: number): void => {
+      if (walk[j] === 1 && labels[j] === -1) {
+        labels[j] = label;
+        queue[tail++] = j;
+      }
+    };
+    let next = 0;
+    for (let s = 0; s < n; s++) {
+      if (walk[s] !== 1 || labels[s] !== -1) continue;
+      label = next++;
+      labels[s] = label;
+      let head = 0;
+      tail = 0;
+      queue[tail++] = s;
+      while (head < tail) {
+        const i = queue[head++]!;
+        const x = i % width;
+        const y = ((i - x) / width) % height;
+        if (x > 0) visit(i - 1);
+        if (x < width - 1) visit(i + 1);
+        if (y > 0) visit(i - width);
+        if (y < height - 1) visit(i + width);
+        if (multi) {
+          const up = this.link(i, 1);
+          if (up >= 0) visit(up);
+          const down = this.link(i, -1);
+          if (down >= 0) visit(down);
+        }
+      }
+    }
+    this.labelCount = next;
+    this.labelsVersion = this.version;
+    return labels;
+  }
+
+  /** Number of connected regions (see `regions`). */
+  get regionCount(): number {
+    this.regions();
+    return this.labelCount;
   }
 
   /**
