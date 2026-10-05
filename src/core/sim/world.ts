@@ -14,6 +14,7 @@ import { add, countOf, createContainer, fits, GROUND_LABEL, remove, type Contain
 import { Grid } from './grid.ts';
 import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
+import { restoreWorld, SAVE_VERSION } from './save.ts';
 
 export interface Entity extends ExprEntity {
   readonly id: number;
@@ -353,7 +354,11 @@ export interface EntitySnapshot {
 export interface WorldSnapshot {
   tick: number;
   rng: number;
+  /** World seed (the loot RNG derives from it). */
+  seed: number;
   player: number;
+  /** Next container id (ids are never reused). */
+  nextContainer: number;
   /** Pending actions, in queue order. */
   actions: Action[];
   lastAction: ActionRecord | null;
@@ -362,9 +367,43 @@ export interface WorldSnapshot {
   entities: EntitySnapshot[];
   /** Every container, in id order. */
   containers: ContainerSnapshot[];
-  /** Cells whose tile differs from the map, as [cell index, qualified tile id], by cell index. */
-  tiles: [number, string][];
+  /** Cells whose tile differs from the map, as [x, y, qualified tile id], row-major. */
+  tiles: [number, number, string][];
 }
+
+/** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
+export interface SaveFile {
+  format: 'isolandia-save';
+  version: typeof SAVE_VERSION;
+  /** Loaded packs, in load order. */
+  packs: { namespace: string; version: string }[];
+  /** Qualified id of the start map, and its size. */
+  map: { id: string; width: number; height: number };
+  state: WorldSnapshot;
+}
+
+/** Outcome of `World.restore`. */
+export type RestoreResult = { ok: true; world: World; warnings: string[] } | { ok: false; errors: string[] };
+
+/**
+ * @internal What `save.ts` gets to rebuild a world in place of spawning,
+ * container creation and loot rolls (see `World.restore`).
+ */
+export interface RestoreHost {
+  readonly itemWeights: readonly number[];
+  readonly actionSources: readonly ActivitySource[];
+  readonly useSources: readonly (ActivitySource | null)[];
+  readonly recipeSources: readonly ActivitySource[];
+  /** Append an entity with spawn defaults and the given home and inventory; `driven` = run its archetype's behavior. */
+  entity(archetype: ArchetypeDef, x: number, y: number, homeX: number, homeY: number, inv: Container | null, driven: boolean): Entity;
+  /** Register a container (in id order). */
+  container(c: Container): void;
+  setNextContainer(n: number): void;
+  setActions(actions: Action[]): void;
+}
+
+/** @internal Fills a world under construction from a save; returns its player. */
+export type RestoreFn = (world: World, host: RestoreHost) => Entity;
 
 /** FNV-1a 32-bit over a string, as 8 hex chars. */
 function fnv1a(s: string): string {
@@ -442,9 +481,14 @@ export class World {
   private readonly recipeSources: readonly ActivitySource[];
   private readonly runner: ActivityRunner;
 
+  /**
+   * `restore` (internal, see `World.restore`) replaces spawning, container
+   * creation, loot rolls and the initial clamp and status update.
+   */
   constructor(
     readonly def: Definition,
-    seed: number,
+    readonly seed: number,
+    restore?: RestoreFn,
   ) {
     const map = def.maps[def.start.map]!;
     this.grid = new Grid(map, def.tiles);
@@ -470,19 +514,35 @@ export class World {
       for (const t of set) this.roomHas[k * nt + t] = 1;
     });
     this.itemWeights = def.items.map((i) => i.weight);
+    this.actionSources = def.actions.map(actionSource);
+    this.useSources = def.items.map(useSource);
+    this.recipeSources = def.recipes.map(recipeSource);
 
-    // Container ids: tile containers in row-major order, then inventories in entity order.
-    for (let i = 0; i < map.cells.length; i++) {
-      const tile = def.tiles[map.cells[i]!]!;
-      if (!tile.container) continue;
-      const x = i % map.width;
-      const y = (i - x) / map.width;
-      this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, tile: tile.index }));
+    if (restore) {
+      this.player = restore(this, {
+        itemWeights: this.itemWeights,
+        actionSources: this.actionSources,
+        useSources: this.useSources,
+        recipeSources: this.recipeSources,
+        entity: (a, x, y, homeX, homeY, inv, driven) => this.addEntity(a, x, y, homeX, homeY, inv, driven),
+        container: (c) => (c.kind === 'inventory' ? this.containers.set(c.id, c) : this.addContainer(c)),
+        setNextContainer: (n) => (this.nextContainerId = n),
+        setActions: (a) => (this.actions = a),
+      });
+    } else {
+      // Container ids: tile containers in row-major order, then inventories in entity order.
+      for (let i = 0; i < map.cells.length; i++) {
+        const tile = def.tiles[map.cells[i]!]!;
+        if (!tile.container) continue;
+        const x = i % map.width;
+        const y = (i - x) / map.width;
+        this.addContainer(createContainer(this.nextContainerId++, 'tile', tile.container.capacity, { x, y, tile: tile.index }));
+      }
+      const start = map.playerStart!;
+      this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, false);
+      for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y);
+      this.rollLoot(seed);
     }
-    const start = map.playerStart!;
-    this.player = this.spawn(def.archetypes[def.start.player]!, start.x, start.y, false);
-    for (const s of map.spawns) this.spawn(def.archetypes[s.archetype]!, s.x, s.y);
-    this.rollLoot(seed);
 
     const world = this;
     this.ctx = {
@@ -499,9 +559,6 @@ export class World {
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
-    this.actionSources = def.actions.map(actionSource);
-    this.useSources = def.items.map(useSource);
-    this.recipeSources = def.recipes.map(recipeSource);
     this.runner = new ActivityRunner({
       grid: this.grid,
       tiles: def.tiles,
@@ -513,12 +570,40 @@ export class World {
       giveItem: (e, item, count) => this.giveItem(e, item, count),
       record: (e, source, stage, ok, reason, moved, dropped) => this.recordActivity(e, source, stage, ok, reason, moved, dropped),
     });
+    if (restore) {
+      // Saved values and statuses stay as they are; only the resolved max is rebuilt.
+      this.pure(() => {
+        for (const e of this.entities) for (const idx of e.archetype.measurements) e.max[idx] = this.maxOf(e, def.measurements[idx]!);
+      });
+      return;
+    }
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
   }
 
   static create(def: Definition, seed: number): World {
     return new World(def, seed);
+  }
+
+  /**
+   * Rebuild a world from a save made with the same packs: exact (same
+   * snapshot, same future hashes), rolls nothing. Never throws; reports every
+   * error found (see `docs/saves.md`).
+   */
+  static restore(def: Definition, save: unknown): RestoreResult {
+    return restoreWorld(def, save);
+  }
+
+  /** The world as a save file (pure: `hash()`, the RNG and warnings are untouched). */
+  save(): SaveFile {
+    const map = this.def.maps[this.def.start.map]!;
+    return {
+      format: 'isolandia-save',
+      version: SAVE_VERSION,
+      packs: this.def.packs.map((p) => ({ namespace: p.namespace, version: p.version })),
+      map: { id: map.id, width: map.width, height: map.height },
+      state: this.snapshot(),
+    };
   }
 
   /** Result of the player's most recent goto intent (a new object each time). */
@@ -544,6 +629,12 @@ export class World {
       for (const s of archetype.inventory.items) add(inv, s.item, s.count, this.itemWeights[s.item]!);
       this.containers.set(inv.id, inv);
     }
+    return this.addEntity(archetype, x, y, x, y, inv, driven);
+  }
+
+  /** Append an entity with initial measurements and no state yet. */
+  private addEntity(archetype: ArchetypeDef, x: number, y: number, homeX: number, homeY: number, inv: Container | null, driven: boolean): Entity {
+    const id = this.entities.length;
     const m = new Float64Array(this.def.measurements.length);
     archetype.measurements.forEach((idx, k) => (m[idx] = archetype.initial[k]!));
     const max = new Float64Array(this.def.measurements.length).fill(Infinity);
@@ -568,8 +659,8 @@ export class World {
       inv,
       intent: null,
       lastGoto: null,
-      homeX: x,
-      homeY: y,
+      homeX,
+      homeY,
       behavior,
       state: behavior ? behavior.initial : -1,
       stateTick: 0,
@@ -1162,7 +1253,9 @@ export class World {
     return {
       tick: this.tick,
       rng: this.rng.state,
+      seed: this.seed,
       player: this.player.id,
+      nextContainer: this.nextContainerId,
       actions: [...this.actions],
       lastAction: this.lastAction,
       defeat: this.defeat,
@@ -1198,7 +1291,9 @@ export class World {
         else out.cell = [c.x, c.y];
         return out;
       }),
-      tiles: [...this.grid.changed].sort((a, b) => a[0] - b[0]).map(([i, t]): [number, string] => [i, this.def.tiles[t]!.id]),
+      tiles: [...this.grid.changed]
+        .sort((a, b) => a[0] - b[0])
+        .map(([i, t]): [number, number, string] => [i % this.grid.width, Math.floor(i / this.grid.width), this.def.tiles[t]!.id]),
     };
   }
 

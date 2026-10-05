@@ -32,7 +32,10 @@ export {
   type InteractionKind,
   type ActivityProgress,
   type ActivitySnapshot,
+  type SaveFile,
+  type RestoreResult,
 } from './sim/world.ts';
+export { SAVE_VERSION, SUPPORTED_SAVE_VERSIONS, saveMeta, wrapSave, unwrapSave, type SaveMeta, type SaveWrapper } from './sim/save.ts';
 export { type Activity, type ActivitySource, type ActivityStage, type CompletionStep } from './sim/activity.ts';
 export { add, remove, fits, load, countOf, createContainer, type Container, type ContainerKind, type Stack } from './sim/containers.ts';
 export { Pathfinder, octile } from './sim/astar.ts';
