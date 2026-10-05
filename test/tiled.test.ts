@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isSeq, parseDocument } from 'yaml';
-import { formatError, loadPacks, loadPacksOrThrow, type Definition, type LoadError, type PackSource } from '../src/core/index.ts';
+import { EMPTY_TILE, formatError, loadPacks, loadPacksOrThrow, type Definition, type LoadError, type PackSource } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { exportTiledMap, findMap } from '../scripts/map-export.ts';
 import { fixture, GAMES, pack } from './helpers.ts';
@@ -265,6 +265,93 @@ test('tiled errors: objects', () => {
 test('tiled errors: the start map needs a player object', () => {
   const e = errorsOf(tmj({ layers: [ground([1, 1, 1, 1, 1, 1])] }));
   assert.ok(e.some((x) => x.file === 'map.yaml' && /has no player start cell \(a 'player' object/.test(x.message)));
+});
+
+// ── Floors ──────────────────────────────────────────────────────────────────
+
+const STAIRS_TILES = `tiles:
+  - { id: floor, label: Floor, glyph: ".", color: white, walkable: true }
+  - { id: wall, label: Wall, glyph: "#", color: gray, walkable: false }
+  - { id: stairs, label: Stairs, glyph: "<", color: white, walkable: true, raised: true, opaque: false, climb: up }
+`;
+/** Tileset gid 5 = stairs (after the 4 of `tileset()`). */
+const STAIRS_TS = { firstgid: 5, name: 'more', tilecount: 1, tiles: [{ id: 0, properties: [prop('tile', 'stairs')] }] };
+const floorGroup = (z: unknown, layers: J[], extra: J = {}) => ({ type: 'group', name: `floor ${String(z)}`, visible: true, layers, properties: [{ name: 'floor', type: 'int', value: z }], ...extra });
+const floorsMap = (layers: J[]) => tmj({ tilesets: [{ firstgid: 1, ...tileset() }, STAIRS_TS], layers });
+
+test('tiled floors: floor groups hold their tile and object layers; empty cells; outside layers are floor 0', () => {
+  const def = load(
+    floorsMap([
+      ground([2, 1, 2, 2, 5, 2]),
+      objects([PLAYER]),
+      floorGroup(1, [
+        ground([0, 1, 0, 0, 1, 0]),
+        objects([
+          { id: 2, type: 'spawn', x: 24, y: 24, properties: [prop('archetype', 'rock')] },
+          { id: 3, type: 'room', x: 16, y: 0, width: 16, height: 32, properties: [prop('tags', 'attic')] },
+        ]),
+      ]),
+    ]),
+    { 'tiles.yaml': STAIRS_TILES },
+  );
+  const m = def.maps[0]!;
+  const [f, w, st] = [tile(def, 't:floor'), tile(def, 't:wall'), tile(def, 't:stairs')];
+  assert.equal(m.floors, 2);
+  assert.deepEqual(m.cells, [w, f, w, w, st, w, EMPTY_TILE, f, EMPTY_TILE, EMPTY_TILE, f, EMPTY_TILE]);
+  assert.deepEqual(m.playerStart, { x: 1, y: 0, z: 0 });
+  assert.deepEqual(m.spawns, [{ x: 1, y: 1, z: 1, archetype: def.ids.archetypes['t:rock'] }]);
+  assert.deepEqual(m.rooms.rects, [{ x: 1, y: 0, z: 1, w: 1, h: 2, tags: [0] }]);
+  // A floor-0 group and layers outside any group merge (the top-most layer wins).
+  const merged = load(floorsMap([floorGroup(0, [ground([1, 1, 1, 1, 1, 1])]), ground([0, 2, 0, 0, 0, 0]), objects([PLAYER])]));
+  assert.equal(merged.maps[0]!.floors, 1);
+  assert.deepEqual(merged.maps[0]!.cells, [1, 2, 1, 1, 1, 1].map((g) => (g === 1 ? tile(merged, 't:floor') : tile(merged, 't:wall'))));
+});
+
+test('tiled floors errors: numbering, nesting and links', () => {
+  const T = 'maps/room.tmj';
+  const files = { 'tiles.yaml': STAIRS_TILES };
+  const g = (z: unknown) => floorGroup(z, [ground([1, 1, 1, 1, 1, 1])]);
+  expectError(errorsOf(floorsMap([g(0), g(2), objects([PLAYER])]), files), T, 'layers', /numbered 0, 1, 2, … without gaps: floor 1 is missing/);
+  expectError(errorsOf(floorsMap([g(0), g(1), g(1), objects([PLAYER])]), files), T, 'layers[2].properties[0].value', /duplicate floor group 1 \(already at layers\[1\]\)/);
+  expectError(errorsOf(floorsMap([floorGroup(0, [g(1)]), objects([PLAYER])]), files), T, 'layers[0].layers[0].properties[0].value', /floor group 1 is nested inside another floor group/);
+  expectError(errorsOf(floorsMap([g(-1), objects([PLAYER])]), files), T, 'layers[0].properties[0].value', /'floor' must be an integer ≥ 0, got -1/);
+  expectError(errorsOf(floorsMap([g('one'), objects([PLAYER])]), files), T, 'layers[0].properties[0].value', /got "one"/);
+  // Stairs on the top floor, or under a wall or an empty cell: errors at the YAML map entry.
+  expectError(errorsOf(floorsMap([ground([1, 5, 1, 1, 1, 1]), objects([PLAYER])]), files), 'map.yaml', 'maps[0].tiled', /'t:stairs' at \(1, 0, floor 0\) climbs up to \(1, 0, floor 1\), which is outside the map \(it has 1 floor\)/);
+  expectError(errorsOf(floorsMap([ground([1, 5, 1, 1, 1, 1]), objects([PLAYER]), floorGroup(1, [ground([1, 2, 1, 1, 1, 1])])]), files), 'map.yaml', 'maps[0].tiled', /which is 't:wall' \(not walkable\)/);
+  expectError(errorsOf(floorsMap([ground([1, 5, 1, 1, 1, 1]), objects([PLAYER]), floorGroup(1, [ground([1, 0, 1, 1, 1, 1])])]), files), 'map.yaml', 'maps[0].tiled', /which is an empty cell/);
+});
+
+test('exporter: round trip of a multi-floor ASCII map; one floor N group per floor', () => {
+  const files = {
+    'tiles.yaml': STAIRS_TILES,
+    'map.yaml': `maps:
+  - id: house
+    legend:
+      ".": { tile: floor }
+      "#": { tile: wall }
+      "<": { tile: stairs, facing: w }
+      "@": { tile: floor, player: true }
+      "o": { tile: floor, spawn: rock }
+    floors:
+      - rows: ["###", "#@<", "#.."]
+      - rows: [" o ", "##.", "  ."]
+    rooms:
+      - { rect: [1, 1, 2, 2], tags: [den] }
+      - { rect: [2, 1, 1, 2], tags: [attic], floor: 1 }
+start: { map: house, player: hero }
+`,
+  };
+  roundTrip([fixture(files)]);
+  const def = loadPacksOrThrow([fixture(files)]);
+  const m = JSON.parse(exportTiledMap(def, def.maps[0]!, { name: 'house', image: () => null }).tmj) as J;
+  const layers = m['layers'] as J[];
+  assert.deepEqual(layers.map((l) => [l['name'], l['type'], l['properties']]), [
+    ['floor 0', 'group', [{ name: 'floor', type: 'int', value: 0 }]],
+    ['floor 1', 'group', [{ name: 'floor', type: 'int', value: 1 }]],
+  ]);
+  assert.deepEqual((layers[1]!['layers'] as J[]).map((l) => l['name']), ['ground', 'objects']);
+  assert.equal(((layers[1]!['layers'] as J[])[0]!['data'] as number[])[0], 0, 'empty cells are gid 0');
 });
 
 // ── Exporter ────────────────────────────────────────────────────────────────

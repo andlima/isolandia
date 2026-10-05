@@ -238,6 +238,56 @@ test('save: pure — hash, RNG state and warnings are unchanged; works on an end
   assert.equal(w.save().state.defeat!.message, 'Down.');
 });
 
+// ── Version 1 (before floors) ───────────────────────────────────────────────
+
+/** A version 2 save as version 1 wrote it: no floors, every cell without its `z`. */
+function toV1(save: SaveFile): unknown {
+  const s = json(save) as unknown as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const xy = (o: Record<string, unknown> | null) => (o && delete o['z'], o);
+  s['version'] = 1;
+  delete s['map'].floors;
+  const st = s['state'];
+  st.tiles = st.tiles.map(([x, y, , id]: unknown[]) => [x, y, id]);
+  for (const c of st.containers) if (c.cell) c.cell = c.cell.slice(0, 2);
+  for (const e of st.entities) {
+    delete e.z;
+    delete e.fromZ;
+    e.home = e.home.slice(0, 2);
+    if (e.path) e.path = e.path.map((c: number[]) => c.slice(0, 2));
+    if (e.behavior?.plan) e.behavior.plan = [e.behavior.plan[0], e.behavior.plan[1], e.behavior.plan[3]];
+    xy(e.heard);
+    xy(e.activity);
+    xy(e.lastGoto);
+    if (e.intent?.kind === 'goto') xy(e.intent);
+  }
+  return s;
+}
+
+test('version 1 saves load with every z = 0, and continue exactly', () => {
+  const w = rich();
+  w.grid.setTile(2 * w.grid.width + 12, DEF.ids.tiles['t:boarded']!);
+  w.queueIntent({ kind: 'goto', x: 12, y: 5 });
+  steps(w, 2);
+  const save = w.save();
+  assert.ok(save.state.entities.some((e) => e.path) && save.state.entities.some((e) => e.behavior?.plan) && save.state.tiles.length > 0);
+  const v1 = toV1(save);
+  const r = World.restore(DEF, v1);
+  if (!r.ok) assert.fail(r.errors.join('\n'));
+  assert.deepEqual(r.warnings, []);
+  assert.deepStrictEqual(r.world.snapshot(), json(w.snapshot()));
+  assert.equal(r.world.save().version, 2);
+  for (let i = 0; i < 40; i++) {
+    w.step();
+    r.world.step();
+    assert.equal(r.world.hash(), w.hash(), `tick ${w.tick}`);
+  }
+  // Version 1 shapes are checked like version 2 ones.
+  const bad = toV1(save) as { state: { tiles: unknown[] } };
+  bad.state.tiles.push([1, 2]);
+  const e = World.restore(DEF, bad);
+  assert.ok(!e.ok && e.errors.some((m) => m.startsWith('state.tiles[1]: expected [x, y, z, tile id]')), JSON.stringify(e));
+});
+
 // ── Round trip on the fixture ───────────────────────────────────────────────
 
 test('round trip: tick 0', () => {
@@ -476,7 +526,7 @@ function fuzz(seed: number): Script {
       const s = c && pick(c.stacks);
       if (s) {
         const take: Action = { kind: 'take', container: c.id, item: w.def.items[s.item]!.id };
-        w.queueIntent(w.approachIntent(take) ?? { kind: 'goto', x: c.x, y: c.y, adjacent: true, then: take });
+        w.queueIntent(w.approachIntent(take) ?? { kind: 'goto', x: c.x, y: c.y, z: c.z, adjacent: true, then: take });
       }
     } else if (roll < 0.11 && p.inv) {
       const s = pick(p.inv.stacks);

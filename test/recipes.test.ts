@@ -657,9 +657,9 @@ test('zombie: the stoves keep the kitchens walkable and every container reachabl
   for (const c of w.containers.values()) {
     if (c.kind !== 'tile') continue;
     w.player.path = null;
-    w.queueIntent({ kind: 'goto', x: c.x, y: c.y, z: 0, adjacent: !w.grid.walkable(c.x, c.y) });
+    w.queueIntent({ kind: 'goto', x: c.x, y: c.y, z: c.z, adjacent: !w.grid.walkable(c.x, c.y, c.z) });
     w.step();
-    assert.ok(w.lastGoto!.ok, `container at ${c.x},${c.y} is unreachable`);
+    assert.ok(w.lastGoto!.ok, `container at ${c.x},${c.y},${c.z} is unreachable`);
   }
   for (const [x, y] of stoves) {
     w.queueIntent({ kind: 'goto', x, y, adjacent: true });

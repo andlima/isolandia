@@ -732,7 +732,12 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
 function upgradeV1(state: unknown): unknown {
   if (!isObj(state)) return state;
   const pair = (v: unknown) => (Array.isArray(v) && v.length === 2 ? [v[0], v[1], 0] : v);
-  const xy = (v: unknown) => (isObj(v) && v['z'] === undefined ? { ...v, z: 0 } : v);
+  // `z` goes right after `y`, as version 2 writes it (records are kept as saved, so key order reaches `hash()`).
+  const xy = (v: unknown) => {
+    if (!isObj(v) || v['z'] !== undefined) return v;
+    const { x, y, ...rest } = v;
+    return { x, y, z: 0, ...rest };
+  };
   const out: Obj = { ...state };
   if (Array.isArray(state['tiles'])) out['tiles'] = state['tiles'].map((t: unknown) => (Array.isArray(t) && t.length === 3 ? [t[0], t[1], 0, t[2]] : t));
   if (Array.isArray(state['containers'])) out['containers'] = state['containers'].map((v: unknown) => (isObj(v) && v['cell'] !== undefined ? { ...v, cell: pair(v['cell']) } : v));

@@ -93,7 +93,7 @@ for (const name of ['zombie', 'vampire']) {
             if (best) {
               tried.add(best.id);
               target = best;
-              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, adjacent: true });
+              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, z: best.z, adjacent: true });
             }
           }
         }
