@@ -503,6 +503,8 @@ export class World {
   private readonly roomHas: Uint8Array;
   private readonly itemWeights: readonly number[];
   private pathfinder: Pathfinder | null = null;
+  /** Behavior think calls so far, for benchmarks and tests (not state: not saved or hashed). */
+  thinkCalls = 0;
   /** A* work so far (see `PathStats`). */
   readonly pathStats: PathStats = { searches: 0, regionRejects: 0, budgetHits: 0, expanded: 0, maxNpcExpanded: 0, maxPlayerExpanded: 0 };
   /** Entity index: ids per (floor, 16×16 chunk), unordered. */
@@ -1061,7 +1063,11 @@ export class World {
   private think(): void {
     const env = this.thinkEnv;
     const dormant = this.dormant;
-    for (const e of this.entities) if (e.state >= 0 && dormant[e.id] !== 1) think(e, env);
+    for (const e of this.entities) {
+      if (e.state < 0 || dormant[e.id] === 1) continue;
+      think(e, env);
+      this.thinkCalls++;
+    }
   }
 
   /** Measurement drift: `rate` plus the `rates` of the statuses active now. */

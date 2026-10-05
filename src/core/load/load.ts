@@ -946,7 +946,9 @@ class Loader {
         const [x, y, z = 0] = v;
         const t = x! >= 0 && y! >= 0 && z >= 0 && x! < width && y! < height && z < floors ? cells[(z * height + y!) * width + x!]! : undefined;
         if (t === undefined) this.sink.add(f.at('player'), `player start ${JSON.stringify(v)} is outside the map (${width}×${height}, ${floors} floor${floors === 1 ? '' : 's'})`);
-        else if (t === EMPTY_TILE || !this.tileDefs[t]!.walkable) {
+        else if (t === EMPTY_TILE && z === 0 && !f.has('fill')) {
+          // Already reported as a missing fill.
+        } else if (t === EMPTY_TILE || !this.tileDefs[t]!.walkable) {
           this.sink.add(f.at('player'), `player start ${JSON.stringify(v)} is on ${t === EMPTY_TILE ? 'an empty cell' : `'${this.tileDefs[t]!.id}' (not walkable)`}`);
         } else playerStart = { x: x!, y: y!, z };
       }
@@ -956,7 +958,8 @@ class Loader {
     const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: true };
     const own = this.populateEntries(f, d.scope, width, height, floors);
     const out = { ...map, populate: [...populate, ...own.map((o) => o.def)] };
-    if (this.sink.count === before) this.checkPopulate(out, [...popSrc, ...own.map((o) => o.src)]);
+    if (this.sink.count !== before) return this.emptyMap(d, true); // reported; keeps `start` quiet
+    this.checkPopulate(out, [...popSrc, ...own.map((o) => o.src)]);
     return out;
   }
 
