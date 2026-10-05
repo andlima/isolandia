@@ -4,449 +4,568 @@
   "infinite": false,
   "layers": [
     {
-      "data": [
-        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-        14, 3, 3, 3, 3, 17, 3, 3, 3, 3, 3, 3, 17, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 3, 3, 17, 3, 3, 3, 3, 3, 3, 17, 3, 3, 3, 3, 14,
-        14, 3, 12, 9, 9, 16, 3, 5, 2, 3, 10, 2, 2, 2, 2, 4, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 12, 9, 9, 16, 3, 5, 2, 3, 10, 2, 2, 2, 2, 4, 3, 14,
-        14, 17, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 17, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 17, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 17, 14,
-        14, 3, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 3, 14, 14, 14, 14, 8, 14, 14, 14, 14, 14, 3, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 3, 14,
-        14, 3, 3, 1, 3, 3, 3, 3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 1, 3, 3, 3, 3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 14,
-        14, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 13, 2, 2, 2, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 14,
-        14, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 14,
-        14, 14, 14, 14, 14, 14, 14, 14, 13, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 13, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 7, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 6, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 6, 15, 15, 15, 15, 15,
-        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-        14, 14, 14, 14, 14, 14, 14, 14, 13, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 13, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-        14, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 14,
-        14, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 2, 2, 13, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 14,
-        14, 3, 3, 1, 3, 3, 3, 3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 1, 3, 3, 3, 3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 14,
-        14, 3, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 3, 14,
-        14, 17, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 17, 14, 14, 14, 8, 14, 14, 14, 14, 14, 14, 17, 2, 2, 2, 2, 3, 2, 2, 3, 2, 2, 2, 2, 2, 2, 17, 14,
-        14, 3, 11, 9, 9, 16, 3, 5, 2, 3, 10, 2, 2, 2, 2, 4, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 11, 9, 9, 16, 3, 5, 2, 3, 10, 2, 2, 2, 2, 4, 3, 14,
-        14, 3, 3, 3, 3, 17, 3, 3, 3, 3, 3, 3, 17, 3, 3, 3, 3, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 3, 3, 3, 3, 17, 3, 3, 3, 3, 3, 3, 17, 3, 3, 3, 3, 14,
-        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14
-      ],
-      "height": 21,
       "id": 1,
-      "name": "ground",
+      "layers": [
+        {
+          "data": [
+            18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+            18, 5, 5, 5, 5, 21, 5, 5, 5, 5, 5, 5, 21, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 5, 5, 21, 5, 5, 5, 5, 5, 5, 21, 5, 5, 5, 5, 18,
+            18, 5, 16, 12, 12, 20, 5, 8, 2, 5, 13, 2, 2, 2, 2, 6, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 16, 12, 12, 20, 5, 8, 2, 5, 13, 2, 2, 2, 2, 6, 5, 18,
+            18, 21, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 21, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 21, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 21, 18,
+            18, 5, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 5, 18, 18, 18, 18, 11, 18, 18, 18, 18, 18, 5, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 5, 18,
+            18, 5, 5, 1, 5, 5, 5, 5, 1, 5, 5, 5, 1, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 1, 5, 5, 5, 5, 1, 5, 5, 5, 1, 5, 5, 5, 5, 18,
+            18, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 17, 2, 2, 2, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 5, 18,
+            18, 5, 5, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 18,
+            18, 18, 18, 18, 18, 18, 18, 18, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+            19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 10, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19,
+            19, 19, 19, 19, 19, 9, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 9, 19, 19, 19, 19, 19,
+            19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19,
+            18, 18, 18, 18, 18, 18, 18, 18, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+            18, 5, 5, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 5, 18,
+            18, 5, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 2, 2, 17, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 18,
+            18, 5, 5, 1, 5, 5, 5, 5, 1, 5, 5, 5, 1, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 1, 5, 5, 5, 5, 1, 5, 5, 5, 1, 5, 5, 5, 5, 18,
+            18, 5, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 5, 18,
+            18, 21, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 21, 18, 18, 18, 11, 18, 18, 18, 18, 18, 18, 21, 2, 2, 2, 2, 5, 2, 2, 5, 2, 2, 2, 2, 2, 2, 21, 18,
+            18, 5, 15, 12, 12, 20, 5, 8, 2, 5, 13, 2, 2, 2, 2, 6, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 15, 12, 12, 20, 5, 8, 2, 5, 13, 2, 2, 2, 2, 6, 5, 18,
+            18, 5, 5, 5, 5, 21, 5, 5, 5, 5, 5, 5, 21, 5, 5, 5, 5, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 5, 5, 5, 5, 21, 5, 5, 5, 5, 5, 5, 21, 5, 5, 5, 5, 18,
+            18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18
+          ],
+          "height": 21,
+          "id": 2,
+          "name": "ground",
+          "opacity": 1,
+          "type": "tilelayer",
+          "visible": true,
+          "width": 44,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "draworder": "topdown",
+          "id": 3,
+          "name": "objects",
+          "objects": [
+            {
+              "height": 0,
+              "id": 1,
+              "name": "player",
+              "point": true,
+              "rotation": 0,
+              "type": "player",
+              "visible": true,
+              "width": 0,
+              "x": 848,
+              "y": 336
+            },
+            {
+              "height": 0,
+              "id": 2,
+              "name": "shambler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "shambler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 656,
+              "y": 112
+            },
+            {
+              "height": 0,
+              "id": 3,
+              "name": "crawler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "crawler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 144,
+              "y": 208
+            },
+            {
+              "height": 0,
+              "id": 4,
+              "name": "shambler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "shambler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 528,
+              "y": 336
+            },
+            {
+              "height": 0,
+              "id": 5,
+              "name": "crawler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "crawler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 1136,
+              "y": 464
+            },
+            {
+              "height": 0,
+              "id": 6,
+              "name": "shambler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "shambler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 720,
+              "y": 528
+            },
+            {
+              "height": 96,
+              "id": 8,
+              "name": "kitchen",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "kitchen"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 128,
+              "x": 64,
+              "y": 64
+            },
+            {
+              "height": 96,
+              "id": 9,
+              "name": "bathroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bathroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 64,
+              "x": 224,
+              "y": 64
+            },
+            {
+              "height": 96,
+              "id": 10,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 192,
+              "x": 320,
+              "y": 64
+            },
+            {
+              "height": 32,
+              "id": 11,
+              "name": "hallway",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "hallway"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 448,
+              "x": 64,
+              "y": 192
+            },
+            {
+              "height": 96,
+              "id": 12,
+              "name": "kitchen",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "kitchen"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 128,
+              "x": 896,
+              "y": 64
+            },
+            {
+              "height": 96,
+              "id": 13,
+              "name": "bathroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bathroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 64,
+              "x": 1056,
+              "y": 64
+            },
+            {
+              "height": 96,
+              "id": 14,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 192,
+              "x": 1152,
+              "y": 64
+            },
+            {
+              "height": 32,
+              "id": 15,
+              "name": "hallway",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "hallway"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 448,
+              "x": 896,
+              "y": 192
+            },
+            {
+              "height": 96,
+              "id": 16,
+              "name": "kitchen",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "kitchen"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 128,
+              "x": 64,
+              "y": 512
+            },
+            {
+              "height": 96,
+              "id": 17,
+              "name": "bathroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bathroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 64,
+              "x": 224,
+              "y": 512
+            },
+            {
+              "height": 96,
+              "id": 18,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 192,
+              "x": 320,
+              "y": 512
+            },
+            {
+              "height": 32,
+              "id": 19,
+              "name": "hallway",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "hallway"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 448,
+              "x": 64,
+              "y": 448
+            },
+            {
+              "height": 96,
+              "id": 20,
+              "name": "kitchen",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "kitchen"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 128,
+              "x": 896,
+              "y": 512
+            },
+            {
+              "height": 96,
+              "id": 21,
+              "name": "bathroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bathroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 64,
+              "x": 1056,
+              "y": 512
+            },
+            {
+              "height": 96,
+              "id": 22,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 192,
+              "x": 1152,
+              "y": 512
+            },
+            {
+              "height": 32,
+              "id": 23,
+              "name": "hallway",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "hallway"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 448,
+              "x": 896,
+              "y": 448
+            }
+          ],
+          "opacity": 1,
+          "type": "objectgroup",
+          "visible": true,
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "name": "floor 0",
       "opacity": 1,
-      "type": "tilelayer",
+      "properties": [
+        {
+          "name": "floor",
+          "type": "int",
+          "value": 0
+        }
+      ],
+      "type": "group",
       "visible": true,
-      "width": 44,
       "x": 0,
       "y": 0
     },
     {
-      "draworder": "topdown",
-      "id": 2,
-      "name": "objects",
-      "objects": [
+      "id": 4,
+      "layers": [
         {
-          "height": 0,
-          "id": 1,
-          "name": "player",
-          "point": true,
-          "rotation": 0,
-          "type": "player",
-          "visible": true,
-          "width": 0,
-          "x": 848,
-          "y": 336
-        },
-        {
-          "height": 0,
-          "id": 2,
-          "name": "shambler",
-          "point": true,
-          "properties": [
-            {
-              "name": "archetype",
-              "type": "string",
-              "value": "shambler"
-            }
+          "data": [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 21, 5, 5, 5, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 14, 2, 2, 2, 2, 7, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 2, 2, 2, 2, 2, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 2, 2, 2, 2, 2, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 2, 2, 2, 2, 2, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 2, 2, 2, 2, 3, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
           ],
-          "rotation": 0,
-          "type": "spawn",
-          "visible": true,
-          "width": 0,
-          "x": 656,
-          "y": 112
-        },
-        {
-          "height": 0,
-          "id": 3,
-          "name": "crawler",
-          "point": true,
-          "properties": [
-            {
-              "name": "archetype",
-              "type": "string",
-              "value": "crawler"
-            }
-          ],
-          "rotation": 0,
-          "type": "spawn",
-          "visible": true,
-          "width": 0,
-          "x": 144,
-          "y": 208
-        },
-        {
-          "height": 0,
-          "id": 4,
-          "name": "shambler",
-          "point": true,
-          "properties": [
-            {
-              "name": "archetype",
-              "type": "string",
-              "value": "shambler"
-            }
-          ],
-          "rotation": 0,
-          "type": "spawn",
-          "visible": true,
-          "width": 0,
-          "x": 528,
-          "y": 336
-        },
-        {
-          "height": 0,
+          "height": 21,
           "id": 5,
-          "name": "crawler",
-          "point": true,
-          "properties": [
-            {
-              "name": "archetype",
-              "type": "string",
-              "value": "crawler"
-            }
-          ],
-          "rotation": 0,
-          "type": "spawn",
+          "name": "ground",
+          "opacity": 1,
+          "type": "tilelayer",
           "visible": true,
-          "width": 0,
-          "x": 1136,
-          "y": 464
+          "width": 44,
+          "x": 0,
+          "y": 0
         },
         {
-          "height": 0,
+          "draworder": "topdown",
           "id": 6,
-          "name": "shambler",
-          "point": true,
-          "properties": [
+          "name": "objects",
+          "objects": [
             {
-              "name": "archetype",
-              "type": "string",
-              "value": "shambler"
+              "height": 0,
+              "id": 7,
+              "name": "shambler",
+              "point": true,
+              "properties": [
+                {
+                  "name": "archetype",
+                  "type": "string",
+                  "value": "shambler"
+                }
+              ],
+              "rotation": 0,
+              "type": "spawn",
+              "visible": true,
+              "width": 0,
+              "x": 1232,
+              "y": 144
+            },
+            {
+              "height": 160,
+              "id": 24,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 192,
+              "x": 1152,
+              "y": 64
             }
           ],
-          "rotation": 0,
-          "type": "spawn",
+          "opacity": 1,
+          "type": "objectgroup",
           "visible": true,
-          "width": 0,
-          "x": 720,
-          "y": 528
-        },
-        {
-          "height": 96,
-          "id": 7,
-          "name": "kitchen",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "kitchen"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 128,
-          "x": 64,
-          "y": 64
-        },
-        {
-          "height": 96,
-          "id": 8,
-          "name": "bathroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bathroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 64,
-          "x": 224,
-          "y": 64
-        },
-        {
-          "height": 96,
-          "id": 9,
-          "name": "bedroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bedroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 192,
-          "x": 320,
-          "y": 64
-        },
-        {
-          "height": 32,
-          "id": 10,
-          "name": "hallway",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "hallway"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 448,
-          "x": 64,
-          "y": 192
-        },
-        {
-          "height": 96,
-          "id": 11,
-          "name": "kitchen",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "kitchen"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 128,
-          "x": 896,
-          "y": 64
-        },
-        {
-          "height": 96,
-          "id": 12,
-          "name": "bathroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bathroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 64,
-          "x": 1056,
-          "y": 64
-        },
-        {
-          "height": 96,
-          "id": 13,
-          "name": "bedroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bedroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 192,
-          "x": 1152,
-          "y": 64
-        },
-        {
-          "height": 32,
-          "id": 14,
-          "name": "hallway",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "hallway"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 448,
-          "x": 896,
-          "y": 192
-        },
-        {
-          "height": 96,
-          "id": 15,
-          "name": "kitchen",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "kitchen"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 128,
-          "x": 64,
-          "y": 512
-        },
-        {
-          "height": 96,
-          "id": 16,
-          "name": "bathroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bathroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 64,
-          "x": 224,
-          "y": 512
-        },
-        {
-          "height": 96,
-          "id": 17,
-          "name": "bedroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bedroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 192,
-          "x": 320,
-          "y": 512
-        },
-        {
-          "height": 32,
-          "id": 18,
-          "name": "hallway",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "hallway"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 448,
-          "x": 64,
-          "y": 448
-        },
-        {
-          "height": 96,
-          "id": 19,
-          "name": "kitchen",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "kitchen"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 128,
-          "x": 896,
-          "y": 512
-        },
-        {
-          "height": 96,
-          "id": 20,
-          "name": "bathroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bathroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 64,
-          "x": 1056,
-          "y": 512
-        },
-        {
-          "height": 96,
-          "id": 21,
-          "name": "bedroom",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "bedroom"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 192,
-          "x": 1152,
-          "y": 512
-        },
-        {
-          "height": 32,
-          "id": 22,
-          "name": "hallway",
-          "properties": [
-            {
-              "name": "tags",
-              "type": "string",
-              "value": "hallway"
-            }
-          ],
-          "rotation": 0,
-          "type": "room",
-          "visible": true,
-          "width": 448,
-          "x": 896,
-          "y": 448
+          "x": 0,
+          "y": 0
         }
       ],
+      "name": "floor 1",
       "opacity": 1,
-      "type": "objectgroup",
+      "properties": [
+        {
+          "name": "floor",
+          "type": "int",
+          "value": 1
+        }
+      ],
+      "type": "group",
       "visible": true,
       "x": 0,
       "y": 0
     }
   ],
-  "nextlayerid": 3,
-  "nextobjectid": 23,
+  "nextlayerid": 7,
+  "nextobjectid": 25,
   "orientation": "isometric",
   "renderorder": "right-down",
   "tiledversion": "1.10.2",

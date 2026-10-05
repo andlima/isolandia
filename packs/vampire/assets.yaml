@@ -18,6 +18,8 @@ assets:
     directions: { s: assets/coffin_s.svg, w: assets/coffin_w.svg }
   - id: bookshelf_img     # 4-way: n and e are the mirrors of w and s
     directions: { s: assets/bookshelf_s.svg, w: assets/bookshelf_w.svg }
+  - id: ladder_img        # 4-way: n and e are the mirrors of w and s; climbs toward its facing
+    directions: { s: assets/ladder_s.svg, w: assets/ladder_w.svg }
   - id: chest_img         # 4-way: n and e are the mirrors of w and s
     directions: { s: assets/chest_s.svg, w: assets/chest_w.svg }
   - id: wine_rack_img     # 4-way: n and e are the mirrors of w and s
