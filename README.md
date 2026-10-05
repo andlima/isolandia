@@ -87,6 +87,7 @@ assumptions stay out of the engine.
 | `npm run typecheck` | Type-check with `tsc` |
 | `npm run build` | Production build of the browser game |
 | `npm run bench:sim` | Headless simulation benchmark |
+| `npm run map:export -- <pack-dir>… --map <id> --out <dir>` | Export a map as an isometric Tiled map + tileset (see `docs/packs.md`) |
 
 Source layout:
 

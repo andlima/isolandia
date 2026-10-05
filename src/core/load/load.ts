@@ -48,9 +48,10 @@ import {
 } from '../definition.ts';
 import { CARDINALS, FACINGS, MIRROR, facingTable, isDiagonal, isFacing, type Facing } from '../facing.ts';
 import { compileSource, isPointType, nearMiss, type Compiled, type CompiledExpr } from '../expr/index.ts';
-import { at, ErrorSink, PackLoadError, type LoadError, type Src } from './errors.ts';
+import { at, ErrorSink, formatPath, lineOf, PackLoadError, type LoadError, type Src } from './errors.ts';
 import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
 import { SymbolTable, type Kind, type Scope } from './resolve.ts';
+import { normalizePath, readTiledMap, type TiledMap } from './tiled.ts';
 import { Fields } from './validate.ts';
 
 export type LoadResult =
@@ -83,6 +84,7 @@ const DEFAULT_TICKS_PER_STEP = 2;
 const DEFAULT_TICKS_PER_TURN = 1;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
+const ASCII_MAP_FIELDS = ['legend', 'rows', 'rooms'] as const;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
@@ -122,6 +124,8 @@ class Loader {
     recipes: [],
   };
   packs: { raw: RawPack; scope: Scope }[] = [];
+  /** Per map index: the read Tiled map, null after an error, undefined for ASCII maps. */
+  private readonly tiledMaps: (TiledMap | null | undefined)[] = [];
   /** Every room tag used by a map, in first-seen order (collected before any expression compiles). */
   roomTags: string[] = [];
   /** Source of each resolved loot entry, per table (parallel to `LootTableDef.entries`). */
@@ -132,6 +136,7 @@ class Loader {
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
     this.defineIds();
+    this.readTiledMaps();
     this.collectRoomTags();
     const measurements = this.defined.measurements.map((d) => this.measurement(d));
     const assets = this.defined.assets.map((d) => this.asset(d));
@@ -599,8 +604,62 @@ class Loader {
     return { capacity, items: start };
   }
 
+  /**
+   * Read every `maps[].tiled` file up front: room tags must be known before
+   * expressions compile, and tile/archetype ids are already defined.
+   */
+  private readTiledMaps(): void {
+    for (const d of this.defined.maps) {
+      const v = d.entry.value;
+      if (v['tiled'] === undefined) continue;
+      this.tiledMaps[d.index] = null;
+      const src = at(d.entry.src, 'tiled');
+      const mixed = ASCII_MAP_FIELDS.filter((k) => v[k] !== undefined);
+      if (mixed.length) {
+        this.sink.add(src, `a map takes either the ASCII fields (legend, rows, rooms) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
+        continue;
+      }
+      const raw = v['tiled'];
+      if (typeof raw !== 'string') {
+        this.sink.add(src, `field 'tiled' must be a path to a Tiled .tmj file (relative to the pack root)`);
+        continue;
+      }
+      if (/\.tmx$/i.test(raw)) {
+        this.sink.add(src, `'${raw}' is a TMX (XML) map: save the map as JSON in Tiled (File → Export As… → JSON map files) and reference the .tmj`);
+        continue;
+      }
+      const pack = this.packs.find((p) => p.scope.namespace === d.scope.namespace)!.raw;
+      const path = normalizePath(raw);
+      if (path === null || !path.endsWith('.tmj') || pack.tiledFiles[path] === undefined) {
+        const known = Object.keys(pack.tiledFiles).filter((k) => k.endsWith('.tmj'));
+        const s = nearMiss(path ?? raw, known);
+        const what = path !== null && !path.endsWith('.tmj') ? `must be a Tiled JSON map (.tmj), got '${raw}'` : `Tiled map '${raw}' not found in pack '${pack.namespace}'`;
+        this.sink.add(src, `${what}${s ? ` (did you mean '${s}'?)` : ''}`);
+        continue;
+      }
+      const { map, problems } = readTiledMap({
+        files: pack.tiledFiles,
+        path,
+        tile: (ref) => this.symbols.resolve('tile', ref, d.scope),
+        archetype: (ref) => this.symbols.resolve('archetype', ref, d.scope),
+      });
+      const line = lineOf(src.source, src.path);
+      const from = `in map '${d.id}', from ${src.source.file}${line !== undefined ? `:${line}` : ''} ${formatPath(src.path)}`;
+      for (const p of problems) this.sink.raw({ pack: pack.namespace, file: p.file, path: p.path, message: `${p.message} [${from}]` });
+      this.tiledMaps[d.index] = map;
+    }
+  }
+
   private map(d: Defined): MapDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'legend', 'rows', 'rooms'], 'map');
+    const tiled = this.tiledMaps[d.index];
+    if (tiled !== undefined) {
+      new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
+      if (!tiled) return { id: d.id, index: d.index, width: 0, height: 0, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0) };
+      const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
+      const { width, height, cells, facings, spawns, playerStart } = tiled;
+      return { id: d.id, index: d.index, width, height, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height) };
+    }
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
 
     interface Legend {
       tile: number;
@@ -684,18 +743,20 @@ class Loader {
   /** Room tags from every raw map, so expressions and distributions can resolve them. */
   private collectRoomTags(): void {
     const seen = new Set<string>();
+    const add = (t: unknown): void => {
+      if (typeof t === 'string' && ID_RE.test(t) && !seen.has(t)) {
+        seen.add(t);
+        this.roomTags.push(t);
+      }
+    };
     for (const d of this.defined.maps) {
+      const tiled = this.tiledMaps[d.index];
+      if (tiled) for (const r of tiled.rooms) r.tags.forEach(add);
       const rooms = d.entry.value['rooms'];
       if (!Array.isArray(rooms)) continue;
       for (const room of rooms) {
         const tags = isObject(room) ? room['tags'] : null;
-        if (!Array.isArray(tags)) continue;
-        for (const t of tags) {
-          if (typeof t === 'string' && ID_RE.test(t) && !seen.has(t)) {
-            seen.add(t);
-            this.roomTags.push(t);
-          }
-        }
+        if (Array.isArray(tags)) tags.forEach(add);
       }
     }
   }
@@ -741,6 +802,11 @@ class Loader {
       const idx = [...new Set(tags.map((t) => this.roomTags.indexOf(t)).filter((k) => k >= 0))].sort((a, b) => a - b);
       rects.push({ x: x!, y: y!, w: w!, h: h!, tags: idx });
     });
+    return this.roomSets(rects, width, height);
+  }
+
+  /** Per-cell room tag sets for validated rects (shared by ASCII and Tiled maps). */
+  private roomSets(rects: RoomDef[], width: number, height: number): RoomsDef {
 
     const sets: number[][] = [[]];
     const keys = new Map<string, number>([['', 0]]);
@@ -1314,7 +1380,12 @@ class Loader {
     if (!map || typeof map !== 'object' || !player || typeof player !== 'object') return null;
     const m = maps[map.index];
     if (m && !m.playerStart) {
-      this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (a legend entry with 'player: true')`);
+      const tiled = this.tiledMaps[map.index];
+      // A Tiled map that failed to read has already been reported.
+      if (tiled !== null) {
+        const how = tiled ? `a 'player' object in the Tiled map` : `a legend entry with 'player: true'`;
+        this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (${how})`);
+      }
       return null;
     }
     return { map: map.index, player: player.index, defeat, victory };

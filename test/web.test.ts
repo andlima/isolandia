@@ -73,8 +73,20 @@ test('web packs: unknown pack names are reported like load errors', () => {
   );
 });
 
+test('web packs: Tiled .tmj/.tsj files come in as text, not as asset URLs', () => {
+  const text = { ...YAML, '/packs/base/maps/m.tmj': '{"width":1}', '/packs/base/maps/m.tsj': '{"tiles":[]}', '/packs/tiled-only/x.tmj': '{}' };
+  const files = { ...FILES, '/packs/base/maps/m.tmj': '/assets/m.tmj', '/packs/base/maps/m.tsj': '/assets/m.tsj' };
+  assert.deepEqual(availablePacks(text), ['base', 'game', 'other']);
+  const w = buildPackSources(text, files, ['base']);
+  assert.equal(w.sources[0]!.files['maps/m.tmj'], '{"width":1}');
+  assert.equal(w.sources[0]!.files['maps/m.tsj'], '{"tiles":[]}');
+  assert.deepEqual(w.sources[0]!.otherFiles, ['README.md', 'art/floor.svg']);
+  assert.equal(w.urls[0]!['maps/m.tmj'], undefined);
+});
+
 test('web packs: equivalent to the Node reader for the real packs', () => {
   const node = readPack('packs/zombie');
+  assert.ok(Object.keys(node.files).some((f) => f.endsWith('.tmj')));
   const yaml = Object.fromEntries(Object.entries(node.files).map(([f, t]) => [`/packs/zombie/${f}`, t]));
   const files = Object.fromEntries((node.otherFiles ?? []).map((f) => [`/packs/zombie/${f}`, `/u/${f}`]));
   const w = buildPackSources(yaml, files, ['zombie']);

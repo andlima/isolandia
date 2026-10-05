@@ -27,8 +27,8 @@ declare global {
   }
 }
 
-const YAML = import.meta.glob<string>('/packs/**/*.{yaml,yml}', { query: '?raw', import: 'default', eager: true });
-const FILES = import.meta.glob<string>(['/packs/**/*', '!/packs/**/*.{yaml,yml}'], { query: '?url', import: 'default', eager: true });
+const TEXT = import.meta.glob<string>('/packs/**/*.{yaml,yml,tmj,tsj}', { query: '?raw', import: 'default', eager: true });
+const FILES = import.meta.glob<string>(['/packs/**/*', '!/packs/**/*.{yaml,yml,tmj,tsj}'], { query: '?url', import: 'default', eager: true });
 
 /**
  * Everything bound to one running world: the scene, HUD, panels and context
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const params = parseParams(location.search, defaults);
   if (params.errors.length) return showErrors(params.errors);
 
-  const web = buildPackSources(YAML, FILES, params.packs);
+  const web = buildPackSources(TEXT, FILES, params.packs);
   if (web.errors.length) return showErrors(web.errors);
   const loaded = loadPacks(web.sources);
   if (!loaded.ok) return showErrors(loaded.errors);
