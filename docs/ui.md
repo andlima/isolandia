@@ -6,8 +6,8 @@ Right-click a tile (or long-press it on a touch screen) to open the
 **context menu**: everything you can do at that cell, near or far. Press
 `E` to open it for your own cell, at your character.
 
-The menu is built from the core query `world.interactionsAt(x, y)` (see
-[packs](packs.md#actions)) by the pure function `contextMenu(world, x, y)`
+The menu is built from the core query `world.interactionsAt(x, y, z)` (see
+[packs](packs.md#actions)) by the pure function `contextMenu(world, x, y, z)`
 in `src/web/menu.ts`; `src/web/menu-dom.ts` only renders it. Entries, in
 order:
 
@@ -18,8 +18,11 @@ order:
    behaviour as tile actions;
 3. **Open** and, when not empty, **Take all from …** for each container on
    the cell;
-4. on your own cell, the **self actions** (e.g. *Rest*);
-5. **Walk here**, on any other walkable cell.
+4. **Go up** / **Go down** on a stairs (or landing) cell whose
+   [link](packs.md#floors) is open: it walks there first when needed, then
+   climbs to the far end;
+5. on your own cell, the **self actions** (e.g. *Rest*);
+6. **Walk here**, on any other walkable cell.
 
 Entries that cannot be done stay in the list, greyed out, with the reason
 underneath (`Needs: Hammer, 2× Plank`, `Only in the crypt`, …), so you
@@ -98,6 +101,8 @@ the browser, `MemoryStore` in tests).
 | Arrows, WASD, numpad | Move (screen-relative) |
 | Click / right-click / long-press | Walk there / context menu |
 | `E` | Context menu on your own cell |
+| `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
+| `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
 | `I` / `Tab` | Inventory panel |
 | `C` | Crafting panel |
 | `O` | Game panel (save slots, export, import) |
@@ -105,5 +110,14 @@ the browser, `MemoryStore` in tests).
 | `H` | Toggle the HUD text |
 | `Space` | Recenter the camera |
 
+The climb keys are matched by `KeyboardEvent.key`, so `<` and `>` follow
+the keyboard layout; with no link at your cell they do nothing. On a map
+with more than one floor the HUD shows `Floor N` (your floor `z`, the
+ground floor being `Floor 0`).
+
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
-loads it; lowercase `s` and `l` still move.
+loads it; lowercase `s` and `l` still move. `<` / `>` climb (with no link
+the message line says `No way up here.` / `No way down here.`), the `x`
+list starts with *Go up* / *Go down* when you stand on a link, the map
+shows your floor only (empty cells are spaces), and the status lines add
+`Floor N` on multi-floor maps.

@@ -41,6 +41,7 @@ unknown pack name — the page shows the complete error list, formatted like
 | `Space`                        | Re-centre on the player and follow again |
 | `H`                            | Toggle the HUD |
 | `I` / `Tab`                    | Toggle the inventory panel (when the player has an inventory) |
+| `PageUp` / `<`, `PageDown` / `>` | Climb the stairs or ladder you stand on, up or down a floor |
 
 A drag never counts as a click (8 px threshold). The HUD shows the
 in-game day and time (`Day 1 08:02`, from the pack's `clock`) and the
@@ -117,6 +118,35 @@ inverts the projection and floors; a click on a raised block's top face
 - The sim runs at 10 ticks/s from an accumulator (at most 5 ticks per
   frame; any further backlog is dropped); every animation frame renders with
   interpolation, so walking is smooth and has constant speed.
+
+## Floors
+
+On a map with stacked [floors](packs.md#floors) (`src/iso/scene.ts`,
+rules in `src/iso/cutaway.ts`):
+
+- **Height.** Floor `z` is drawn raised by `z × FLOOR_H` iso px, with
+  `FLOOR_H = BLOCK_H` (32), so a floor sits on top of the walls below it.
+  An entity's height is interpolated with its position, so climbing the
+  stairs is smooth; the camera follows that height.
+- **Draw order** is floor by floor: floor 0 ground, floor 0 markers,
+  floor 0 objects, then floor 1, and so on. Each floor keeps its own
+  per-diagonal depth buckets. Empty cells draw nothing, so the floors below
+  and the outside show through.
+- **Cutaway.** The **view floor** is the player's floor; while climbing,
+  it switches at the step's midpoint. Floors **above** the view floor are
+  hidden (their whole container: ground, blocks, piles, entities and
+  markers), so you see inside buildings.
+- **Fade.** On the view floor, a raised block fades to alpha 0.35 when it
+  is in front of the player and close on screen: its diagonal `x + y` is
+  in `(px + py, px + py + 3]` and `|(x − y) − (px − py)| ≤ 2`. This also
+  applies on one-floor maps; with no raised blocks in front of the player
+  the view is unchanged.
+- **Picking.** A click picks on the view floor, with its offset (raised
+  blocks by their top face, as above). When that cell is empty (or outside
+  the map), the floors below are tried in order, so clicking the street
+  from a balcony works. Clicks yield `{ x, y, z }`, and click-to-move
+  issues a goto with that `z`.
+- The HUD shows `Floor N` when the map has more than one floor.
 
 ## Sprites and placeholders
 

@@ -221,6 +221,7 @@ shading, palettes and the generator).
 | `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex |
 | `tags`     | list of `[a-z][a-z0-9_]*` | `[]` | Tested by `tile.has_tag("x")` / `has_tag(tile, "x")` |
 | `container`| `{ capacity: <number ≥ 0> }` | none | Every map cell with this tile gets its own [container](#containers); its label is the tile's label |
+| `climb`    | `up` or `down`   | none         | A **link** to the same cell one floor up or down (stairs, ladders); see [Floors](#floors). The tile must be walkable |
 
 Tile tags and archetype tags are separate: `self.has_tag("water")` never
 sees the tags of the tile the entity stands on, and `tile.has_tag(...)`
@@ -275,18 +276,19 @@ their items, and player actions fail with `no_inventory`.
 
 ### `maps`
 
-A map comes either from **ASCII** fields (`legend`, `rows`, `rooms`) or
-from a **Tiled** JSON map (`tiled`); mixing the two is a load error. Both
-load to the same map definition. ASCII is a fixture format (tests, small
+A map comes either from **ASCII** fields (`legend`, `rows` or `floors`,
+`rooms`) or from a **Tiled** JSON map (`tiled`); mixing the two is a load
+error. Both load to the same map definition. ASCII is a fixture format (tests, small
 maps like `garden`); real worlds are edited in [Tiled](#tiled-maps).
 
 | Field    | Type                         | Notes |
 |----------|------------------------------|-------|
 | `id`     | id                           | |
-| `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`rooms` (see [Tiled maps](#tiled-maps)) |
-| `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map); `facing`: orientation of the cell's tile (see below) |
-| `rows`   | list of equal-length strings | every character must be in the legend |
-| `rooms`  | list of `{ rect: [x, y, w, h], tags: [...] }` | optional; see below |
+| `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`floors`/`rooms` (see [Tiled maps](#tiled-maps)) |
+| `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map, on any floor); `facing`: orientation of the cell's tile (see below) |
+| `rows`   | list of equal-length strings | a one-floor map; every character must be in the legend, except the space (an [empty cell](#floors)) |
+| `floors` | list of `{ rows }`           | a map with stacked floors instead of `rows`: entry *z* is floor *z*, and every floor has the same size (see [Floors](#floors)) |
+| `rooms`  | list of `{ rect: [x, y, w, h], tags: [...], floor? }` | optional; see below |
 
 ```yaml
 maps:
@@ -331,7 +333,56 @@ archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
     rooms:
       - { rect: [2, 2, 4, 3], tags: [kitchen] }
       - { rect: [7, 2, 2, 3], tags: [bathroom] }
+      - { rect: [10, 2, 6, 3], tags: [bedroom], floor: 1 }   # upstairs
 ```
+
+A room lies on one floor: `floor` (default `0`) must exist.
+
+#### Floors
+
+A map is a stack of **floors** `z = 0, 1, …` of the same size. Every map
+loaded before floors existed is a one-floor map and behaves exactly as
+before. Cells are numbered `(z * height + y) * width + x`; with one floor
+that is the row-major `y * width + x`.
+
+```yaml
+maps:
+  - id: house
+    legend:
+      ".": { tile: floor }
+      "#": { tile: wall }
+      "<": { tile: stairs }          # climb: up
+      ">": { tile: landing }
+      "@": { tile: floor, player: true }
+    floors:
+      - rows: ["#####", "#@.<#", "#####"]
+      - rows: ["     ", " #.>#", " ### "]
+```
+
+- **Empty cells.** A cell may hold no tile: in every floor's rows the
+  **space** means empty, unless the legend defines `" "`. An empty cell is
+  not walkable, not opaque, has no container and is not drawn (the floors
+  below and the outside show through). In expressions its `tile.id` is
+  `""` and `tile.has_tag(...)` is false. `set_tile` can neither target nor
+  make one (`invalid_target`).
+- **Links.** A cell whose tile has `climb: up` is linked to the same
+  `(x, y)` one floor up; `climb: down`, one floor down. A link is an edge in
+  both directions (the far cell needs no `climb`), and it exists only while
+  **both ends are walkable**, checked live, so a pack action's `set_tile`
+  can block or open stairs. A* crosses links (cost 1, after the 8 same-floor
+  directions); crossing one is one step of `ticks_per_step` that does not
+  turn the entity. Keyboard `step` intents never take a link.
+- **Spawns** and the player start may be on any floor; spawns are ordered
+  by `z`, then row-major.
+- **Reach** is on one floor: containers, tile actions, stations,
+  `take`/`put` and ground piles need the same floor and Chebyshev ≤ 1 on
+  `(x, y)`. `drop` puts the pile on the player's floor.
+- **Sight** stays on one floor: `can_see` is false across floors.
+  **Hearing** is 3D: one floor counts as one tile, and floors (like walls)
+  do not muffle.
+- Load errors name the floor (`floors[1].rows[3]`). A `climb` cell whose far
+  cell is outside the map, empty or not walkable in the map data is a load
+  error naming both cells; so is `climb` on a tile that is not walkable.
 
 #### Tiled maps
 
@@ -357,8 +408,20 @@ properties** on tileset tiles, never from gids or flip flags.
 **Tile layers.** Every *visible* tile layer contributes, in layer order;
 layers inside groups are flattened in order. Per cell the **top-most
 non-empty** tile wins, so furniture can be painted on a layer above the
-floor. Hidden layers (and hidden groups) are ignored. Every cell must be
-painted on some visible layer.
+floor. Hidden layers (and hidden groups) are ignored. A cell left empty on
+every layer of its floor is an [empty cell](#floors).
+
+**Floors.** A group layer with an integer custom property **`floor`**
+holds that floor's tile layers and object layers (its `player`, `spawn`
+and `room` objects are on that floor). Layers outside any floor group
+belong to floor 0, so a map without floor groups is a one-floor map.
+Floor numbers must be unique and contiguous from 0, and a floor group
+inside another floor group is a load error; groups without `floor` inside a
+floor group are flattened into it.
+
+| Where             | Property    | Type   | Meaning |
+|-------------------|-------------|--------|---------|
+| group layer       | `floor`     | int    | the floor (`z`) of the layers inside it |
 
 **Objects** are matched by their **class** (`type` in Tiled ≤ 1.8,
 `class` in Tiled ≥ 1.9):
@@ -416,7 +479,9 @@ npm run map:export -- packs/std packs/std-needs packs/zombie --map town --out pa
 
 It writes `town.tmj` (one `ground` tile layer and one `objects` layer with
 the player, a `spawn` point per spawn at the cell centre, and a `room`
-rectangle per room) and `town.tsj` (one tile per tile/facing pair used,
+rectangle per room; a multi-floor map gets one `floor N` group per floor,
+with the `floor` property, holding those two layers, and empty cells are
+gid 0) and `town.tsj` (one tile per tile/facing pair used,
 with the tile's image for that facing as a preview). The output is
 byte-stable, and loading it gives the same map as the ASCII original.
 
@@ -462,7 +527,8 @@ tile-targeted [actions](#actions).)
 hearing radius. It takes no `measurement` and works on any entity. A radius
 `<= 0` emits nothing. Noises are **events**, not a field over the map: in
 the [hear phase](#tick-order) of the same tick, every entity other than the
-source within `dx² + dy² <= radius²` hears it. **Walls are ignored.** Each
+source within `dx² + dy² + dz² <= radius²` hears it (one floor counts as
+one tile). **Walls and floors are ignored.** Each
 entity remembers only its **last heard noise**: the nearest of the tick
 (ties go to the earlier emission), with the cell and the tick. Entities that
 hear nothing keep their previous memory. Everyone hears, including the
@@ -594,6 +660,10 @@ one whose next step fires in this tick (`moveCooldown ≤ 1`).
 | `home`   | Once per entry into the state: a `goto` to the home cell (nothing if already there). `done` fires on a later tick once the entity is home, or when that goto failed. Without `done` the entity idles at home. |
 | `investigate` | Walks to the entity's last heard [noise](#systems) cell; takes no `target`. Never heard anything: does nothing. On or 8-adjacent to the heard cell: clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) when it has not issued one yet in this state, or when the heard cell changed since its last plan and at least `repath` has passed, so a newer noise retargets the walk without a self-transition. `done` fires on a later tick than the plan once the entity is on or adjacent to the heard cell, when the last goto failed, or when it has never heard a noise. |
 
+- On [multi-floor maps](#floors), `pursue`, `investigate` and `home` path
+  in 3D (A* crosses links), so NPCs follow across stairs; "on or
+  8-adjacent" also requires the same floor. `wander` and `flee` only take
+  `step`s on the entity's own floor.
 - The **player** is never driven by a behavior, even if its archetype has
   one; it stays under input control.
 - Only `wander` draws from the world RNG, in id order, so runs stay
@@ -811,8 +881,8 @@ actions:
 
 `world.availableActions()` lists what the player could start right now:
 every `self` action, then every tile action on each matching cell in reach
-(row-major), then each inventory stack with a `use`. Each entry is
-`{ kind, action?, item?, x?, y?, label, ok, reason?, missing?, unavailable? }`;
+(the player's floor, row-major), then each inventory stack with a `use`. Each entry is
+`{ kind, action?, item?, x?, y?, z?, label, ok, reason?, missing?, unavailable? }`;
 entries whose target matches but whose tools, consumed items, inventory or
 `when` fail are included with `ok: false` and the reason, and cells out of
 reach or not matching are omitted. `missing` lists `{ item, label, count }`
@@ -822,15 +892,17 @@ for each absent tool or consumed item (`count` = units still needed), and
 never changes. The terminal opens these with `x` (followed by `take all`
 for each reachable non-empty container).
 
-`world.interactionsAt(x, y)` lists what the player can choose at **any**
-cell, ignoring reach (the browser's [context menu](ui.md) is built from
+`world.interactionsAt(x, y, z?)` lists what the player can choose at **any**
+cell (`z` defaults to the player's floor), ignoring reach (the browser's [context menu](ui.md) is built from
 it). Entries, in order: every tile action whose filter matches the cell's
 tile (definition order); every [recipe](#recipes) whose station matches it
 (kind `craft`, definition order); for each container on the cell (tile container,
-ground pile) an `open` entry, plus `take_all` when it is not empty; every
-`self` action when the cell is the player's own; and `walk` when the cell
-is walkable and not the player's. Each entry is
-`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, inReach }`:
+ground pile) an `open` entry, plus `take_all` when it is not empty;
+`climb` entries *Go up* / *Go down* when the cell has an open
+[link](#floors) that way (with `intent`, the goto to the link's far end);
+every `self` action when the cell is the player's own; and `walk` when the
+cell is walkable and not the player's. Each entry is
+`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, intent?, inReach }`:
 `ok`/`reason` use the same checks as `act` with reach left out (`take_all`
 fails with `no_inventory`, or `too_heavy` when no stack fits at all),
 `action` is the action to queue (the first `take` of a `take_all`, whose
@@ -951,7 +1023,8 @@ move into it is allowed only if the load stays ≤ `capacity`. Expressions
 and the HUD show weights in normal units.
 
 Containers get sequential integer ids that are never reused: tile
-containers in row-major cell order, then inventories in entity order;
+containers in cell order (floor by floor, row-major), then inventories in
+entity order;
 ground piles get the next id when they are created. Containers are
 simulation state (`snapshot().containers`, covered by `hash()`) and do no
 per-tick work.
@@ -1026,8 +1099,8 @@ intents, so looting never cancels walking (but a new action cancels an
 | `put`  | `container`, `item`, `count?`           | Player inventory → container |
 | `drop` | `item`, `count?`                        | Player inventory → the ground pile on the player's cell (created if missing) |
 | `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units (at completion when timed) |
-| `act`  | `action`, `x?`, `y?`                    | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self` |
-| `craft`| `recipe`, `x?`, `y?`                    | Starts a [recipe](#recipes); for a station recipe `x`/`y` name the station cell (omitted: the first matching cell in reach, row-major); forbidden without a station |
+| `act`  | `action`, `x?`, `y?`, `z?`              | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self`; `z` defaults to the player's floor |
+| `craft`| `recipe`, `x?`, `y?`, `z?`              | Starts a [recipe](#recipes); for a station recipe `x`/`y` name the station cell (omitted: the first matching cell in reach, row-major); forbidden without a station; `z` defaults to the player's floor |
 
 An `act` is checked in this order: the action id resolves
 (`unknown_action`); the actor has an inventory if the action needs
@@ -1037,10 +1110,13 @@ held (`missing`); `when` is truthy (`cannot_act`). A `craft` is checked
 in the same order, with `unknown_recipe` first and the station in place of
 the target (`out_of_reach` when no matching cell is in reach).
 
-- `container` is a numeric container id (`world.containersAt(x, y)`,
-  `world.reachableContainers()`); `item` is a qualified item id.
+- `container` is a numeric container id (`world.containersAt(x, y, z?)`,
+  `world.reachableContainers()`); `item` is a qualified item id. Like
+  `interactionsAt(x, y, z?)` and `roomTagsAt(x, y, z?)`, `containersAt`
+  defaults `z` to the player's floor.
 - **Reach:** the container's cell must be the player's cell or one of the
-  8 around it. Inventories cannot be targeted by `take`/`put`.
+  8 around it, on the player's floor. Inventories cannot be targeted by
+  `take`/`put`.
 - `take`/`put` move as many units as fit, up to `count`; moving 0 units is
   a failure.
 - Every action records `world.lastAction`:
@@ -1063,9 +1139,14 @@ the target (`out_of_reach` when no matching cell is in reach).
 - Pending actions and `lastAction` are part of `snapshot()`. Once the game
   has ended (after defeat or victory) `queueAction` ignores its input.
 
-A `goto` intent with `adjacent: true` ends on the reachable walkable tile
-8-adjacent to the goal (or the goal itself, if walkable) with the shortest
-path; the browser uses it when you click a non-walkable container.
+A `goto` intent (`{ kind: 'goto', x, y, z?, adjacent?, then? }`) walks an
+A* path; `z` defaults to the entity's floor, and the path may cross
+[links](#floors). With `adjacent: true` it ends on the reachable walkable
+tile 8-adjacent to the goal on the goal's floor (or the goal itself, if
+walkable) with the shortest path; the browser uses it when you click a
+non-walkable container. `world.climbIntent(dz)` (`dz` = 1 or -1) returns
+the goto that crosses the link at the player's cell in that direction, or
+`null` when there is none; the shells bind it to their climb keys.
 
 **Walk-then-act.** A player's `goto` may carry `then: <action>` (any
 action of the table above). When the path ends with the player standing on
@@ -1089,8 +1170,8 @@ whose path is empty (already at the goal, or already adjacent with
 an action: `null` when it is already in reach or needs none (`self` acts,
 recipes without a station or cell, `use`, `drop`), so the shell queues the
 action directly; otherwise
-`{ kind: 'goto', x, y, adjacent: <target not walkable>, then: action }`
-targeting the action's cell (the container's cell for `take`/`put`, `x`/`y`
+`{ kind: 'goto', x, y, z, adjacent: <target not walkable>, then: action }`
+targeting the action's cell (the container's cell for `take`/`put`, `x`/`y`/`z`
 for `act` and `craft`).
 
 Movement intents (`step` and `goto`) are queued with
@@ -1232,7 +1313,7 @@ it is plain YAML on the same loader, and the engine never names its ids.
 
 | Pack (directory) | Namespace   | Depends | Contents |
 |------------------|-------------|---------|----------|
-| `std`            | `std`       | —       | measurement `hp` (Health, 0–100); archetype `humanoid`; tiles `floor`, `wall`, `door` |
+| `std`            | `std`       | —       | measurement `hp` (Health, 0–100); archetype `humanoid`; tiles `floor`, `wall`, `door`, `stairs` (`climb: up`, raised, glyph `<`, 4-way art rising toward its facing) and `landing` (the floor cell at the top of the stairs, glyph `>`) |
 | `std-needs`      | `std_needs` | `std`   | measurements `hunger`, `thirst`, `fatigue`; statuses `hungry`, `thirsty`, `exhausted` (drain `hp`), `burdened` (carrying ≥ 80% of capacity adds fatigue) |
 
 **Opting in to needs.** An entity takes part in `std-needs` by listing the

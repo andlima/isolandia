@@ -426,6 +426,26 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     match the ASCII loader and do not depend on object order.
   - `npm run map:export` writes an ASCII map as an isometric 64×32 Tiled
     map; round trips are tested. See `docs/packs.md`.
+- ~~How do buildings get upstairs?~~ **Decided (spec `m6-floors`, M6):**
+  - **Floors are `z ≥ 0` joined by link tiles**: a map is a stack of
+    same-size floors (ASCII `floors:`, Tiled `floor` groups); a tile with
+    `climb: up`/`down` links its cell to the same `(x, y)` one floor up or
+    down, as an edge both ways that exists while both ends are walkable
+    (so `set_tile` can block stairs). Cells may be empty (no tile). One-floor
+    maps keep their cell indices and behave exactly as before. No basements,
+    falling, ramps or multi-cell stairs yet.
+  - **A\* crosses links**: pathfinding searches the 3D grid (8 same-floor
+    neighbours plus links, cost 1, octile heuristic on `(x, y)`), so
+    click-to-move, walk-then-act, `pursue`, `investigate` and `home` work
+    across floors; keyboard steps, `wander` and `flee` stay on their floor.
+  - **No sight across floors, 3D hearing**: `can_see` is false between
+    floors; noises reach 3D euclidean distance with one floor = one tile,
+    and floors do not muffle. Reach is same-floor only.
+  - **Floors above the player are cut away**: the iso view raises floor `z`
+    by `z × BLOCK_H`, hides every floor above the player's (switching at a
+    climb's midpoint) and fades the raised blocks just in front of the
+    player. Saves become version 2 (every cell gets a `z`); version 1 saves
+    still load. See `docs/packs.md#floors` and `docs/iso.md#floors`.
 
 ## 8. Next step
 
