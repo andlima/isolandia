@@ -64,3 +64,46 @@ to walk there and craft). The view is the pure function
 `world.availableRecipes()`; it re-renders when `tick`, `containerVersion`
 or `tileVersion` changes. Recipes without a station live only here, not in
 the context menu.
+
+## Saving and loading
+
+The browser keeps a **quicksave** and **three slots** per pack list in
+`localStorage` (see [saves](saves.md)).
+
+- **`F5`** quicksaves and **`F9`** quickloads. The page never reloads on
+  `F5`, even with a modifier held.
+- **`O`** (or the **Game [O]** button at the bottom centre) toggles the
+  **Game panel**: the quicksave and each slot with `Day N, HH:MM`, the
+  tick and when it was saved, and **Save**, **Load** (disabled when empty)
+  and **Delete** buttons. **Export** downloads the running game as
+  `isolandia-<packs>-day<N>.json`; **Import** loads such a file (or a bare
+  save file).
+- A load replaces the running world: the scene, HUD, panels and context
+  menu are rebuilt and the camera recenters on the player. Errors (wrong
+  packs, unknown ids…) are listed in the panel and the current game keeps
+  running; warnings (e.g. a newer pack version) show in a dismissible note.
+- Saving and loading work after defeat or victory; loading a save of a
+  game in progress un-freezes it.
+- A storage failure (full quota, private mode, blocked storage) shows a
+  short message and never stops the game.
+
+The panel's view is the pure function `gameView` in `src/web/saves.ts`;
+storage goes through the small `SaveStore` interface (`localStorage` in
+the browser, `MemoryStore` in tests).
+
+## Keys
+
+| Key | Action |
+|---|---|
+| Arrows, WASD, numpad | Move (screen-relative) |
+| Click / right-click / long-press | Walk there / context menu |
+| `E` | Context menu on your own cell |
+| `I` / `Tab` | Inventory panel |
+| `C` | Crafting panel |
+| `O` | Game panel (save slots, export, import) |
+| `F5` / `F9` | Quicksave / quickload |
+| `H` | Toggle the HUD text |
+| `Space` | Recenter the camera |
+
+In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
+loads it; lowercase `s` and `l` still move.

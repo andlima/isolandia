@@ -1,4 +1,5 @@
-import { loadPacksOrThrow, type Definition, type PackSource } from '../src/core/index.ts';
+import assert from 'node:assert/strict';
+import { loadPacksOrThrow, World, type Definition, type PackSource } from '../src/core/index.ts';
 
 /** Build an in-memory pack from `{ path: yamlText }`. */
 export function pack(label: string, files: Record<string, string>): PackSource {
@@ -71,4 +72,34 @@ start:
 
 export function loadFixture(files: Record<string, string> = {}): Definition {
   return loadPacksOrThrow([fixture(files)]);
+}
+
+/** Input for one tick, applied alike to the original and the restored world (it may only read the world it gets). */
+export type Script = (w: World) => void;
+
+const viaJson = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+/**
+ * The save round-trip invariant (docs/saves.md): `world` saved and restored
+ * through JSON has the same snapshot, saves to the same `SaveFile` again, and
+ * reaches the same `hash()` on every one of `ticks` further ticks when both
+ * get the same `script` input. Steps `world` too; returns the restored copy.
+ */
+export function assertRoundTrip(world: World, script: Script = () => {}, ticks = 60): World {
+  const save = viaJson(world.save());
+  const r = World.restore(world.def, save);
+  if (!r.ok) assert.fail(`restore failed at tick ${world.tick}:\n${r.errors.join('\n')}`);
+  assert.deepEqual(r.warnings, []);
+  const copy = r.world;
+  assert.deepStrictEqual(copy.snapshot(), viaJson(world.snapshot()), `restored snapshot at tick ${world.tick}`);
+  assert.deepStrictEqual(viaJson(copy.save()), save, 'saving the restored world again');
+  assert.equal(copy.hash(), world.hash());
+  for (let i = 0; i < ticks; i++) {
+    script(world);
+    script(copy);
+    world.step();
+    copy.step();
+    assert.equal(copy.hash(), world.hash(), `hash ${i + 1} ticks after the save (tick ${world.tick})`);
+  }
+  return copy;
 }

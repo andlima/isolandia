@@ -593,7 +593,7 @@ test('actions: snapshot and hash cover the activity and changed tiles', () => {
   assert.deepEqual(a.snapshot().tiles, []);
   steps(a, 60);
   const boarded = a.snapshot();
-  assert.deepEqual(boarded.tiles, [[1 * a.grid.width + 5, 't:boarded']]);
+  assert.deepEqual(boarded.tiles, [[5, 1, 't:boarded']]);
   assert.equal(boarded.entities[0]!.activity, null);
   // Same history ⇒ same hash; a changed cell alone changes it.
   const c = world();

@@ -161,6 +161,7 @@ export class Panels {
   private readonly inv: HTMLDivElement;
   private readonly loot: HTMLDivElement;
   private readonly craft: HTMLDivElement;
+  private readonly toggle: HTMLButtonElement | null = null;
   private invKey = '';
   private lootKey = '';
   private craftKey = '';
@@ -191,12 +192,17 @@ export class Panels {
     this.loot.addEventListener('click', (ev) => this.onClick(ev));
     this.craft.addEventListener('click', (ev) => this.onClick(ev));
     if (world.def.recipes.length > 0 && world.player.inv) {
-      const toggle = document.createElement('button');
+      const toggle = (this.toggle = document.createElement('button'));
       toggle.id = 'craft-toggle';
       toggle.textContent = 'Crafting [C]';
       toggle.addEventListener('click', () => this.toggleCrafting());
       parent.append(toggle);
     }
+  }
+
+  /** Remove the panels' elements (the world is being replaced). */
+  dispose(): void {
+    for (const el of [this.inv, this.loot, this.craft, this.toggle]) el?.remove();
   }
 
   /** `C` or the HUD button: show or hide the crafting panel. */

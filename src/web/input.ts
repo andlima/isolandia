@@ -6,7 +6,7 @@
 
 import type { World } from '../core/index.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
-import { heldDirection, MOVE_KEYS } from './keys.ts';
+import { heldDirection, MOVE_KEYS, suppressesDefault } from './keys.ts';
 
 export interface InputHandlers extends GestureHandlers {
   /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
@@ -23,7 +23,8 @@ export class Input {
 
   constructor(
     el: HTMLElement,
-    private readonly world: World,
+    /** The running world (it changes when a save is loaded). */
+    private readonly world: () => World,
     on: InputHandlers,
   ) {
     const gestures = (this.gestures = new Gestures(on));
@@ -53,6 +54,8 @@ export class Input {
     );
 
     window.addEventListener('keydown', (ev) => {
+      // F5/F9 are quicksave/quickload: never reload the page, even with a modifier or on auto-repeat.
+      if (suppressesDefault(ev.code)) ev.preventDefault();
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (on.captureKey?.(ev.code)) {
         ev.preventDefault();
@@ -63,7 +66,6 @@ export class Input {
         this.held.add(ev.code);
         if (!ev.repeat) this.queueHeld();
       } else if (!ev.repeat) {
-        if (ev.code === 'Space' || ev.code === 'Tab') ev.preventDefault();
         on.key(ev.code);
       }
     });
@@ -82,11 +84,11 @@ export class Input {
    * ticks never leaves a stale step queued.
    */
   beforeTick(): void {
-    if (this.world.player.moveCooldown <= 1) this.queueHeld();
+    if (this.world().player.moveCooldown <= 1) this.queueHeld();
   }
 
   private queueHeld(): void {
     const d = heldDirection(this.held);
-    if (d) this.world.queueIntent({ kind: 'step', ...d });
+    if (d) this.world().queueIntent({ kind: 'step', ...d });
   }
 }
