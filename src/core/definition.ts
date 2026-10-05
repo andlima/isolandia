@@ -85,7 +85,12 @@ export interface TileDef {
   readonly tags: readonly string[];
   /** Every map cell with this tile gets its own container; null for none. */
   readonly container: ContainerSpec | null;
+  /** Link to the same (x, y) one floor up (`up`) or down (`down`); null for none. */
+  readonly climb: 'up' | 'down' | null;
 }
+
+/** Tile index of an empty map cell: no tile, not walkable, not opaque, not drawn. */
+export const EMPTY_TILE = 0xffff;
 
 /** A weight-capped container declaration. */
 export interface ContainerSpec {
@@ -246,10 +251,12 @@ export interface DistributionDef {
   readonly table: number;
 }
 
-/** A map room: a rectangle of cells with room tags. */
+/** A map room: a rectangle of cells on one floor with room tags. */
 export interface RoomDef {
   readonly x: number;
   readonly y: number;
+  /** Floor of the rectangle. */
+  readonly z: number;
   readonly w: number;
   readonly h: number;
   /** Indices into `Definition.roomTags`. */
@@ -261,7 +268,7 @@ export interface RoomsDef {
   readonly rects: readonly RoomDef[];
   /** Unique room-tag combinations (tag indices, sorted); set 0 is always the empty set. */
   readonly sets: readonly (readonly number[])[];
-  /** Room-set index per cell, row-major. */
+  /** Room-set index per cell (cell index order). */
   readonly cellSet: readonly number[];
 }
 
@@ -325,6 +332,7 @@ export interface BehaviorDef {
 export interface SpawnDef {
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly archetype: number;
 }
 
@@ -333,15 +341,21 @@ export interface MapDef {
   readonly index: number;
   readonly width: number;
   readonly height: number;
-  /** Tile index per cell, row-major. */
+  /** Number of stacked floors (≥ 1), `z = 0, 1, …`. */
+  readonly floors: number;
+  /**
+   * Tile index per cell (`EMPTY_TILE` for none), by cell index
+   * `(z * height + y) * width + x`.
+   */
   readonly cells: readonly number[];
   /**
-   * Legend `facing` per cell, row-major; null where the legend does not set
+   * Legend `facing` per cell, by cell index; null where the legend does not set
    * one (shown as the default `s`). Render-only: the simulation ignores it.
    */
   readonly facings: readonly (Facing | null)[];
+  /** Ordered by `z`, then row-major. */
   readonly spawns: readonly SpawnDef[];
-  readonly playerStart: { readonly x: number; readonly y: number } | null;
+  readonly playerStart: { readonly x: number; readonly y: number; readonly z: number } | null;
   readonly rooms: RoomsDef;
 }
 

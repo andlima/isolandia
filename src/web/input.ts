@@ -6,11 +6,13 @@
 
 import type { World } from '../core/index.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
-import { heldDirection, MOVE_KEYS, suppressesDefault } from './keys.ts';
+import { climbKey, heldDirection, MOVE_KEYS, suppressesDefault } from './keys.ts';
 
 export interface InputHandlers extends GestureHandlers {
   /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
   key(code: string): void;
+  /** A climb key (PageUp/PageDown, `<`/`>`): one floor up (1) or down (-1), without auto-repeat. */
+  climb?(dz: 1 | -1): void;
   /** Right-click on the canvas (the browser's own menu is suppressed there only). */
   menu(sx: number, sy: number): void;
   /** Offered every key press first (auto-repeat included); true consumes it (e.g. an open menu). */
@@ -61,7 +63,11 @@ export class Input {
         ev.preventDefault();
         return;
       }
-      if (MOVE_KEYS[ev.code]) {
+      const dz = climbKey(ev.key);
+      if (dz !== 0) {
+        ev.preventDefault();
+        if (!ev.repeat) on.climb?.(dz);
+      } else if (MOVE_KEYS[ev.code]) {
         ev.preventDefault();
         this.held.add(ev.code);
         if (!ev.repeat) this.queueHeld();

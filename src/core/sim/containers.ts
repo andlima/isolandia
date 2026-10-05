@@ -18,6 +18,7 @@ export interface Container {
   /** Cell of a tile container or ground pile; -1 for inventories. */
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   /** Owner entity id of an inventory; -1 otherwise. */
   readonly owner: number;
   /** Capacity in hundredths; Infinity for ground piles. */
@@ -33,9 +34,9 @@ export function createContainer(
   id: number,
   kind: ContainerKind,
   capacity: number,
-  at: { x?: number; y?: number; owner?: number; tile?: number } = {},
+  at: { x?: number; y?: number; z?: number; owner?: number; tile?: number } = {},
 ): Container {
-  return { id, kind, x: at.x ?? -1, y: at.y ?? -1, owner: at.owner ?? -1, tile: at.tile ?? -1, capacity, stacks: [], load: 0 };
+  return { id, kind, x: at.x ?? -1, y: at.y ?? -1, z: at.z ?? -1, owner: at.owner ?? -1, tile: at.tile ?? -1, capacity, stacks: [], load: 0 };
 }
 
 /** Units of an item in a container (a scan of its stacks). */

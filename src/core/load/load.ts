@@ -18,6 +18,7 @@ import {
   type BehaviorDef,
   type BehaviorStateDef,
   type ContainerSpec,
+  EMPTY_TILE,
   type OutcomeDef,
   type DistributionDef,
   type DurationDef,
@@ -84,7 +85,7 @@ const DEFAULT_TICKS_PER_STEP = 2;
 const DEFAULT_TICKS_PER_TURN = 1;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
-const ASCII_MAP_FIELDS = ['legend', 'rows', 'rooms'] as const;
+const ASCII_MAP_FIELDS = ['legend', 'rows', 'floors', 'rooms'] as const;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
@@ -461,8 +462,16 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container'], 'tile');
+    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
+    if (d.index >= EMPTY_TILE) this.sink.add(d.entry.src, `too many tiles: at most ${EMPTY_TILE} tiles can be loaded`);
+    let climb: TileDef['climb'] = null;
+    const rawClimb = f.string('climb', false);
+    if (rawClimb !== undefined) {
+      if (rawClimb !== 'up' && rawClimb !== 'down') this.sink.add(f.at('climb'), `field 'climb' must be 'up' or 'down', got ${JSON.stringify(rawClimb)}`);
+      else if (f.has('walkable') && walkable === false) this.sink.add(f.at('climb'), `a 'climb' tile must be walkable (set 'walkable: true')`);
+      else if (walkable) climb = rawClimb;
+    }
     let container: ContainerSpec | null = null;
     const c = f.mapping('container');
     if (c) {
@@ -482,6 +491,7 @@ class Loader {
       sprite: this.sprite(f, d),
       tags: this.tags(f),
       container,
+      climb,
     };
   }
 
@@ -616,7 +626,7 @@ class Loader {
       const src = at(d.entry.src, 'tiled');
       const mixed = ASCII_MAP_FIELDS.filter((k) => v[k] !== undefined);
       if (mixed.length) {
-        this.sink.add(src, `a map takes either the ASCII fields (legend, rows, rooms) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
+        this.sink.add(src, `a map takes either the ASCII fields (legend, rows or floors, rooms) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
         continue;
       }
       const raw = v['tiled'];
@@ -654,11 +664,13 @@ class Loader {
     const tiled = this.tiledMaps[d.index];
     if (tiled !== undefined) {
       new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
-      if (!tiled) return { id: d.id, index: d.index, width: 0, height: 0, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0) };
-      const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
-      const { width, height, cells, facings, spawns, playerStart } = tiled;
-      return { id: d.id, index: d.index, width, height, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height) };
+      if (!tiled) return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1) };
+      const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, z: r.z, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
+      const { width, height, floors, cells, facings, spawns, playerStart } = tiled;
+      this.checkLinks(cells, width, height, floors, () => at(d.entry.src, 'tiled'));
+      return { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors) };
     }
+    const before = this.sink.count;
     const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'tiled', ...ASCII_MAP_FIELDS], 'map');
 
     interface Legend {
@@ -695,49 +707,116 @@ class Loader {
       if (tile && typeof tile === 'object') legend.set(ch, { tile: tile.index, spawn: spawn?.index ?? null, player, facing });
       else legend.set(ch, { tile: -1, spawn: null, player, facing });
     }
+    // A space is an empty cell unless the legend defines it.
+    if (!legend.has(' ')) legend.set(' ', { tile: EMPTY_TILE, spawn: null, player: false, facing: null });
 
-    const rows = f.list('rows');
-    if (!rows && !f.has('rows')) f.string('rows'); // reports "missing required field"
-    const width = rows && typeof rows[0] === 'string' ? [...rows[0]].length : 0;
-    const height = rows?.length ?? 0;
-    const cells: number[] = new Array<number>(width * height).fill(0);
-    const facings: (Facing | null)[] = new Array<Facing | null>(width * height).fill(null);
-    const spawns: SpawnDef[] = [];
-    let playerStart: { x: number; y: number } | null = null;
-    const missing = new Set<string>();
-
-    if (rows && rows.length === 0) this.sink.add(f.at('rows'), `map must have at least one row`);
-    (rows ?? []).forEach((row, y) => {
-      const src = f.at('rows', y);
-      if (typeof row !== 'string') {
-        this.sink.add(src, `map rows must be strings`);
-        return;
-      }
-      const chars = [...row];
-      if (chars.length !== width) {
-        this.sink.add(src, `ragged map rows: row ${y} has length ${chars.length}, expected ${width} (the length of row 0)`);
-        return;
-      }
-      chars.forEach((ch, x) => {
-        const l = legend.get(ch);
-        if (!l) {
-          if (!missing.has(ch)) {
-            missing.add(ch);
-            this.sink.add(src, `map character '${ch}' (row ${y}, column ${x}) is not in the legend`);
-          }
+    // Floors: `rows` (one floor) or `floors: [{ rows }]`, index = z. Each entry: the rows and their source path.
+    const layers: { rows: Json[] | undefined; at: (...more: (string | number)[]) => Src }[] = [];
+    if (f.has('rows') && f.has('floors')) this.sink.add(f.at('floors'), `a map takes either 'rows' (one floor) or 'floors', not both`);
+    if (f.has('floors')) {
+      const list = f.list('floors');
+      if (list && list.length === 0) this.sink.add(f.at('floors'), `map must have at least one floor`);
+      (list ?? []).forEach((raw, z) => {
+        const src = f.at('floors', z);
+        if (!isObject(raw)) {
+          this.sink.add(src, `floors must be mappings like { rows: [...] }`);
+          layers.push({ rows: undefined, at: (...more) => at(src, ...more) });
           return;
         }
-        cells[y * width + x] = l.tile;
-        facings[y * width + x] = l.facing;
-        if (l.spawn !== null) spawns.push({ x, y, archetype: l.spawn });
-        if (l.player) {
-          if (playerStart) this.sink.add(src, `map has more than one player start cell (another at ${playerStart.x},${playerStart.y})`);
-          else playerStart = { x, y };
+        const ff = new Fields(this.sink, src, raw, ['rows'], 'floor');
+        const rows = ff.list('rows');
+        if (!rows && !ff.has('rows')) ff.string('rows'); // reports "missing required field"
+        layers.push({ rows, at: (...more) => ff.at('rows', ...more) });
+      });
+    } else {
+      const rows = f.list('rows');
+      if (!rows && !f.has('rows')) f.string('rows'); // reports "missing required field"
+      layers.push({ rows, at: (...more) => f.at('rows', ...more) });
+    }
+    const rows0 = layers[0]?.rows;
+    const width = rows0 && typeof rows0[0] === 'string' ? [...rows0[0]].length : 0;
+    const height = rows0?.length ?? 0;
+    const floors = Math.max(1, layers.length);
+    const cells: number[] = new Array<number>(width * height * floors).fill(0);
+    const facings: (Facing | null)[] = new Array<Facing | null>(width * height * floors).fill(null);
+    const spawns: SpawnDef[] = [];
+    let playerStart: { x: number; y: number; z: number } | null = null;
+    const missing = new Set<string>();
+    const multi = f.has('floors');
+    const where = (y: number, x: number, z: number) => (multi ? `floor ${z}, row ${y}, column ${x}` : `row ${y}, column ${x}`);
+
+    layers.forEach(({ rows, at: rowAt }, z) => {
+      if (!rows) return;
+      if (rows.length === 0) {
+        this.sink.add(rowAt(), `map must have at least one row`);
+        return;
+      }
+      if (z > 0 && rows.length !== height) {
+        this.sink.add(rowAt(), `floor ${z} has ${rows.length} rows, expected ${height} (the rows of floor 0): all floors must have the same size`);
+        return;
+      }
+      rows.forEach((row, y) => {
+        const src = rowAt(y);
+        if (typeof row !== 'string') {
+          this.sink.add(src, `map rows must be strings`);
+          return;
         }
+        const chars = [...row];
+        if (chars.length !== width) {
+          const of = multi ? `row 0 of floor 0` : `row 0`;
+          this.sink.add(src, `ragged map rows: row ${y} has length ${chars.length}, expected ${width} (the length of ${of})`);
+          return;
+        }
+        chars.forEach((ch, x) => {
+          const l = legend.get(ch);
+          if (!l) {
+            if (!missing.has(ch)) {
+              missing.add(ch);
+              this.sink.add(src, `map character '${ch}' (${where(y, x, z)}) is not in the legend`);
+            }
+            return;
+          }
+          const i = (z * height + y) * width + x;
+          cells[i] = l.tile;
+          facings[i] = l.facing;
+          if (l.spawn !== null) spawns.push({ x, y, z, archetype: l.spawn });
+          if (l.player) {
+            if (playerStart) this.sink.add(src, `map has more than one player start cell (another at ${playerStart.x},${playerStart.y}${multi ? `,${playerStart.z}` : ''})`);
+            else playerStart = { x, y, z };
+          }
+        });
       });
     });
-    const rooms = this.rooms(f, width, height);
-    return { id: d.id, index: d.index, width, height, cells, facings, spawns, playerStart, rooms };
+    if (this.sink.count === before) this.checkLinks(cells, width, height, floors, (i) => layers[Math.floor(i / (width * height))]!.at(Math.floor(i / width) % height));
+    const rooms = this.rooms(f, width, height, floors);
+    return { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms };
+  }
+
+  /**
+   * Links: a `climb` cell's far cell (same x, y one floor up or down) must be
+   * inside the map and walkable in the map data. `src` gives where to report
+   * a problem with cell `i`.
+   */
+  private checkLinks(cells: readonly number[], width: number, height: number, floors: number, src: (i: number) => Src): void {
+    const area = width * height;
+    const name = (x: number, y: number, z: number) => `(${x}, ${y}, floor ${z})`;
+    for (let i = 0; i < cells.length; i++) {
+      const t = cells[i]!;
+      const tile = t === EMPTY_TILE ? undefined : this.tileDefs[t];
+      if (!tile?.climb) continue;
+      const x = i % width;
+      const y = Math.floor(i / width) % height;
+      const z = Math.floor(i / area);
+      const dz = tile.climb === 'up' ? 1 : -1;
+      const what = `'${tile.id}' at ${name(x, y, z)} climbs ${tile.climb} to ${name(x, y, z + dz)}`;
+      if (z + dz < 0 || z + dz >= floors) {
+        this.sink.add(src(i), `${what}, which is outside the map (it has ${floors} floor${floors === 1 ? '' : 's'})`);
+        continue;
+      }
+      const far = cells[i + dz * area]!;
+      const farTile = far === EMPTY_TILE ? undefined : this.tileDefs[far];
+      if (!farTile?.walkable) this.sink.add(src(i), `${what}, which is ${farTile ? `'${farTile.id}' (not walkable)` : 'an empty cell'}`);
+    }
   }
 
   /** Room tags from every raw map, so expressions and distributions can resolve them. */
@@ -768,7 +847,7 @@ class Loader {
     return { error: `unknown room tag '${tag}'${s ? ` (did you mean '${s}'?)` : ''}` };
   }
 
-  private rooms(f: Fields, width: number, height: number): RoomsDef {
+  private rooms(f: Fields, width: number, height: number, floors: number): RoomsDef {
     const rects: RoomDef[] = [];
     (f.list('rooms') ?? []).forEach((raw, i) => {
       const src = f.at('rooms', i);
@@ -776,7 +855,16 @@ class Loader {
         this.sink.add(src, `rooms must be mappings like { rect: [x, y, w, h], tags: [kitchen] }`);
         return;
       }
-      const rf = new Fields(this.sink, src, raw, ['rect', 'tags'], 'room');
+      const rf = new Fields(this.sink, src, raw, ['rect', 'tags', 'floor'], 'room');
+      let z = 0;
+      if (rf.has('floor')) {
+        const v = rf.raw('floor');
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= floors) {
+          this.sink.add(rf.at('floor'), `room 'floor' must be an existing floor (0${floors > 1 ? `–${floors - 1}` : ''}), got ${JSON.stringify(v)}`);
+          return;
+        }
+        z = v;
+      }
       const rect = rf.raw('rect');
       let ok = true;
       if (rect === undefined || rect === null) ok = rf.present('rect');
@@ -800,21 +888,22 @@ class Loader {
         return;
       }
       const idx = [...new Set(tags.map((t) => this.roomTags.indexOf(t)).filter((k) => k >= 0))].sort((a, b) => a - b);
-      rects.push({ x: x!, y: y!, w: w!, h: h!, tags: idx });
+      rects.push({ x: x!, y: y!, z, w: w!, h: h!, tags: idx });
     });
-    return this.roomSets(rects, width, height);
+    return this.roomSets(rects, width, height, floors);
   }
 
   /** Per-cell room tag sets for validated rects (shared by ASCII and Tiled maps). */
-  private roomSets(rects: RoomDef[], width: number, height: number): RoomsDef {
-
+  private roomSets(rects: RoomDef[], width: number, height: number, floors: number): RoomsDef {
+    const n = width * height * floors;
     const sets: number[][] = [[]];
     const keys = new Map<string, number>([['', 0]]);
-    const cellSet = new Array<number>(width * height).fill(0);
+    const cellSet = new Array<number>(n).fill(0);
     if (rects.length) {
-      const perCell: Set<number>[] = Array.from({ length: width * height }, () => new Set<number>());
+      const perCell: Set<number>[] = Array.from({ length: n }, () => new Set<number>());
       for (const r of rects) {
-        for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) for (const t of r.tags) perCell[y * width + x]!.add(t);
+        const base = r.z * width * height;
+        for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) for (const t of r.tags) perCell[base + y * width + x]!.add(t);
       }
       perCell.forEach((tags, i) => {
         const list = [...tags].sort((a, b) => a - b);

@@ -25,15 +25,17 @@ export interface MenuItem {
 }
 
 /**
- * Menu items for (x, y), one per `interactionsAt` entry, in its order.
+ * Menu items for (x, y) on floor `z` (default the player's), one per
+ * `interactionsAt` entry, in its order. `Go up` / `Go down` walk to the far
+ * end of the link (through it).
  * Disabled entries stay, with their reason as `hint`. Out of reach, tile
  * actions, station recipes and `take all` walk there first (`approachIntent`; a `take all`
  * from afar takes the first stack on arrival and opens the loot panel for
  * the rest), and `open` walks up to the container and opens the panel once
  * it is in reach.
  */
-export function contextMenu(world: World, x: number, y: number): MenuItem[] {
-  return world.interactionsAt(x, y).map((e): MenuItem => {
+export function contextMenu(world: World, x: number, y: number, z: number = world.player.z): MenuItem[] {
+  return world.interactionsAt(x, y, z).map((e): MenuItem => {
     const base = e.ok ? { label: e.label, disabled: false } : { label: e.label, disabled: true, hint: reasonText(e) };
     switch (e.kind) {
       case 'act':
@@ -45,18 +47,20 @@ export function contextMenu(world: World, x: number, y: number): MenuItem[] {
           run: e.inReach ? { actions: e.actions! } : { intent: world.approachIntent(e.action!)!, openLoot: true, container: e.container! },
         };
       case 'open':
-        return { ...base, run: e.inReach ? { openLoot: true, container: e.container! } : { intent: clickIntent(world, x, y), openLoot: true, container: e.container! } };
+        return { ...base, run: e.inReach ? { openLoot: true, container: e.container! } : { intent: clickIntent(world, x, y, z), openLoot: true, container: e.container! } };
+      case 'climb':
+        return { ...base, run: { intent: e.intent! } };
       case 'walk':
-        return { ...base, run: { intent: clickIntent(world, x, y) } };
+        return { ...base, run: { intent: clickIntent(world, x, y, z) } };
     }
   });
 }
 
-/** Menu title: the cell's tile label, plus its room tags (`Window · hall`); empty out of bounds. */
-export function menuTitle(world: World, x: number, y: number): string {
-  const tile = world.grid.tileAt(x, y);
+/** Menu title: the cell's tile label, plus its room tags (`Window · hall`); empty out of bounds or on an empty cell. */
+export function menuTitle(world: World, x: number, y: number, z: number = world.player.z): string {
+  const tile = world.grid.tileAt(x, y, z);
   if (!tile) return '';
-  const rooms = world.roomTagsAt(x, y).map((t) => world.def.roomTags[t]!);
+  const rooms = world.roomTagsAt(x, y, z).map((t) => world.def.roomTags[t]!);
   return [tile.label, ...rooms].join(' · ');
 }
 

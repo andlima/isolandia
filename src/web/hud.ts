@@ -69,6 +69,6 @@ export class Hud {
     if (this.el.hidden || world.tick === this.lastTick) return;
     this.lastTick = world.tick;
     const m = hudModel(world);
-    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud', '[O] game  [F5] quicksave  [F9] quickload', ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
+    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', ...(world.grid.floors > 1 ? ['[PgUp/PgDn or </>] climb'] : []), '[drag] pan  [wheel] zoom  [space] follow  [H] hud', '[O] game  [F5] quicksave  [F9] quickload', ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
   }
 }

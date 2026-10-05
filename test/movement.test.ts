@@ -90,7 +90,7 @@ test('keyboard diagonal steps do not cut corners', () => {
 
 test('goto: path computed at the next tick and followed one step per ticks_per_step', () => {
   const w = worldOf(['@....'], 2);
-  w.queueIntent({ kind: 'goto', x: 3, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 3, y: 0, z: 0 });
   assert.equal(w.player.path, null);
   const xs: number[] = [];
   for (let i = 0; i < 8; i++) {
@@ -98,21 +98,21 @@ test('goto: path computed at the next tick and followed one step per ticks_per_s
     xs.push(w.player.x);
   }
   assert.deepEqual(xs, [1, 1, 2, 2, 3, 3, 3, 3]);
-  assert.deepEqual(w.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
+  assert.deepEqual(w.lastGoto, { x: 3, y: 0, z: 0, ok: true, tick: 0 });
   assert.equal(w.player.path, null);
   assert.equal(w.pathGoal(w.player), null);
 });
 
 test('goto: exposes the path goal while active', () => {
   const w = worldOf(['@....'], 2);
-  w.queueIntent({ kind: 'goto', x: 4, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 4, y: 0, z: 0 });
   w.step();
-  assert.deepEqual(w.pathGoal(w.player), { x: 4, y: 0 });
+  assert.deepEqual(w.pathGoal(w.player), { x: 4, y: 0, z: 0 });
 });
 
 test('goto: a keyboard intent cancels the active path', () => {
   const w = worldOf(['@....', '.....'], 1);
-  w.queueIntent({ kind: 'goto', x: 4, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 4, y: 0, z: 0 });
   w.step();
   w.step();
   assert.deepEqual([w.player.x, w.player.y], [2, 0]);
@@ -126,38 +126,38 @@ test('goto: a keyboard intent cancels the active path', () => {
 
 test('goto: a new goto replaces the old path (latest intent wins)', () => {
   const w = worldOf(['@....'], 1);
-  w.queueIntent({ kind: 'goto', x: 4, y: 0 });
-  w.queueIntent({ kind: 'goto', x: 2, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 4, y: 0, z: 0 });
+  w.queueIntent({ kind: 'goto', x: 2, y: 0, z: 0 });
   for (let i = 0; i < 6; i++) w.step();
   assert.equal(w.player.x, 2);
 });
 
 test('goto: unreachable or blocked goals are dropped and recorded', () => {
   const w = worldOf(['@.#..'], 1);
-  w.queueIntent({ kind: 'goto', x: 4, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 4, y: 0, z: 0 });
   w.step();
-  assert.deepEqual(w.lastGoto, { x: 4, y: 0, ok: false, tick: 0 });
+  assert.deepEqual(w.lastGoto, { x: 4, y: 0, z: 0, ok: false, tick: 0 });
   assert.equal(w.player.path, null);
   assert.equal(w.player.x, 0);
   const prev = w.lastGoto;
-  w.queueIntent({ kind: 'goto', x: 2, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 2, y: 0, z: 0 });
   w.step();
   assert.notEqual(w.lastGoto, prev, 'each goto produces a fresh record');
-  assert.deepEqual(w.lastGoto, { x: 2, y: 0, ok: false, tick: 1 });
-  w.queueIntent({ kind: 'goto', x: 99, y: 0 });
+  assert.deepEqual(w.lastGoto, { x: 2, y: 0, z: 0, ok: false, tick: 1 });
+  w.queueIntent({ kind: 'goto', x: 99, y: 0, z: 0 });
   w.step();
   assert.equal(w.lastGoto?.ok, false);
 });
 
 test('goto: path and pending intent are part of the snapshot', () => {
   const w = worldOf(['@....'], 2);
-  w.queueIntent({ kind: 'goto', x: 3, y: 0 });
-  assert.deepEqual(w.snapshot().entities[0]!.intent, { kind: 'goto', x: 3, y: 0 });
+  w.queueIntent({ kind: 'goto', x: 3, y: 0, z: 0 });
+  assert.deepEqual(w.snapshot().entities[0]!.intent, { kind: 'goto', x: 3, y: 0, z: 0 });
   w.step();
   const snap = w.snapshot();
   assert.equal(snap.entities[0]!.intent, null);
-  assert.deepEqual(snap.entities[0]!.path, [[2, 0], [3, 0]]);
-  assert.deepEqual(snap.entities[0]!.lastGoto, { x: 3, y: 0, ok: true, tick: 0 });
+  assert.deepEqual(snap.entities[0]!.path, [[2, 0, 0], [3, 0, 0]]);
+  assert.deepEqual(snap.entities[0]!.lastGoto, { x: 3, y: 0, z: 0, ok: true, tick: 0 });
 });
 
 test('determinism: mixed goto and keyboard intents ⇒ same hash', () => {
@@ -169,10 +169,10 @@ test('determinism: mixed goto and keyboard intents ⇒ same hash', () => {
       const intents: Intent[] = [
         { kind: 'goto', x: map.width - 2, y: map.height - 2 },
         { kind: 'step', dx: -1, dy: 0 },
-        { kind: 'goto', x: 1, y: 1 },
+        { kind: 'goto', x: 1, y: 1, z: 0 },
         { kind: 'goto', x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) },
         { kind: 'step', dx: 1, dy: 1 },
-        { kind: 'goto', x: 0, y: 0 },
+        { kind: 'goto', x: 0, y: 0, z: 0 },
       ];
       const hashes: string[] = [];
       for (let t = 0; t < 600; t++) {
@@ -205,7 +205,7 @@ test('interpolation: continuous and constant-speed across consecutive steps', ()
   for (const tps of [1, 2, 3]) {
     for (const mode of ['goto', 'key'] as const) {
       const w = worldOf(['@.........'], tps);
-      if (mode === 'goto') w.queueIntent({ kind: 'goto', x: 6, y: 0 });
+      if (mode === 'goto') w.queueIntent({ kind: 'goto', x: 6, y: 0, z: 0 });
       const samples: number[] = [];
       const FRAMES = 4;
       for (let t = 0; t < 6 * tps + 3; t++) {
@@ -231,9 +231,9 @@ test('interpolation: diagonal steps lerp both axes', () => {
   const w = worldOf(['@..', '...'], 2);
   w.queueIntent({ kind: 'step', dx: 1, dy: 1 });
   w.step();
-  assert.deepEqual(renderPosition(w.player, w.tick, 0), { x: 0, y: 0 });
-  assert.deepEqual(renderPosition(w.player, w.tick, 1), { x: 0.5, y: 0.5 });
+  assert.deepEqual(renderPosition(w.player, w.tick, 0), { x: 0, y: 0, z: 0 });
+  assert.deepEqual(renderPosition(w.player, w.tick, 1), { x: 0.5, y: 0.5, z: 0 });
   w.step();
-  assert.deepEqual(renderPosition(w.player, w.tick, 1), { x: 1, y: 1 });
-  assert.deepEqual(renderPosition(w.player, w.tick + 10, 0.5), { x: 1, y: 1 });
+  assert.deepEqual(renderPosition(w.player, w.tick, 1), { x: 1, y: 1, z: 0 });
+  assert.deepEqual(renderPosition(w.player, w.tick + 10, 0.5), { x: 1, y: 1, z: 0 });
 });

@@ -235,12 +235,12 @@ test('hearing: inclusive euclidean radius, walls ignored, the source never hears
   place(b!, 5, 6); // 3-4-5
   place(c!, 6, 6); // √32 > 5
   shout(w, [[w.player, 5]]);
-  assert.deepEqual(w.noises, [{ x: 2, y: 2, radius: 5, source: w.player.id }]);
+  assert.deepEqual(w.noises, [{ x: 2, y: 2, z: 0, radius: 5, source: w.player.id }]);
   assert.deepEqual(heard(a!), [2, 2, 0]);
   assert.deepEqual(heard(b!), [2, 2, 0]);
   assert.equal(heard(c!), null);
   assert.equal(w.player.heardTick, -1);
-  assert.deepEqual(w.snapshot().entities[a!.id]!.heard, { x: 2, y: 2, tick: 0 });
+  assert.deepEqual(w.snapshot().entities[a!.id]!.heard, { x: 2, y: 2, z: 0, tick: 0 });
   assert.equal(w.snapshot().entities[c!.id]!.heard, null);
 
   // Memory persists across silent ticks; noises are cleared.
@@ -354,7 +354,7 @@ test('item use emits a noise only on success', () => {
   w.queueAction({ kind: 'use', item: 't:bell' });
   w.step();
   assert.equal(w.lastAction!.ok, true);
-  assert.deepEqual(w.noises, [{ x: 2, y: 2, radius: 5, source: w.player.id }]);
+  assert.deepEqual(w.noises, [{ x: 2, y: 2, z: 0, radius: 5, source: w.player.id }]);
   assert.deepEqual(heard(a!), [2, 2, 2]);
 });
 

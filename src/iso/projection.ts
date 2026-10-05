@@ -15,6 +15,9 @@ const HALF_H = TILE_H / 2;
 /** Height of a generated raised block (px, unscaled); its image is 64×64. */
 export const BLOCK_H = 32;
 
+/** Height of one floor (px, unscaled): floor `z` is drawn raised by `z × FLOOR_H`, on top of the walls below it. */
+export const FLOOR_H = BLOCK_H;
+
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 3;
 
@@ -84,6 +87,36 @@ export function pickTile(
 ): Point {
   const top = screenToTile(sx, sy + blockH * cam.zoom, cam);
   return isRaised(top.x, top.y) ? top : screenToTile(sx, sy, cam);
+}
+
+/** The camera for drawing (or picking on) floor `z`: shifted up by `z × FLOOR_H` iso px. */
+export function floorCamera(cam: CameraState, z: number): CameraState {
+  return z === 0 ? cam : { ...cam, offsetY: cam.offsetY - z * FLOOR_H * cam.zoom };
+}
+
+/**
+ * Cell under the cursor on a stack of floors: `pickTile` on the view floor
+ * (with its offset); when that cell is empty or outside the map, the floors
+ * below are tried in order, so a click from a balcony reaches the street.
+ * Falls back to the view floor's pick when every floor misses.
+ */
+export function pickCell(
+  sx: number,
+  sy: number,
+  cam: CameraState,
+  viewFloor: number,
+  isRaised: (x: number, y: number, z: number) => boolean,
+  isFilled: (x: number, y: number, z: number) => boolean,
+  blockH = BLOCK_H,
+): Point & { z: number } {
+  let first: (Point & { z: number }) | null = null;
+  for (let z = viewFloor; z >= 0; z--) {
+    const t = pickTile(sx, sy, floorCamera(cam, z), (x, y) => isRaised(x, y, z), blockH);
+    const hit = { x: t.x, y: t.y, z };
+    first ??= hit;
+    if (isFilled(t.x, t.y, z)) return hit;
+  }
+  return first!;
 }
 
 /** Iso point where a tile sprite's anchor goes: the diamond's bottom vertex. */

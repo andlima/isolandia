@@ -87,9 +87,10 @@ test('tiled: orthogonal map with an embedded tileset', () => {
   const [f, w] = [tile(def, 't:floor'), tile(def, 't:wall')];
   assert.equal(m.width, 3);
   assert.equal(m.height, 2);
+  assert.equal(m.floors, 1);
   assert.deepEqual(m.cells, [w, f, w, w, f, w]);
   assert.deepEqual(m.facings, [null, null, null, null, null, 'e']);
-  assert.deepEqual(m.playerStart, { x: 1, y: 0 });
+  assert.deepEqual(m.playerStart, { x: 1, y: 0, z: 0 });
   assert.deepEqual(m.spawns, []);
   assert.deepEqual(m.rooms.rects, []);
 });
@@ -104,8 +105,8 @@ test('tiled: isometric object positions are in tile-height units on both axes', 
     }),
   );
   const m = def.maps[0]!;
-  assert.deepEqual(m.playerStart, { x: 2, y: 1 });
-  assert.deepEqual(m.rooms.rects, [{ x: 1, y: 0, w: 2, h: 2, tags: [0] }]);
+  assert.deepEqual(m.playerStart, { x: 2, y: 1, z: 0 });
+  assert.deepEqual(m.rooms.rects, [{ x: 1, y: 0, z: 0, w: 2, h: 2, tags: [0] }]);
   assert.deepEqual(def.roomTags, ['den']);
 });
 
@@ -156,8 +157,8 @@ test('tiled: objects match by type or class; untyped objects and hidden object l
       ],
     }),
   );
-  assert.deepEqual(def.maps[0]!.playerStart, { x: 1, y: 0 });
-  assert.deepEqual(def.maps[0]!.spawns, [{ x: 0, y: 1, archetype: def.ids.archetypes['t:rock'] }]);
+  assert.deepEqual(def.maps[0]!.playerStart, { x: 1, y: 0, z: 0 });
+  assert.deepEqual(def.maps[0]!.spawns, [{ x: 0, y: 1, z: 0, archetype: def.ids.archetypes['t:rock'] }]);
 });
 
 test('tiled: spawn order is row-major then object id, whatever the file order', () => {
@@ -175,8 +176,8 @@ test('tiled: rooms take comma- or space-separated tags', () => {
   const def = load(tmj({ layers: [ground([1, 1, 1, 1, 1, 1]), objects([PLAYER, room(2, 'kitchen, den', 0), room(3, 'den  attic', 2)])] }));
   assert.deepEqual(def.roomTags, ['kitchen', 'den', 'attic']);
   assert.deepEqual(def.maps[0]!.rooms.rects, [
-    { x: 0, y: 0, w: 1, h: 2, tags: [0, 1] },
-    { x: 2, y: 0, w: 1, h: 2, tags: [1, 2] },
+    { x: 0, y: 0, z: 0, w: 1, h: 2, tags: [0, 1] },
+    { x: 2, y: 0, z: 0, w: 1, h: 2, tags: [1, 2] },
   ]);
 });
 
@@ -240,7 +241,6 @@ test('tiled errors: tile layers', () => {
   expectError(errorsOf(tmj({ layers: [ground('AAAA', { encoding: 'base64', compression: 'zlib' }), objects([PLAYER])] })), T, 'layers[0].compression', /'zlib'.*Tile Layer Format/);
   expectError(errorsOf(tmj({ layers: [ground([1, 1, 1, 1, 0x80000002, 1]), objects([PLAYER])] })), T, 'layers[0].data[4]', /flipped or rotated tile .*\(cell 1, 1\).*'facing'/);
   expectError(errorsOf(tmj({ layers: [ground([1, 1, 1, 1, 1, 9]), objects([PLAYER])] })), T, 'layers[0].data[5]', /gid 9 is outside every tileset \(cell 2, 1\)/);
-  expectError(errorsOf(tmj({ layers: [ground([1, 0, 1, 1, 1, 0]), objects([PLAYER])] })), T, 'layers', /2 cell\(s\) are empty on every visible tile layer: \(1, 0\), \(2, 1\)/);
   expectError(errorsOf(tmj({ layers: [ground([1, 1, 1]), objects([PLAYER])] })), T, 'layers[0].data', /3 cells, expected 6/);
 });
 

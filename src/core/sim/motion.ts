@@ -3,7 +3,7 @@ import type { Entity } from './world.ts';
 
 /**
  * Continuous render position of an entity, in tile units (the tile's origin
- * corner, like `x`/`y`), for a frame drawn `alpha` ∈ [0, 1) of the way from
+ * corner, like `x`/`y`, and the floor `z`), for a frame drawn `alpha` ∈ [0, 1) of the way from
  * world tick `tick` to the next.
  *
  * A step taken while processing tick T sets `stepTick = T + 1` and lasts
@@ -13,13 +13,13 @@ import type { Entity } from './world.ts';
  * so an entity walking a path or holding a key moves at constant speed.
  */
 export function renderPosition(
-  e: Pick<Entity, 'x' | 'y' | 'fromX' | 'fromY' | 'stepTick' | 'archetype'>,
+  e: Pick<Entity, 'x' | 'y' | 'z' | 'fromX' | 'fromY' | 'fromZ' | 'stepTick' | 'archetype'>,
   tick: number,
   alpha: number,
-): { x: number; y: number } {
+): { x: number; y: number; z: number } {
   const t = (tick - e.stepTick + alpha) / e.archetype.ticksPerStep;
   const p = t <= 0 ? 0 : t >= 1 ? 1 : t;
-  return { x: e.fromX + (e.x - e.fromX) * p, y: e.fromY + (e.y - e.fromY) * p };
+  return { x: e.fromX + (e.x - e.fromX) * p, y: e.fromY + (e.y - e.fromY) * p, z: e.fromZ + (e.z - e.fromZ) * p };
 }
 
 /**

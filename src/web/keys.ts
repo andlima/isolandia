@@ -50,8 +50,19 @@ export function heldDirection(held: Iterable<string>): { dx: D; dy: D } | null {
   return dx === 0 && dy === 0 ? null : { dx, dy };
 }
 
+/**
+ * Climb keys, by `KeyboardEvent.key` (so `<` / `>` follow the keyboard
+ * layout): PageUp and `<` go up a floor, PageDown and `>` go down.
+ */
+export const CLIMB_KEYS: Readonly<Record<string, 1 | -1>> = { PageUp: 1, '<': 1, PageDown: -1, '>': -1 };
+
+/** Floor direction of a climb key (`KeyboardEvent.key`), or 0. */
+export function climbKey(key: string): 1 | -1 | 0 {
+  return CLIMB_KEYS[key] ?? 0;
+}
+
 /** Keys whose browser default (focus change, scrolling, page reload) the game suppresses. */
-export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F5', 'F9']);
+export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F5', 'F9', 'PageUp', 'PageDown']);
 
 export function suppressesDefault(code: string): boolean {
   return SUPPRESSED_KEYS.has(code);

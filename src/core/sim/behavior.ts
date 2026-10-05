@@ -37,9 +37,12 @@ export interface ThinkEnv {
   readonly ctx: ExprContext;
 }
 
-type Point = { x: number; y: number };
+type Point = { x: number; y: number; z: number };
 
 const chebyshev = (ax: number, ay: number, bx: number, by: number) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+
+/** Whether (bx, by, bz) is the entity's cell or one of the 8 around it on its floor. */
+const near = (e: Entity, bx: number, by: number, bz: number) => e.z === bz && chebyshev(e.x, e.y, bx, by) <= 1;
 
 /** Run one entity's behavior for this tick (the entity must have one). */
 export function think(e: Entity, env: ThinkEnv): void {
@@ -71,9 +74,11 @@ function transition(e: Entity, s: BehaviorStateDef, env: ThinkEnv): number {
 
 /** `done` arrival test: on the home cell (`home`); adjacent to or on the heard cell, or never heard (`investigate`). */
 function arrived(e: Entity, s: BehaviorStateDef): boolean {
-  if (s.activity === 'investigate') return e.heardTick < 0 || chebyshev(e.x, e.y, e.heardX, e.heardY) <= 1;
-  return e.x === e.homeX && e.y === e.homeY;
+  if (s.activity === 'investigate') return e.heardTick < 0 || near(e, e.heardX, e.heardY, e.heardZ);
+  return atHome(e);
 }
+
+const atHome = (e: Entity) => e.x === e.homeX && e.y === e.homeY && e.z === e.homeZ;
 
 function activity(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   switch (s.activity) {
@@ -100,7 +105,7 @@ function wander(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   const k = Math.floor(env.rng.next() * WANDER_CHOICES);
   if (k >= DIRS.length) return;
   const [dx, dy] = DIRS[k]!;
-  if (!env.grid.canStep(e.x, e.y, dx, dy)) return;
+  if (!env.grid.canStep(e.x, e.y, dx, dy, e.z)) return;
   if (s.radius !== null && chebyshev(e.x + dx, e.y + dy, e.homeX, e.homeY) > s.radius) return;
   e.intent = STEPS[k]!;
 }
@@ -109,15 +114,17 @@ function pursue(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   const t = s.target!(env.ctx) as Point;
   const tx = t.x;
   const ty = t.y;
-  if (chebyshev(e.x, e.y, tx, ty) <= 1) {
+  const tz = t.z;
+  if (near(e, tx, ty, tz)) {
     e.path = null;
     return;
   }
-  const due = e.planTick < 0 || (env.ctx.tick - e.planTick >= s.repath && (!e.path || tx !== e.planX || ty !== e.planY));
+  const due = e.planTick < 0 || (env.ctx.tick - e.planTick >= s.repath && (!e.path || tx !== e.planX || ty !== e.planY || tz !== e.planZ));
   if (!due) return;
-  e.intent = { kind: 'goto', x: tx, y: ty, adjacent: true };
+  e.intent = { kind: 'goto', x: tx, y: ty, z: tz, adjacent: true };
   e.planX = tx;
   e.planY = ty;
+  e.planZ = tz;
   e.planTick = env.ctx.tick;
 }
 
@@ -130,7 +137,7 @@ function flee(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   let pick = -1;
   for (let k = 0; k < DIRS.length; k++) {
     const [dx, dy] = DIRS[k]!;
-    if (!env.grid.canStep(e.x, e.y, dx, dy)) continue;
+    if (!env.grid.canStep(e.x, e.y, dx, dy, e.z)) continue;
     const d = (ox + dx) * (ox + dx) + (oy + dy) * (oy + dy);
     if (d > best) {
       best = d;
@@ -144,10 +151,11 @@ function flee(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
 function home(e: Entity, env: ThinkEnv): void {
   if (e.planTick >= 0) return;
   e.planTick = env.ctx.tick;
-  if (e.x === e.homeX && e.y === e.homeY) return;
-  e.intent = { kind: 'goto', x: e.homeX, y: e.homeY };
+  if (atHome(e)) return;
+  e.intent = { kind: 'goto', x: e.homeX, y: e.homeY, z: e.homeZ };
   e.planX = e.homeX;
   e.planY = e.homeY;
+  e.planZ = e.homeZ;
 }
 
 /**
@@ -160,19 +168,22 @@ function investigate(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   const tick = env.ctx.tick;
   const hx = e.heardX;
   const hy = e.heardY;
-  if (e.heardTick < 0 || chebyshev(e.x, e.y, hx, hy) <= 1) {
+  const hz = e.heardZ;
+  if (e.heardTick < 0 || near(e, hx, hy, hz)) {
     if (e.heardTick >= 0) e.path = null;
     if (e.planTick < 0) {
       e.planTick = tick;
       e.planX = -1;
       e.planY = -1;
+      e.planZ = -1;
     }
     return;
   }
-  const due = e.planTick < 0 || e.planX < 0 || (tick - e.planTick >= s.repath && (hx !== e.planX || hy !== e.planY));
+  const due = e.planTick < 0 || e.planX < 0 || (tick - e.planTick >= s.repath && (hx !== e.planX || hy !== e.planY || hz !== e.planZ));
   if (!due) return;
-  e.intent = { kind: 'goto', x: hx, y: hy, adjacent: true };
+  e.intent = { kind: 'goto', x: hx, y: hy, z: hz, adjacent: true };
   e.planX = hx;
   e.planY = hy;
+  e.planZ = hz;
   e.planTick = tick;
 }

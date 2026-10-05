@@ -5,7 +5,7 @@
  * container creation and loot rolls; nothing is rolled or re-clamped.
  */
 
-import type { ArchetypeDef, Definition } from '../definition.ts';
+import { EMPTY_TILE, type ArchetypeDef, type Definition } from '../definition.ts';
 import { FACINGS, type Facing } from '../facing.ts';
 import { nearMiss } from '../expr/index.ts';
 import type { Activity } from './activity.ts';
@@ -22,10 +22,10 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
-/** Every save `version` that `World.restore` reads. */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [SAVE_VERSION];
+/** Every save `version` that `World.restore` reads (version 1 has no floors: every `z` is 0). */
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [1, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -111,6 +111,7 @@ class Checker {
     readonly def: Definition,
     readonly width: number,
     readonly height: number,
+    readonly floors: number,
   ) {}
 
   err(path: string, msg: string): null {
@@ -179,19 +180,27 @@ class Checker {
     }
   }
 
-  /** An in-bounds cell (`[x, y]` pair or `x`/`y` fields), or null. */
-  cell(x: unknown, y: unknown, path: string): [number, number] | null {
+  /** An in-bounds cell (`[x, y, z]` triple or `x`/`y`/`z` fields), or null. */
+  cell(x: unknown, y: unknown, z: unknown, path: string): [number, number, number] | null {
     const cx = this.int(x, `${path}.x`);
     const cy = this.int(y, `${path}.y`);
-    if (cx === null || cy === null) return null;
-    if (cx < 0 || cy < 0 || cx >= this.width || cy >= this.height) return this.err(path, `cell (${cx}, ${cy}) is out of bounds (map is ${this.width}×${this.height})`);
-    return [cx, cy];
+    const cz = this.int(z, `${path}.z`);
+    if (cx === null || cy === null || cz === null) return null;
+    if (cx < 0 || cy < 0 || cz < 0 || cx >= this.width || cy >= this.height || cz >= this.floors) {
+      return this.err(path, `cell (${cx}, ${cy}, ${cz}) is out of bounds (map is ${this.width}×${this.height}, ${this.floors} floor${this.floors === 1 ? '' : 's'})`);
+    }
+    return [cx, cy, cz];
   }
 
-  /** A `[x, y]` pair inside the map. */
-  pair(v: unknown, path: string): [number, number] | null {
-    if (!Array.isArray(v) || v.length !== 2) return this.err(path, `expected [x, y], got ${show(v)}`);
-    return this.cell(v[0], v[1], path);
+  /** A `[x, y, z]` triple inside the map. */
+  triple(v: unknown, path: string): [number, number, number] | null {
+    if (!Array.isArray(v) || v.length !== 3) return this.err(path, `expected [x, y, z], got ${show(v)}`);
+    return this.cell(v[0], v[1], v[2], path);
+  }
+
+  /** Cell index of an in-bounds cell. */
+  index([x, y, z]: readonly [number, number, number]): number {
+    return (z * this.height + y) * this.width + x;
   }
 
   /** Optional field: absent is fine, otherwise checked by `check`. */
@@ -210,6 +219,7 @@ class Checker {
     const xy = () => {
       this.opt(o, 'x', path, (c, q) => this.int(c, q));
       this.opt(o, 'y', path, (c, q) => this.int(c, q));
+      this.opt(o, 'z', path, (c, q) => this.int(c, q));
     };
     switch (kind as Action['kind']) {
       case 'take':
@@ -248,6 +258,7 @@ class Checker {
     } else if (o['kind'] === 'goto') {
       this.int(o['x'], `${path}.x`);
       this.int(o['y'], `${path}.y`);
+      this.opt(o, 'z', path, (c, q) => this.int(c, q));
       this.opt(o, 'adjacent', path, (c, q) => this.bool(c, q));
       if (o['then'] !== undefined) {
         if (!isPlayer) this.err(`${path}.then`, `only the player's goto may carry 'then'`);
@@ -291,9 +302,11 @@ interface EntityPlan {
   archetype: ArchetypeDef;
   x: number;
   y: number;
+  z: number;
   facing: Facing;
   fromX: number;
   fromY: number;
+  fromZ: number;
   stepTick: number;
   moveCooldown: number;
   path: Int32Array | null;
@@ -302,15 +315,16 @@ interface EntityPlan {
   statuses: number[];
   intent: Intent | null;
   lastGoto: GotoRecord | null;
-  homeX: number;
-  homeY: number;
+  home: [number, number, number];
   driven: boolean;
   /** Behavior state index, or -1 for the initial state. */
   state: number;
   stateTick: number;
-  plan: [number, number, number] | null;
-  heard: [number, number, number] | null;
-  activity: { kind: 'act' | 'use' | 'craft'; index: number; x: number; y: number; startTick: number; endTick: number } | null;
+  /** [x, y, z, tick]. */
+  plan: [number, number, number, number] | null;
+  /** [x, y, z, tick]. */
+  heard: [number, number, number, number] | null;
+  activity: { kind: 'act' | 'use' | 'craft'; index: number; x: number; y: number; z: number; startTick: number; endTick: number } | null;
   then: Action | null;
 }
 
@@ -319,6 +333,7 @@ interface ContainerPlan {
   kind: ContainerKind;
   x: number;
   y: number;
+  z: number;
   owner: number;
   stacks: [number, number][];
 }
@@ -335,7 +350,7 @@ export function restoreWorld(def: Definition, save: unknown): RestoreResult {
 
 function restore(def: Definition, raw: unknown): RestoreResult {
   const map = def.maps[def.start.map]!;
-  const c = new Checker(def, map.width, map.height);
+  const c = new Checker(def, map.width, map.height, map.floors);
   const root = c.obj(raw, 'save');
   if (!root) return { ok: false, errors: c.errors };
 
@@ -366,19 +381,22 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       headerOk = false;
     }
   }
+  const v1 = root['version'] === 1;
   const m = c.obj(root['map'], 'map');
   if (m) {
     const id = c.str(m['id'], 'map.id');
     const w = c.int(m['width'], 'map.width');
     const h = c.int(m['height'], 'map.height');
-    if (id !== null && w !== null && h !== null && (id !== map.id || w !== map.width || h !== map.height)) {
-      c.err('map', `the save is for map '${id}' (${w}×${h}) but the start map is '${map.id}' (${map.width}×${map.height})`);
+    const f = v1 ? 1 : c.int(m['floors'], 'map.floors', 1);
+    const size = (ww: number, hh: number, ff: number) => `${ww}×${hh}${ff > 1 ? `, ${ff} floors` : ''}`;
+    if (id !== null && w !== null && h !== null && f !== null && (id !== map.id || w !== map.width || h !== map.height || f !== map.floors)) {
+      c.err('map', `the save is for map '${id}' (${size(w, h, f)}) but the start map is '${map.id}' (${size(map.width, map.height, map.floors)})`);
       headerOk = false;
     }
   }
   // Another format, version, pack list or map: the state's ids and cells would only add noise.
   if (!headerOk) return { ok: false, errors: c.errors };
-  const s = c.obj(root['state'], 'state');
+  const s = c.obj(v1 ? upgradeV1(root['state']) : root['state'], 'state');
   if (!s) return { ok: false, errors: c.errors };
 
   // ── World fields ─────────────────────────────────────────────────────────
@@ -402,11 +420,12 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   const tileAt = new Map<number, number>();
   c.arr(s['tiles'], 'state.tiles')?.forEach((t, i) => {
     const path = `state.tiles[${i}]`;
-    if (!Array.isArray(t) || t.length !== 3) return c.err(path, `expected [x, y, tile id], got ${show(t)}`);
-    const cell = c.cell(t[0], t[1], path);
-    const tile = c.id('tile', t[2], `${path}[2]`);
+    if (!Array.isArray(t) || t.length !== 4) return c.err(path, `expected [x, y, z, tile id], got ${show(t)}`);
+    const cell = c.cell(t[0], t[1], t[2], path);
+    const tile = c.id('tile', t[3], `${path}[3]`);
     if (cell && tile !== null) {
-      const at = cell[1] * map.width + cell[0];
+      const at = c.index(cell);
+      if (map.cells[at] === EMPTY_TILE) return c.err(path, `cell (${cell.join(', ')}) is empty in the map; a changed tile cannot be placed there`);
       tiles.push([at, tile]);
       tileAt.set(at, tile);
     }
@@ -441,6 +460,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     }
     let x = -1;
     let y = -1;
+    let z = -1;
     let owner = -1;
     let ok = true;
     if (kind === 'inventory') {
@@ -454,12 +474,13 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       owner = ow ?? -1;
       ok = c.errors.length === n;
     } else {
-      const cell = c.pair(o['cell'], `${path}.cell`);
+      const cell = c.triple(o['cell'], `${path}.cell`);
       if (cell) {
-        [x, y] = cell;
-        const at = y * map.width + x;
-        const tile = def.tiles[tileAt.get(at) ?? map.cells[at]!]!;
-        if (kind === 'tile' && !tile.container) ok = !!c.err(`${path}.cell`, `tile '${tile.id}' at (${x}, ${y}) holds no container`);
+        [x, y, z] = cell;
+        const at = c.index(cell);
+        const t = tileAt.get(at) ?? map.cells[at]!;
+        const tile = t === EMPTY_TILE ? undefined : def.tiles[t]!;
+        if (kind === 'tile' && !tile?.container) ok = !!c.err(`${path}.cell`, `${tile ? `tile '${tile.id}'` : 'the empty cell'} at (${x}, ${y}, ${z}) holds no container`);
       } else ok = false;
     }
     const stacks: [number, number][] = [];
@@ -471,7 +492,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       if (item !== null && stacks.some((x) => x[0] === item)) c.err(`${sp}[0]`, `item '${def.items[item]!.id}' has more than one stack`);
       else if (item !== null && count !== null) stacks.push([item, count]);
     });
-    if (ok && id !== null) containers.push({ id, kind, x, y, owner, stacks });
+    if (ok && id !== null) containers.push({ id, kind, x, y, z, owner, stacks });
   });
   plans.forEach((p, i) => {
     if (p?.archetype.inventory && !owners.has(i)) c.err(`state.entities[${i}]`, `archetype '${p.archetype.id}' has an inventory, but the save has no inventory container for entity ${i}`);
@@ -491,9 +512,9 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     for (const [at, tile] of tiles) w.grid.setTile(at, tile);
     const invs = new Map<number, Container>();
     for (const p of containers) {
-      const capacity =
-        p.kind === 'tile' ? def.tiles[w.grid.cells[p.y * map.width + p.x]!]!.container!.capacity : p.kind === 'ground' ? Infinity : entities[p.owner]!.archetype.inventory!.capacity;
-      const box = createContainer(p.id, p.kind, capacity, p.kind === 'inventory' ? { owner: p.owner } : { x: p.x, y: p.y, ...(p.kind === 'tile' ? { tile: w.grid.cells[p.y * map.width + p.x]! } : {}) });
+      const cellTile = p.kind === 'tile' ? w.grid.cells[w.grid.index(p.x, p.y, p.z)]! : -1;
+      const capacity = p.kind === 'tile' ? def.tiles[cellTile]!.container!.capacity : p.kind === 'ground' ? Infinity : entities[p.owner]!.archetype.inventory!.capacity;
+      const box = createContainer(p.id, p.kind, capacity, p.kind === 'inventory' ? { owner: p.owner } : { x: p.x, y: p.y, z: p.z, ...(p.kind === 'tile' ? { tile: cellTile } : {}) });
       for (const [item, count] of p.stacks) {
         box.stacks.push({ item, count });
         box.load += host.itemWeights[item]! * count;
@@ -502,10 +523,11 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       host.container(box);
     }
     entities.forEach((p, i) => {
-      const e = host.entity(p.archetype, p.x, p.y, p.homeX, p.homeY, invs.get(i) ?? null, p.driven);
+      const e = host.entity(p.archetype, p.x, p.y, p.z, p.home, invs.get(i) ?? null, p.driven);
       e.facing = p.facing;
       e.fromX = p.fromX;
       e.fromY = p.fromY;
+      e.fromZ = p.fromZ;
       e.stepTick = p.stepTick;
       e.moveCooldown = p.moveCooldown;
       e.path = p.path;
@@ -518,12 +540,12 @@ function restore(def: Definition, raw: unknown): RestoreResult {
         e.state = p.state;
         e.stateTick = p.stateTick;
       }
-      if (e.behavior && p.plan) [e.planX, e.planY, e.planTick] = p.plan;
-      if (p.heard) [e.heardX, e.heardY, e.heardTick] = p.heard;
+      if (e.behavior && p.plan) [e.planX, e.planY, e.planZ, e.planTick] = p.plan;
+      if (p.heard) [e.heardX, e.heardY, e.heardZ, e.heardTick] = p.heard;
       if (p.activity) {
         const a = p.activity;
         const source = a.kind === 'act' ? host.actionSources[a.index]! : a.kind === 'craft' ? host.recipeSources[a.index]! : host.useSources[a.index]!;
-        const activity: Activity = { source, action: source.action, x: a.x, y: a.y, startTick: a.startTick, endTick: a.endTick };
+        const activity: Activity = { source, action: source.action, x: a.x, y: a.y, z: a.z, startTick: a.startTick, endTick: a.endTick };
         e.activity = activity;
       }
       e.then = p.then;
@@ -546,9 +568,9 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
   if (id !== null && id !== i) c.err(`${path}.id`, `entity ids must be 0..n-1 in order: expected ${i}, got ${id}`);
   const ai = c.id('archetype', o['archetype'], `${path}.archetype`);
   const archetype = ai === null ? null : def.archetypes[ai]!;
-  const pos = c.cell(o['x'], o['y'], path);
+  const pos = c.cell(o['x'], o['y'], o['z'], path);
   const facing = FACINGS.includes(o['facing'] as Facing) ? (o['facing'] as Facing) : c.err(`${path}.facing`, `expected one of ${FACINGS.join(', ')}, got ${show(o['facing'])}`);
-  const from = c.cell(o['fromX'], o['fromY'], `${path}.from`);
+  const from = c.cell(o['fromX'], o['fromY'], o['fromZ'], `${path}.from`);
   const stepTick = c.int(o['stepTick'], `${path}.stepTick`, 0);
   const moveCooldown = c.int(o['moveCooldown'], `${path}.moveCooldown`, 0);
 
@@ -558,8 +580,8 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     if (cells) {
       const out: number[] = [];
       cells.forEach((p, k) => {
-        const cell = c.pair(p, `${path}.path[${k}]`);
-        if (cell) out.push(cell[1] * c.width + cell[0]);
+        const cell = c.triple(p, `${path}.path[${k}]`);
+        if (cell) out.push(c.index(cell));
       });
       path_ = out.length > 0 ? Int32Array.from(out) : null;
     }
@@ -597,17 +619,17 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     const g = c.obj(o['lastGoto'], `${path}.lastGoto`);
     if (g) {
       const lp = `${path}.lastGoto`;
-      const ok = [c.int(g['x'], `${lp}.x`), c.int(g['y'], `${lp}.y`), c.bool(g['ok'], `${lp}.ok`), c.int(g['tick'], `${lp}.tick`, 0)];
+      const ok = [c.int(g['x'], `${lp}.x`), c.int(g['y'], `${lp}.y`), c.int(g['z'], `${lp}.z`), c.bool(g['ok'], `${lp}.ok`), c.int(g['tick'], `${lp}.tick`, 0)];
       if (ok.every((x) => x !== null)) lastGoto = g as unknown as GotoRecord;
     }
   }
-  const home = c.pair(o['home'], `${path}.home`);
+  const home = c.triple(o['home'], `${path}.home`);
 
   // Behavior: the player is never driven.
   const behavior = archetype && !isPlayer && archetype.behavior !== null ? def.behaviors[archetype.behavior]! : null;
   let state = -1;
   let stateTick = 0;
-  let plan: [number, number, number] | null = null;
+  let plan: [number, number, number, number] | null = null;
   const b = o['behavior'];
   if (b !== null) {
     const bo = c.obj(b, `${path}.behavior`);
@@ -626,24 +648,24 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
       stateTick = c.int(bo['since'], `${bp}.since`, 0) ?? 0;
       if (bo['plan'] !== null) {
         const pl = bo['plan'];
-        if (!Array.isArray(pl) || pl.length !== 3) c.err(`${bp}.plan`, `expected [x, y, tick], got ${show(pl)}`);
+        if (!Array.isArray(pl) || pl.length !== 4) c.err(`${bp}.plan`, `expected [x, y, z, tick], got ${show(pl)}`);
         else {
-          const ptick = c.int(pl[2], `${bp}.plan[2]`, 0);
-          // `investigate` marks a state planned without a goto as (-1, -1).
-          const cell = pl[0] === -1 && pl[1] === -1 ? ([-1, -1] as [number, number]) : c.cell(pl[0], pl[1], `${bp}.plan`);
-          if (cell && ptick !== null) plan = [cell[0], cell[1], ptick];
+          const ptick = c.int(pl[3], `${bp}.plan[3]`, 0);
+          // `investigate` marks a state planned without a goto as (-1, -1, -1).
+          const cell = pl[0] === -1 && pl[1] === -1 && pl[2] === -1 ? ([-1, -1, -1] as [number, number, number]) : c.cell(pl[0], pl[1], pl[2], `${bp}.plan`);
+          if (cell && ptick !== null) plan = [cell[0], cell[1], cell[2], ptick];
         }
       }
     }
   } else if (behavior) c.warn(`${path}.behavior`, `archetype '${archetype!.id}' now has behavior '${behavior.id}'; it starts in its initial state`);
 
-  let heard: [number, number, number] | null = null;
+  let heard: [number, number, number, number] | null = null;
   if (o['heard'] !== null) {
     const h = c.obj(o['heard'], `${path}.heard`);
     if (h) {
-      const cell = c.cell(h['x'], h['y'], `${path}.heard`);
+      const cell = c.cell(h['x'], h['y'], h['z'], `${path}.heard`);
       const t = c.int(h['tick'], `${path}.heard.tick`, 0);
-      if (cell && t !== null) heard = [cell[0], cell[1], t];
+      if (cell && t !== null) heard = [cell[0], cell[1], cell[2], t];
     }
   }
 
@@ -660,11 +682,11 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
         index = c.id('item', a['item'], `${ap}.item`);
         if (index !== null && !def.items[index]!.use) index = c.err(`${ap}.item`, `item '${def.items[index]!.id}' has no use`);
       } else c.err(`${ap}.kind`, `expected 'act', 'use' or 'craft', got ${show(kind)}`);
-      const cell = c.cell(a['x'], a['y'], ap);
+      const cell = c.cell(a['x'], a['y'], a['z'], ap);
       const start = c.int(a['startTick'], `${ap}.startTick`, 0);
       const end = c.int(a['endTick'], `${ap}.endTick`, 0);
       if (start !== null && end !== null && end <= start) c.err(`${ap}.endTick`, `endTick ${end} must be after startTick ${start}`);
-      if (index !== null && cell && start !== null && end !== null) activity = { kind: kind as 'act' | 'use' | 'craft', index, x: cell[0], y: cell[1], startTick: start, endTick: end };
+      if (index !== null && cell && start !== null && end !== null) activity = { kind: kind as 'act' | 'use' | 'craft', index, x: cell[0], y: cell[1], z: cell[2], startTick: start, endTick: end };
     }
   }
 
@@ -679,9 +701,11 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     archetype,
     x: pos[0],
     y: pos[1],
+    z: pos[2],
     facing,
     fromX: from[0],
     fromY: from[1],
+    fromZ: from[2],
     stepTick,
     moveCooldown,
     path: path_,
@@ -689,8 +713,7 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     statuses,
     intent,
     lastGoto,
-    homeX: home[0],
-    homeY: home[1],
+    home,
     driven: behavior !== null,
     state,
     stateTick,
@@ -699,4 +722,35 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     activity,
     then,
   };
+}
+
+/**
+ * A version 1 `state` in the version 2 shape: every cell gains `z = 0`.
+ * Only well-formed parts are rewritten; anything else is left for the
+ * checks to report.
+ */
+function upgradeV1(state: unknown): unknown {
+  if (!isObj(state)) return state;
+  const pair = (v: unknown) => (Array.isArray(v) && v.length === 2 ? [v[0], v[1], 0] : v);
+  const xy = (v: unknown) => (isObj(v) && v['z'] === undefined ? { ...v, z: 0 } : v);
+  const out: Obj = { ...state };
+  if (Array.isArray(state['tiles'])) out['tiles'] = state['tiles'].map((t: unknown) => (Array.isArray(t) && t.length === 3 ? [t[0], t[1], 0, t[2]] : t));
+  if (Array.isArray(state['containers'])) out['containers'] = state['containers'].map((v: unknown) => (isObj(v) && v['cell'] !== undefined ? { ...v, cell: pair(v['cell']) } : v));
+  if (Array.isArray(state['entities'])) {
+    out['entities'] = state['entities'].map((v: unknown) => {
+      if (!isObj(v)) return v;
+      const e: Obj = { ...v, z: 0, fromZ: 0, home: pair(v['home']) };
+      if (Array.isArray(v['path'])) e['path'] = v['path'].map(pair);
+      if (isObj(v['lastGoto'])) e['lastGoto'] = xy(v['lastGoto']);
+      if (isObj(v['heard'])) e['heard'] = xy(v['heard']);
+      if (isObj(v['activity'])) e['activity'] = xy(v['activity']);
+      const b = v['behavior'];
+      if (isObj(b) && Array.isArray(b['plan']) && b['plan'].length === 3) {
+        const [x, y, tick] = b['plan'] as unknown[];
+        e['behavior'] = { ...b, plan: [x, y, x === -1 && y === -1 ? -1 : 0, tick] };
+      }
+      return e;
+    });
+  }
+  return out;
 }

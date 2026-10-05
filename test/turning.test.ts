@@ -115,7 +115,7 @@ test('a blocked step still turns to face the wall, without moving', () => {
 
 test('a goto path turns before its first step and at each bend', () => {
   const w = worldOf(['#####', '#@..#', '###.#', '###.#', '#####'], 1, 1);
-  w.queueIntent({ kind: 'goto', x: 3, y: 3 });
+  w.queueIntent({ kind: 'goto', x: 3, y: 3, z: 0 });
   const out = trace(w, w.player, 9);
   assert.deepEqual(out, ['se 1,1', 'e 1,1', 'e 2,1', 'e 3,1', 'se 3,1', 's 3,1', 's 3,2', 's 3,3', 's 3,3']);
   assert.equal(w.player.path, null);
@@ -124,11 +124,11 @@ test('a goto path turns before its first step and at each bend', () => {
 test('a path stays pending while turning', () => {
   const w = worldOf(OPEN, 1, 1);
   w.player.facing = 'n';
-  w.queueIntent({ kind: 'goto', x: 3, y: 5 });
+  w.queueIntent({ kind: 'goto', x: 3, y: 5, z: 0 });
   w.step();
   assert.deepEqual(w.snapshot().entities[0]!.path, [
-    [3, 4],
-    [3, 5],
+    [3, 4, 0],
+    [3, 5, 0],
   ]);
 });
 
