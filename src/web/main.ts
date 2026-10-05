@@ -15,6 +15,7 @@ import { GamePanel } from './game-panel.ts';
 import { Hud } from './hud.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
+import { PerfMeter } from './perf.ts';
 import { ContextMenu } from './menu-dom.ts';
 import { assetUrls, buildPackSources } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
@@ -130,10 +131,13 @@ async function main(): Promise<void> {
     session.menu.open(t.x, t.y, t.z, sx, sy);
   };
 
+  const perf = new PerfMeter();
   const loop = new FixedTickLoop(
     () => {
       input.beforeTick();
+      const t0 = performance.now();
       session.world.step();
+      perf.tick(performance.now() - t0);
     },
     { ticksPerSecond: def.ticksPerSecond, maxTicksPerFrame: 5 },
   );
@@ -213,6 +217,7 @@ async function main(): Promise<void> {
     key: (code) => {
       const { hud, panels, menu, world } = session;
       if (code === 'KeyH') hud.toggle();
+      if (code === 'F3') hud.togglePerf();
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
@@ -251,8 +256,24 @@ async function main(): Promise<void> {
     const { width, height } = app.screen;
     const cam = rig.update(playerIso(loop.alpha), width, height);
     scene.markMenuTarget(s.menu.target);
-    scene.update(cam, width, height, loop.alpha, now);
+    const stats = scene.update(cam, width, height, loop.alpha, now);
     s.hud.update(world);
+    perf.frame(now);
+    if (s.hud.perfVisible) {
+      const active = world.activeCount;
+      s.hud.updatePerf(
+        {
+          tickAvg: perf.ticks.avg(),
+          tickP95: perf.ticks.percentile(95),
+          fps: perf.fps,
+          active,
+          dormant: world.entities.length - active,
+          builtChunks: stats.builtChunks,
+          visibleChunks: stats.visibleChunks,
+        },
+        now,
+      );
+    }
     s.panels.update();
     app.renderer.render(app.stage);
     requestAnimationFrame(frame);

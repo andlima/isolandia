@@ -62,7 +62,7 @@ export function climbKey(key: string): 1 | -1 | 0 {
 }
 
 /** Keys whose browser default (focus change, scrolling, page reload) the game suppresses. */
-export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F5', 'F9', 'PageUp', 'PageDown']);
+export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F3', 'F5', 'F9', 'PageUp', 'PageDown']);
 
 export function suppressesDefault(code: string): boolean {
   return SUPPRESSED_KEYS.has(code);
