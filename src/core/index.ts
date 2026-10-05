@@ -5,6 +5,8 @@ export * from './facing.ts';
 export * from './load/index.ts';
 export {
   World,
+  INDEX_CHUNK,
+  type PathStats,
   type Entity,
   type DefeatRecord,
   type VictoryRecord,

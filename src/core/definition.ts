@@ -336,6 +336,24 @@ export interface SpawnDef {
   readonly archetype: number;
 }
 
+/**
+ * A `populate` entry, resolved to the map it is used in: an entry of a part
+ * map is offset by the part's `at` (once per placement). Candidate cells are
+ * computed from it (see `populateCandidates`).
+ */
+export interface PopulateDef {
+  readonly archetype: number;
+  readonly count: number;
+  /** Rectangle in this map's coordinates (already clipped to a part's area). */
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly z: number;
+  /** Room tag index, or null for any cell. */
+  readonly room: number | null;
+}
+
 export interface MapDef {
   readonly id: string;
   readonly index: number;
@@ -357,6 +375,43 @@ export interface MapDef {
   readonly spawns: readonly SpawnDef[];
   readonly playerStart: { readonly x: number; readonly y: number; readonly z: number } | null;
   readonly rooms: RoomsDef;
+  /** Seeded scatter zones, applied in order at world creation (parts first, then the map's own). */
+  readonly populate: readonly PopulateDef[];
+  /** True for a map composed of part maps (`parts`). */
+  readonly composite: boolean;
+}
+
+/**
+ * Candidate cells of a populate entry, ascending cell index: walkable, inside
+ * the rect, on its floor, in its room (when set), not a container tile and not
+ * the player start. Independent of the seed.
+ */
+export function populateCandidates(map: MapDef, tiles: readonly TileDef[], p: PopulateDef): number[] {
+  const out: number[] = [];
+  const { width, height } = map;
+  if (p.z < 0 || p.z >= map.floors) return out;
+  const start = map.playerStart;
+  const sets = map.rooms.sets;
+  let inRoom: Uint8Array | null = null;
+  if (p.room !== null) {
+    inRoom = new Uint8Array(sets.length);
+    sets.forEach((set, k) => (inRoom![k] = set.includes(p.room!) ? 1 : 0));
+  }
+  const x1 = Math.min(width, p.x + p.w);
+  const y1 = Math.min(height, p.y + p.h);
+  for (let y = Math.max(0, p.y); y < y1; y++) {
+    for (let x = Math.max(0, p.x); x < x1; x++) {
+      const i = (p.z * height + y) * width + x;
+      const t = map.cells[i]!;
+      if (t === EMPTY_TILE) continue;
+      const tile = tiles[t]!;
+      if (!tile.walkable || tile.container) continue;
+      if (inRoom && inRoom[map.rooms.cellSet[i]!] !== 1) continue;
+      if (start && start.x === x && start.y === y && start.z === p.z) continue;
+      out.push(i);
+    }
+  }
+  return out;
 }
 
 /** A numeric term: a folded constant, or a closure when `fn` is set. */
@@ -444,6 +499,18 @@ export type DefeatDef = OutcomeDef;
 /** `start.victory`: the game is won when `when` holds. */
 export type VictoryDef = OutcomeDef;
 
+/** `start.simulation`: scale settings. */
+export interface SimulationDef {
+  /** Chebyshev tiles from the player beyond which NPCs go dormant; null = never. */
+  readonly activeRadius: number | null;
+  /** A* node budget of an NPC search. */
+  readonly npcPathBudget: number;
+  /** A* node budget of the player's searches. */
+  readonly playerPathBudget: number;
+}
+
+export const DEFAULT_SIMULATION: SimulationDef = { activeRadius: 64, npcPathBudget: 4000, playerPathBudget: 60000 };
+
 export interface Definition {
   readonly ticksPerSecond: number;
   readonly packs: readonly PackInfo[];
@@ -467,6 +534,7 @@ export interface Definition {
     readonly player: number;
     readonly defeat: DefeatDef | null;
     readonly victory: VictoryDef | null;
+    readonly simulation: SimulationDef;
   };
   /** In-game calendar; engine defaults when no pack defines `clock`. */
   readonly clock: ClockDef;
