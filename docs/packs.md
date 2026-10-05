@@ -40,9 +40,9 @@ packs/zombie/
   archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
   assets/car_s.svg     # images referenced by the `assets` domain
-  maps/town.yaml       # { id: town, tiled: maps/town.tmj }
-  maps/town.tmj        # Tiled map + tileset (read only when a map references them)
-  maps/town.tsj
+  maps/city.yaml       # part maps ({ id: house_a, tiled: maps/parts/house_a.tmj }) and the composite city
+  maps/parts/house_a.tmj  # Tiled map + tileset (read only when a map references them)
+  maps/parts/house_a.tsj
   start.yaml
   clock.yaml
   survival.yaml        # statuses and systems
