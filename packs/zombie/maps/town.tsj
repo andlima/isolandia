@@ -1,0 +1,226 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "isometric",
+    "width": 64
+  },
+  "margin": 0,
+  "name": "town",
+  "spacing": 0,
+  "tilecount": 17,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "image": "../../std/assets/door.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:door"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "image": "../../std/assets/floor.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:floor"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "image": "../../std/assets/wall.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:wall"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "image": "../assets/bed_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "bed"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "image": "../assets/cabinet_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "cabinet"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "image": "../assets/car_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "e"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "car"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "image": "../assets/car_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "w"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "car"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "image": "../assets/crate.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "crate"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "image": "../assets/cupboard_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "cupboard"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "image": "../assets/dresser_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "dresser"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "image": "../assets/fridge_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "n"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "fridge"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "image": "../assets/fridge_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "fridge"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "image": "../assets/glass.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "glass"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "image": "../assets/grass.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "grass"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "image": "../assets/road.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "road"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "image": "../assets/stove.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "stove"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "image": "../assets/window.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "window"
+        }
+      ]
+    }
+  ],
+  "tilewidth": 64,
+  "type": "tileset",
+  "version": "1.10"
+}

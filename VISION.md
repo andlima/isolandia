@@ -73,7 +73,8 @@ code.
    of different genres** (e.g. zombie + vampire), to keep genre
    assumptions from leaking into the engine.
 6. **World maps edited in Tiled** (JSON) once the world grows; ASCII stays
-   valid for fixtures.
+   valid for fixtures. **Done (spec `m6-tiled-maps`, M6):** maps take
+   `tiled: <file>.tmj`; the zombie town and vampire mansion are Tiled maps.
 7. **Minimal dependencies**, in the spirit of rogue-engine (YAML parser,
    PixiJS; anything else justified case by case).
 8. **Three tiers, GURPS-style** (a generic core + setting supplements, not
@@ -410,6 +411,21 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     and import; the terminal saves to a file (`S`/`L`, `--load`) and
     `check --save` validates one. No autosave, compression or cloud sync.
     See `docs/saves.md`.
+- ~~How are maps authored once they outgrow ASCII rows?~~ **Decided (spec
+  `m6-tiled-maps`, M6):**
+  - **Tiled JSON only**: maps are `.tmj` with embedded or external `.tsj`
+    tilesets; TMX/TSX (XML), compressed layers and infinite maps are load
+    errors. ASCII rows stay supported for fixtures and small maps.
+  - **Tile ids and facings come from tileset tile properties** (`tile`,
+    `facing`), not from gids or flip flags; flipped gids are errors.
+  - **The top-most visible layer wins** per cell; hidden layers are
+    ignored and groups are flattened.
+  - **Objects are matched by class** (`player`, `spawn` with `archetype`,
+    `room` with `tags`); untyped objects are notes.
+  - **Spawns are ordered row-major** (then by object id), so entity ids
+    match the ASCII loader and do not depend on object order.
+  - `npm run map:export` writes an ASCII map as an isometric 64×32 Tiled
+    map; round trips are tested. See `docs/packs.md`.
 
 ## 8. Next step
 

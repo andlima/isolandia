@@ -1,10 +1,11 @@
 /**
  * Browser pack sources. `main.ts` hands over Vite's `import.meta.glob`
- * results (YAML as raw text, every other pack file as a URL); these pure
+ * results (YAML and Tiled `.tmj`/`.tsj` as raw text, every other pack file
+ * as a URL); these pure
  * functions turn them into loader `PackSource`s and asset URLs.
  */
 
-import { nearMiss, type AssetDef, type LoadError, type PackSource } from '../core/index.ts';
+import { nearMiss, TEXT_FILE_RE, type AssetDef, type LoadError, type PackSource } from '../core/index.ts';
 
 /** Glob results keyed by project path, e.g. `/packs/std/tiles.yaml`. */
 export type GlobMap = Readonly<Record<string, string>>;
@@ -25,18 +26,19 @@ function split(path: string): [string, string] | null {
   return m ? [m[1]!, m[2]!] : null;
 }
 
-/** Pack directory names present in the glob results, sorted. */
-export function availablePacks(yaml: GlobMap): string[] {
+/** Pack directory names present in the glob results (those with a YAML file), sorted. */
+export function availablePacks(text: GlobMap): string[] {
   const names = new Set<string>();
-  for (const path of Object.keys(yaml)) {
+  for (const path of Object.keys(text)) {
     const s = split(path);
-    if (s) names.add(s[0]);
+    if (s && /\.ya?ml$/.test(s[1])) names.add(s[0]);
   }
   return [...names].sort();
 }
 
-export function buildPackSources(yaml: GlobMap, files: GlobMap, names: readonly string[]): WebPacks {
-  const available = availablePacks(yaml);
+/** `text`: YAML and Tiled files as raw text; `files`: every pack file as a URL (text files are skipped). */
+export function buildPackSources(text: GlobMap, files: GlobMap, names: readonly string[]): WebPacks {
+  const available = availablePacks(text);
   const sources: PackSource[] = [];
   const urls: Record<string, string>[] = [];
   const errors: LoadError[] = [];
@@ -51,17 +53,17 @@ export function buildPackSources(yaml: GlobMap, files: GlobMap, names: readonly 
       });
       continue;
     }
-    const text: Record<string, string> = {};
+    const own: Record<string, string> = {};
     const other: Record<string, string> = {};
-    for (const [path, value] of Object.entries(yaml)) {
+    for (const [path, value] of Object.entries(text)) {
       const s = split(path);
-      if (s && s[0] === name) text[s[1]] = value;
+      if (s && s[0] === name && TEXT_FILE_RE.test(s[1])) own[s[1]] = value;
     }
     for (const [path, value] of Object.entries(files)) {
       const s = split(path);
-      if (s && s[0] === name && !/\.ya?ml$/.test(s[1])) other[s[1]] = value;
+      if (s && s[0] === name && !TEXT_FILE_RE.test(s[1])) other[s[1]] = value;
     }
-    sources.push({ label: `packs/${name}`, files: text, otherFiles: Object.keys(other).sort() });
+    sources.push({ label: `packs/${name}`, files: own, otherFiles: Object.keys(other).sort() });
     urls.push(other);
   }
   return { sources, urls, errors };

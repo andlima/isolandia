@@ -98,6 +98,10 @@ iso.y = (x + y) * 16
 screen = iso * zoom + offset
 ```
 
+Maps exported for [Tiled](packs.md#tiled-maps) (`npm run map:export`)
+are isometric with the same 64×32 tile diamond and axes, so Tiled shows a
+map as the game does, minus the height of raised blocks.
+
 World coordinates are continuous tile units; tile `(i, j)` covers
 `[i, i+1)×[j, j+1)` and its diamond's top vertex is at `iso(i, j)`. Picking
 inverts the projection and floors; a click on a raised block's top face

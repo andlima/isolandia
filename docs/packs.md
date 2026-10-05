@@ -40,7 +40,9 @@ packs/zombie/
   archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
   assets/car_s.svg     # images referenced by the `assets` domain
-  maps/town.yaml
+  maps/town.yaml       # { id: town, tiled: maps/town.tmj }
+  maps/town.tmj        # Tiled map + tileset (read only when a map references them)
+  maps/town.tsj
   start.yaml
   clock.yaml
   survival.yaml        # statuses and systems
@@ -51,7 +53,10 @@ packs/zombie/
   lighting.yaml
 ```
 
-File names and layout are free. Each content file holds one or more
+File names and layout are free. The loader reads a pack's **text files**:
+`*.yaml`/`*.yml` content files and Tiled `*.tmj`/`*.tsj` files. Only YAML
+files are domain files; a Tiled file is read only when a [map](#tiled-maps)
+references it (unreferenced ones are ignored). Each content file holds one or more
 top-level **domain keys**; entries from all files of a pack are merged per
 domain. Any other top-level key is a load error.
 
@@ -270,11 +275,15 @@ their items, and player actions fail with `no_inventory`.
 
 ### `maps`
 
-ASCII maps are a fixture format for M0 (larger worlds will use Tiled).
+A map comes either from **ASCII** fields (`legend`, `rows`, `rooms`) or
+from a **Tiled** JSON map (`tiled`); mixing the two is a load error. Both
+load to the same map definition. ASCII is a fixture format (tests, small
+maps like `garden`); real worlds are edited in [Tiled](#tiled-maps).
 
 | Field    | Type                         | Notes |
 |----------|------------------------------|-------|
 | `id`     | id                           | |
+| `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`rooms` (see [Tiled maps](#tiled-maps)) |
 | `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map); `facing`: orientation of the cell's tile (see below) |
 | `rows`   | list of equal-length strings | every character must be in the legend |
 | `rooms`  | list of `{ rect: [x, y, w, h], tags: [...] }` | optional; see below |
@@ -323,6 +332,93 @@ archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
       - { rect: [2, 2, 4, 3], tags: [kitchen] }
       - { rect: [7, 2, 2, 3], tags: [bathroom] }
 ```
+
+#### Tiled maps
+
+```yaml
+maps:
+  - id: town
+    tiled: maps/town.tmj
+```
+
+The engine reads [Tiled](https://www.mapeditor.org/)'s **JSON** formats
+only: maps (`.tmj`) and external tilesets (`.tsj`). A `.tmx`/`.tsx` (XML)
+path is a load error: use *File → Export As… → JSON map files* (or *JSON
+tileset files*) in Tiled. Tile ids and facings come from **custom
+properties** on tileset tiles, never from gids or flip flags.
+
+| Where             | Property    | Type   | Meaning |
+|-------------------|-------------|--------|---------|
+| tileset tile      | `tile`      | string | pack tile id; local ids resolve in the map's pack, qualified ids (`std:floor`) work too. Required on every tile a layer uses |
+| tileset tile      | `facing`    | string | `n`/`e`/`s`/`w`, as the legend's `facing`; default `s` |
+| `spawn` object    | `archetype` | string | archetype id placed on the object's cell |
+| `room` object     | `tags`      | string | room tags separated by commas or spaces |
+
+**Tile layers.** Every *visible* tile layer contributes, in layer order;
+layers inside groups are flattened in order. Per cell the **top-most
+non-empty** tile wins, so furniture can be painted on a layer above the
+floor. Hidden layers (and hidden groups) are ignored. Every cell must be
+painted on some visible layer.
+
+**Objects** are matched by their **class** (`type` in Tiled ≤ 1.8,
+`class` in Tiled ≥ 1.9):
+
+- `player`: the player start (one per map; required on the start map);
+- `spawn`: places the `archetype` property's archetype;
+- `room`: a rectangle with a `tags` property; same rules as ASCII rooms.
+
+An object without a class is ignored (use it for notes); any other class
+is a load error. Objects in hidden object layers are ignored; rotated
+objects are errors. A point object's cell is `floor(x / u), floor(y / u)`,
+where `u` is the tile height on isometric maps (Tiled stores isometric
+object positions in tile-height units on both axes) and the tile size on
+orthogonal maps. Rooms round their rectangle to whole cells. Spawns are
+ordered **row-major** (then by object id), whatever their order in the
+file, so entity ids match an ASCII map and survive reordering in Tiled.
+
+**Supported:** `isometric` and `orthogonal` orientation (both read as the
+same grid); embedded and external `.tsj` tilesets (a `source` is relative
+to the `.tmj`); image-collection and single-image tilesets (the engine
+never loads their images); layer data as a JSON array (*CSV* format) or
+*Base64 (uncompressed)*. Ignored: render order, tile size (except for
+object coordinates), map properties, layer offsets, opacity and tint.
+
+**Rejected** (load errors that name the Tiled setting): infinite maps
+(disable *Infinite* in Map Properties), `staggered`/`hexagonal`
+orientation, compressed layer data (set *Tile Layer Format* to *CSV* or
+*Base64 (uncompressed)*), flipped or rotated tiles (use a tileset tile
+with a `facing` property instead), gids outside every tileset, and TMX/TSX.
+Templates (`.tx`), `.world` files, animations and Wang sets are not read
+(only the resulting gids are). Errors name the Tiled file, a JSON path
+(e.g. `maps/town.tmj layers[1].data[517]`), the cell, and the YAML map
+entry that referenced the file.
+
+**Setting up a tileset in Tiled:**
+
+1. Start from an exported map (below), or create a map with *Orientation:
+   Isometric*, tile size 64×32, *Infinite* off.
+2. *New Tileset…* → *Collection of Images*, saved as JSON (`.tsj`) next to
+   the map. Add the tile images (e.g. the pack's `assets/*.svg`); they are
+   only a preview.
+3. Select each tile and add a custom string property `tile` with the pack
+   tile id, plus `facing` if it should not face `s`. Add one tileset tile
+   per (tile, facing) pair.
+4. Paint the floor on one layer and furniture on layers above it.
+5. Add an object layer with `player`/`spawn`/`room` objects (set *Class*,
+   then the `archetype` or `tags` property).
+
+**Exporting an ASCII map** writes it as an isometric Tiled map plus an
+image-collection tileset, to start editing in Tiled:
+
+```sh
+npm run map:export -- packs/std packs/std-needs packs/zombie --map town --out packs/zombie/maps
+```
+
+It writes `town.tmj` (one `ground` tile layer and one `objects` layer with
+the player, a `spawn` point per spawn at the cell centre, and a `room`
+rectangle per room) and `town.tsj` (one tile per tile/facing pair used,
+with the tile's image for that facing as a preview). The output is
+byte-stable, and loading it gives the same map as the ASCII original.
 
 ### `systems`
 
