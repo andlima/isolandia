@@ -259,7 +259,7 @@ class Loader {
    * Compile a numeric (or boolean) expression; reports and returns null on
    * error. `what` names the expected result in the type error.
    */
-  private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number } | null {
+  private expr(source: string, scope: Scope, src: Src, what = 'a number'): { fn: Compiled; constant?: number; selfTag?: string } | null {
     const expr = this.compile(source, scope, src);
     if (!expr) return null;
     if (expr.type !== 'number' && expr.type !== 'boolean' && expr.type !== 'any') {
@@ -294,17 +294,23 @@ class Loader {
    * a boolean literal. Returns undefined when absent, null after an error.
    */
   private condition(f: Fields, key: string, scope: Scope, required = false): Compiled | null | undefined {
+    const c = this.conditionExpr(f, key, scope, required);
+    return c ? c.fn : c;
+  }
+
+  /** Like `condition`, keeping the compiled expression's metadata (`selfTag`). */
+  private conditionExpr(f: Fields, key: string, scope: Scope, required = false): { fn: Compiled; selfTag?: string } | null | undefined {
     const v = f.raw(key);
     if (v === undefined || v === null) {
       if (required) f.present(key);
       return required ? null : undefined;
     }
-    if (typeof v === 'boolean') return () => v;
+    if (typeof v === 'boolean') return { fn: () => v };
     if (typeof v !== 'string') {
       this.sink.add(f.at(key), `field '${key}' must be an expression (string) or true/false`);
       return null;
     }
-    return this.expr(v, scope, f.at(key), 'a boolean or a number')?.fn ?? null;
+    return this.expr(v, scope, f.at(key), 'a boolean or a number') ?? null;
   }
 
   /** A number or numeric expression, folded to a constant when possible; null after an error. */
@@ -1311,7 +1317,9 @@ class Loader {
   private status(d: Defined): StatusDef {
     const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
     const label = f.string('label') ?? d.id;
-    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forFn = forExpr?.fn ?? null;
+    const forTag = forExpr?.selfTag ?? null;
     const whenFn = this.condition(f, 'when', d.scope, true) ?? always;
     const untilFn = this.condition(f, 'until', d.scope) ?? ((c) => !whenFn(c));
     const rates: StatusRate[] = [];
@@ -1323,7 +1331,7 @@ class Loader {
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
     }
-    return { id: d.id, index: d.index, label, forFn, whenFn, untilFn, rates };
+    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates };
   }
 
   private system(d: Defined): SystemDef {
@@ -1331,11 +1339,13 @@ class Loader {
     let every = f.number('every', false) ?? DEFAULT_EVERY;
     const period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
     if (every <= 0) every = DEFAULT_EVERY;
-    const forFn = this.condition(f, 'for', d.scope) ?? null;
+    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forFn = forExpr?.fn ?? null;
+    const forTag = forExpr?.selfTag ?? null;
     const whenFn = this.condition(f, 'when', d.scope) ?? null;
 
     const effects = this.effects(f, d.scope);
-    return { id: d.id, index: d.index, every, period, forFn, whenFn, effects };
+    return { id: d.id, index: d.index, every, period, forFn, forTag, whenFn, effects };
   }
 
   /** Sim seconds (> 0, a whole number of ticks) → ticks; reports and returns null otherwise. */

@@ -452,6 +452,8 @@ export interface SystemDef {
   readonly period: number;
   /** Entity filter; null means always true. */
   readonly forFn: Compiled | null;
+  /** Set when `for` is exactly `self.has_tag("<tag>")`, so it is decided once per archetype. */
+  readonly forTag: string | null;
   /** Extra condition, evaluated after `for`; null means always true. */
   readonly whenFn: Compiled | null;
   readonly effects: readonly EffectDef[];
@@ -469,6 +471,8 @@ export interface StatusDef {
   readonly label: string;
   /** Which entities can have the status; null means always true. */
   readonly forFn: Compiled | null;
+  /** Set when `for` is exactly `self.has_tag("<tag>")`, so it is decided once per archetype. */
+  readonly forTag: string | null;
   readonly whenFn: Compiled;
   /** Exit condition (defaults to `not when`). */
   readonly untilFn: Compiled;

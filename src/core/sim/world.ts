@@ -531,6 +531,12 @@ export class World {
   private readonly hasM: Uint8Array[];
   /** Per status: its `rates` term by measurement index (undefined = none). */
   private readonly statusRates: (NumberTerm | undefined)[][];
+  /**
+   * Per status, then per system: the `for` filter by archetype index, 1 = holds,
+   * 0 = never, 2 = evaluate per entity (decided once when `for` is a tag test on `self`).
+   */
+  private readonly statusFor: Uint8Array[];
+  private readonly systemFor: Uint8Array[];
   /** Scratch for the status update: next flags of every entity, row-major. */
   private statusNext = new Uint8Array(0);
   /** Activity source per action index. */
@@ -564,6 +570,10 @@ export class World {
       for (const idx of a.measurements) has[idx] = 1;
       return has;
     });
+    const forTable = (forFn: unknown, forTag: string | null) =>
+      Uint8Array.from(def.archetypes, (a) => (forFn === null ? 1 : forTag === null ? 2 : a.tags.includes(forTag) ? 1 : 0));
+    this.statusFor = def.statuses.map((s) => forTable(s.forFn, s.forTag));
+    this.systemFor = def.systems.map((s) => forTable(s.forFn, s.forTag));
     this.statusRates = def.statuses.map((s) => {
       const by = new Array<NumberTerm | undefined>(nm).fill(undefined);
       for (const r of s.rates) by[r.measurement] = r;
@@ -781,6 +791,7 @@ export class World {
   /** Index bucket of a position (clamped into the map). */
   private bucketAt(x: number, y: number, z: number): number {
     const { width, height, floors } = this.grid;
+    if (x >= 0 && y >= 0 && z >= 0 && x < width && y < height && z < floors) return z * this.chunksPerFloor + Math.floor(y / INDEX_CHUNK) * this.chunkCols + Math.floor(x / INDEX_CHUNK);
     const cx = Math.floor(Math.min(Math.max(x, 0), width - 1) / INDEX_CHUNK);
     const cy = Math.floor(Math.min(Math.max(y, 0), height - 1) / INDEX_CHUNK);
     const cz = Math.min(Math.max(z, 0), floors - 1);
@@ -1085,9 +1096,12 @@ export class World {
     const ctx = this.ctx;
     for (const sys of this.def.systems) {
       if (t % sys.period !== 0) continue;
+      const pre = this.systemFor[sys.index]!;
       for (const e of this.entities) {
+        const f = pre[e.archetype.index];
+        if (f === 0) continue;
         ctx.self = e;
-        if (sys.forFn && !sys.forFn(ctx)) continue;
+        if (f === 2 && !sys.forFn!(ctx)) continue;
         if (sys.whenFn && !sys.whenFn(ctx)) continue;
         this.runEffects(e, sys.effects);
       }
@@ -1205,19 +1219,22 @@ export class World {
     if (this.statusNext.length < n) this.statusNext = new Uint8Array(n);
     const next = this.statusNext;
     let o = 0;
+    const pre = this.statusFor;
     for (const e of this.entities) {
       ctx.self = e;
+      const a = e.archetype.index;
       for (let k = 0; k < ns; k++, o++) {
         const s = statuses[k]!;
-        if (s.forFn && !s.forFn(ctx)) next[o] = 0;
+        const f = pre[k]![a];
+        if (f === 0 || (f === 2 && !s.forFn!(ctx))) next[o] = 0;
         else if (e.st[k] === 1) next[o] = s.untilFn(ctx) ? 0 : 1;
         else next[o] = s.whenFn(ctx) ? 1 : 0;
       }
     }
     o = 0;
     for (const e of this.entities) {
-      e.st.set(next.subarray(o, o + ns));
-      o += ns;
+      const st = e.st;
+      for (let k = 0; k < ns; k++, o++) st[k] = next[o]!;
     }
   }
 

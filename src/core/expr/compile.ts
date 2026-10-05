@@ -76,6 +76,8 @@ export interface CompiledExpr {
   type: ValueType;
   /** Set when the expression is a numeric constant. */
   constant?: number;
+  /** Set when the expression is exactly `self.has_tag("<tag>")`: it depends only on `self`'s archetype. */
+  selfTag?: string;
 }
 
 export interface CompileError {
@@ -407,7 +409,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const tag = tagNode.value;
     switch (target.name) {
       case 'self':
-        return { type: 'boolean', fn: (c) => c.self.tags.has(tag) };
+        return { type: 'boolean', fn: (c) => c.self.tags.has(tag), selfTag: tag };
       case 'player':
         return { type: 'boolean', fn: (c) => c.player.tags.has(tag) };
       case 'tile':
