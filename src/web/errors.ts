@@ -6,10 +6,15 @@ export function errorReport(errors: readonly (LoadError | string)[]): string {
   return `${lines.join('\n')}\n\n${errors.length} error(s); packs not loaded.`;
 }
 
-/** Replace the page with the error list. */
+/** Replace the page with the error list and a link back to the title screen. */
 export function showErrors(errors: readonly (LoadError | string)[]): void {
   const pre = document.createElement('pre');
   pre.id = 'errors';
-  pre.textContent = errorReport(errors);
+  pre.textContent = `${errorReport(errors)}\n\n`;
+  const back = document.createElement('a');
+  back.id = 'title-link';
+  back.href = location.pathname;
+  back.textContent = 'Back to the title screen';
+  pre.append(back);
   document.body.replaceChildren(pre);
 }

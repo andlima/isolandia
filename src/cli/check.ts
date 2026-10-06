@@ -1,14 +1,16 @@
 import type { LoadError } from '../core/index.ts';
-import { fail, loadOrExitIf, parseArgs } from './common.ts';
+import { fail, loadOrExitIf, parseArgs, stackOrExit } from './common.ts';
 import { formatOverrides, patchSummary } from './overrides.ts';
 import { readSaveFile } from './saves.ts';
 
-const { dirs, save, overrides } = parseArgs(
+const args = parseArgs(
   process.argv.slice(2),
-  'usage: npm run check -- <pack-dir> [<pack-dir>…] [--save <file>] [--overrides]',
-  ['--seed', '--save'],
+  'usage: npm run check -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--save <file>] [--overrides]',
+  ['--seed', '--save', '--packs-dir'],
   ['--overrides'],
 );
+const { save, overrides } = args;
+const dirs = stackOrExit(args);
 
 /**
  * A stack whose only error is the missing `start` is a valid *library* stack

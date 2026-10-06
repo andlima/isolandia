@@ -137,6 +137,7 @@ class Loader {
     const start = this.start(maps);
     const clock = this.clock();
     const lighting = this.lighting();
+    this.checkKinds();
     const warnings = this.sink.warnings;
     if (this.sink.count > 0 || !start) return { ok: false, errors: this.sink.errors, warnings };
 
@@ -148,6 +149,8 @@ class Loader {
           namespace: raw.namespace,
           name: raw.name,
           version: raw.version,
+          kind: raw.kind,
+          description: raw.description,
           depends: raw.depends.map((d) => d.ns),
         }),
       ),
@@ -210,6 +213,22 @@ class Loader {
       const closure = new Set(depends.flatMap((d) => [d, ...closures.get(d)!]));
       closures.set(raw.namespace, closure);
       this.packs.push({ raw, scope: { namespace: raw.namespace, depends }, closure });
+    }
+  }
+
+  /**
+   * Manifest `kind` against the stack: a `game` defines a base `start` (not
+   * an override), a `mod` depends on something. Libraries are not checked.
+   */
+  private checkKinds(): void {
+    for (const { raw } of this.packs) {
+      const kind = { source: raw.manifest, path: ['kind'] };
+      if (raw.kind === 'game' && !raw.starts.some((s) => s.value['override'] !== true)) {
+        this.sink.add(kind, `pack '${raw.namespace}' is a game but defines no base 'start' (map + player); make it a 'mod' or 'library', or add a 'start'`);
+      }
+      if (raw.kind === 'mod' && raw.depends.length === 0) {
+        this.sink.add(kind, `pack '${raw.namespace}' is a mod but has no 'depends'; list the packs it modifies, or make it a 'library'`);
+      }
     }
   }
 

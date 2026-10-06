@@ -1,10 +1,12 @@
 /**
- * Browser entry: load packs from the Vite glob, build the World, and run
- * the iso view at 10 ticks/s with per-frame interpolation.
+ * Browser entry: resolve `?packs=` into a stack over the bundled pack
+ * catalog (or show the title screen without it), load the packs from the
+ * Vite glob, build the World, and run the iso view at 10 ticks/s with
+ * per-frame interpolation.
  */
 
 import { Application, type Container } from 'pixi.js';
-import { loadPacks, renderPosition, World, type GotoRecord } from '../core/index.ts';
+import { loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
 import { viewFloor } from '../iso/cutaway.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen, pickCell } from '../iso/projection.ts';
@@ -17,9 +19,10 @@ import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
 import { ContextMenu } from './menu-dom.ts';
-import { assetUrls, buildPackSources } from './packs.ts';
+import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
+import { showPicker } from './picker-dom.ts';
 import { exportFile, gameView, loadResult, restoreText, SaveSlots, storageStore, type LoadResult } from './saves.ts';
 
 declare global {
@@ -77,11 +80,17 @@ function download(name: string, text: string): void {
 }
 
 async function main(): Promise<void> {
-  const defaults = (document.body.dataset['defaultPacks'] ?? '').split(',').filter(Boolean);
-  const params = parseParams(location.search, defaults);
+  const params = parseParams(location.search);
   if (params.errors.length) return showErrors(params.errors);
+  const catalog = webCatalog(TEXT);
+  if (params.packs === null) return showPicker(catalog, (query) => location.assign(`${location.pathname}${query}`));
+  if (catalog.errors.length) return showErrors(catalog.errors);
+  const stack = resolveStack(catalog, params.packs);
+  if (!stack.ok) return showErrors(stack.errors);
+  /** The resolved pack directories: the key of saves, exports and imports. */
+  const packs = stack.packs.map((p) => p.dir);
 
-  const web = buildPackSources(TEXT, FILES, params.packs);
+  const web = buildPackSources(TEXT, FILES, packs);
   if (web.errors.length) return showErrors(web.errors);
   const loaded = loadPacks(web.sources);
   if (!loaded.ok) return showErrors(loaded.errors);
@@ -145,7 +154,7 @@ async function main(): Promise<void> {
   // ── Saves ────────────────────────────────────────────────────────────────
   const slots = new SaveSlots(
     storageStore(() => window.localStorage),
-    params.packs,
+    packs,
   );
   let message: string | null = null;
   let errors: readonly string[] = [];
@@ -180,7 +189,7 @@ async function main(): Promise<void> {
       report(r.message);
     },
     exportFile: () => {
-      const f = exportFile(session.world, params.packs, new Date());
+      const f = exportFile(session.world, packs, new Date());
       download(f.name, f.text);
       report(`Exported ${f.name}.`);
     },
@@ -190,6 +199,7 @@ async function main(): Promise<void> {
         (e: unknown) => report(`Cannot read ${file.name}.`, [String(e)]),
       );
     },
+    titleScreen: () => location.assign(location.pathname),
   });
 
   const input = new Input(app.canvas, () => session.world, {
@@ -283,7 +293,7 @@ async function main(): Promise<void> {
     frame(now);
     window.__iso = {
       ready: true,
-      packs: params.packs,
+      packs,
       distinctColors: () => {
         const { pixels } = app.renderer.extract.pixels({ target: app.stage, frame: app.screen });
         const seen = new Set<number>();

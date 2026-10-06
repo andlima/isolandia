@@ -94,10 +94,31 @@
         margin: 0; padding: 16px; height: 100%; box-sizing: border-box; overflow: auto;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; white-space: pre-wrap;
       }
+      #errors a { color: #8ab4ff; }
+      #picker {
+        max-width: 640px; margin: 0 auto; padding: 24px 16px; height: 100%; box-sizing: border-box; overflow: auto;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+      }
+      #picker h1 { margin: 0 0 16px; font-size: 22px; color: #ffd23f; }
+      #picker .picker-row {
+        display: block; width: 100%; text-align: left; margin: 6px 0; padding: 8px 10px; font: inherit; color: inherit;
+        background: #262a31; border: 1px solid #3a404b; border-radius: 4px; cursor: pointer;
+      }
+      #picker .picker-row.chosen { border-color: #ffd23f; background: #333a44; }
+      #picker .picker-row:disabled { opacity: 0.5; cursor: default; }
+      #picker .picker-name { font-weight: bold; color: #ffd23f; }
+      #picker .picker-kind, #picker .picker-stack, #picker .picker-hint { font-size: 11px; color: #c9a25a; }
+      #picker .picker-subtitle { margin-top: 12px; color: #c9a25a; }
+      #picker .picker-mod { display: block; margin: 4px 0; cursor: pointer; }
+      #picker .picker-mod.disabled { opacity: 0.5; cursor: default; }
+      #picker .picker-desc { font-size: 12px; color: #b8bcc4; }
+      #picker .picker-errors { color: #ff8a8a; padding-left: 18px; }
+      #picker .picker-footer { margin-top: 16px; }
+      #picker input[type=number] { width: 80px; font: inherit; }
+      #picker button#picker-play { font: inherit; padding: 2px 16px; cursor: pointer; }
     </style>
   </head>
-  <!-- Default ?packs= list: the engine source stays genre-agnostic. -->
-  <body data-default-packs="std,std-needs,zombie">
+  <body>
     <script type="module" src="/src/web/main.ts"></script>
   </body>
 </html>

@@ -1,3 +1,5 @@
 namespace: std
 name: Standard
 version: 0.1.0
+kind: library
+description: Core measurements, tiles, items and actions every game builds on.

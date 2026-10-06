@@ -9,3 +9,5 @@ namespace: std_needs
 name: Standard needs
 version: 0.1.0
 depends: [std]
+kind: library
+description: Hunger, thirst and fatigue, with the statuses they drive.

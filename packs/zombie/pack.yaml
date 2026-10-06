@@ -2,3 +2,5 @@ namespace: zmb
 name: Zombie Town
 version: 0.1.0
 depends: [std, std_needs]
+kind: game
+description: Scavenge a 256×256 town while the dead close in.

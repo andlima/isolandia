@@ -1,6 +1,6 @@
 /**
  * DOM rendering of the Game panel (`O` or the HUD button): the quicksave and
- * three slots with Save / Load / Delete, plus Export and Import. The view is
+ * three slots with Save / Load / Delete, plus Export, Import and Title screen. The view is
  * `gameView` in `saves.ts`; this class only renders it and reports clicks.
  * It lives for the whole page, across loaded worlds.
  */
@@ -11,6 +11,8 @@ export interface GamePanelHandlers {
   command(command: GameCommand, slot: SlotId): void;
   exportFile(): void;
   importFile(file: File): void;
+  /** Leave for the title screen (plain navigation: unsaved progress is lost). */
+  titleScreen(): void;
 }
 
 /** How long an info note stays up (warnings stay until dismissed). */
@@ -53,7 +55,12 @@ export class GamePanel {
       if (f) this.on.importFile(f);
     });
     importLabel.append(input);
-    files.append(exportBtn, ' ', importLabel);
+    const titleBtn = document.createElement('button');
+    titleBtn.id = 'title-screen';
+    titleBtn.textContent = 'Title screen';
+    titleBtn.title = 'Back to the title screen (unsaved progress is lost)';
+    titleBtn.addEventListener('click', () => this.on.titleScreen());
+    files.append(exportBtn, ' ', importLabel, ' ', titleBtn);
     this.el.append(title, this.body, files);
     this.el.addEventListener('click', (ev) => {
       const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-command]');

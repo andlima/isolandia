@@ -1,15 +1,15 @@
 import { runTerminal } from '../ascii/terminal.ts';
 import { World } from '../core/index.ts';
-import { fail, loadOrExit, parseArgs } from './common.ts';
+import { fail, loadOrExit, parseArgs, stackOrExit } from './common.ts';
 import { DEFAULT_SAVE_FILE, loadMessage, readSaveFile, writeSaveFile } from './saves.ts';
 
 const args = parseArgs(
   process.argv.slice(2),
-  'usage: npm run play -- <pack-dir> [<pack-dir>…] [--seed N | --load <file>] [--save-file <path>]',
-  ['--seed', '--load', '--save-file'],
+  'usage: npm run play -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--seed N | --load <file>] [--save-file <path>]',
+  ['--seed', '--load', '--save-file', '--packs-dir'],
 );
 if (args.load !== null && args.seed !== null) fail('--seed cannot be used with --load: the save carries its seed');
-const def = loadOrExit(args.dirs);
+const def = loadOrExit(stackOrExit(args));
 const saveFile = args.saveFile ?? DEFAULT_SAVE_FILE;
 
 let world: World;
