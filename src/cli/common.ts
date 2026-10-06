@@ -11,18 +11,24 @@ export interface CliArgs {
   saveFile: string | null;
   /** `--save <file>` (check). */
   save: string | null;
+  /** `--overrides` (check). */
+  overrides: boolean;
 }
 
 /** Options that take a value; each CLI accepts its own subset. */
 export type CliOption = '--seed' | '--load' | '--save-file' | '--save';
+/** Options without a value. */
+export type CliFlag = '--overrides';
 
-export function parseArgs(argv: readonly string[], usage: string, options: readonly CliOption[] = ['--seed']): CliArgs {
-  const args: CliArgs = { dirs: [], seed: null, load: null, saveFile: null, save: null };
+export function parseArgs(argv: readonly string[], usage: string, options: readonly CliOption[] = ['--seed'], flags: readonly CliFlag[] = []): CliArgs {
+  const args: CliArgs = { dirs: [], seed: null, load: null, saveFile: null, save: null, overrides: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '-h' || a === '--help') {
       console.log(usage);
       process.exit(0);
+    } else if ((flags as readonly string[]).includes(a)) {
+      args.overrides = true;
     } else if ((options as readonly string[]).includes(a)) {
       const v = argv[++i];
       if (v === undefined) fail(`${a} expects a value\n${usage}`);

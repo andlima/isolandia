@@ -515,6 +515,36 @@ export interface SimulationDef {
 
 export const DEFAULT_SIMULATION: SimulationDef = { activeRadius: 64, npcPathBudget: 4000, playerPathBudget: 60000 };
 
+/** A domain a mod can patch: a list domain, or a singleton. */
+export type PatchDomain =
+  | 'measurements'
+  | 'assets'
+  | 'tiles'
+  | 'archetypes'
+  | 'maps'
+  | 'systems'
+  | 'statuses'
+  | 'items'
+  | 'loot'
+  | 'behaviors'
+  | 'actions'
+  | 'recipes'
+  | 'start'
+  | 'clock'
+  | 'lighting';
+
+/** One applied `override: true` / `remove: true` patch (diagnostic only). */
+export interface PatchDef {
+  readonly domain: PatchDomain;
+  /** Qualified id of the patched entry; null for a singleton. */
+  readonly id: string | null;
+  /** Namespace of the patching pack. */
+  readonly pack: string;
+  readonly op: 'override' | 'remove';
+  /** Top-level fields the override wrote (`[]` for a removal). */
+  readonly fields: readonly string[];
+}
+
 export interface Definition {
   readonly ticksPerSecond: number;
   readonly packs: readonly PackInfo[];
@@ -544,6 +574,11 @@ export interface Definition {
   readonly clock: ClockDef;
   /** Day/night tint; null when no pack defines `lighting` (no tint). */
   readonly lighting: LightingDef | null;
+  /**
+   * Every applied override/removal, in application order. Diagnostic only:
+   * not part of snapshots, hashes or saves.
+   */
+  readonly patches: readonly PatchDef[];
   /** Qualified id → index lookups. */
   readonly ids: {
     readonly measurements: Readonly<Record<string, number>>;

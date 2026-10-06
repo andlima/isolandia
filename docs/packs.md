@@ -1326,9 +1326,10 @@ start:
     player_path_budget: 60000
 ```
 
-Exactly one `start` must exist across all loaded packs. Typically the last
-(game) pack defines it; loading two game packs that both define `start`
-is an error.
+Exactly one `start` must exist across all loaded packs (one *base*
+definition, plus any number of `override: true` patches — see
+[Mods and overrides](#mods-and-overrides)). Typically the last (game) pack
+defines it; loading two game packs that both define `start` is an error.
 
 `defeat` ends the game: its `when` expression is evaluated at the end of
 each tick with `self` = the player. When it becomes truthy the world
@@ -1397,8 +1398,9 @@ clock:
   start: "20:00"      # the game begins at dusk (night)
 ```
 
-**At most one** loaded pack may define `clock`; a second definition is an
-error naming the first pack (override semantics come in M7). If no pack
+**One** loaded pack defines `clock`; a second definition is an error
+naming the first pack. A pack that depends on it may patch it with
+`override: true` (see [Mods and overrides](#mods-and-overrides)). If no pack
 defines it, the defaults above apply. Like `start`, it belongs in the game
 pack, not in a stdpack.
 
@@ -1422,7 +1424,8 @@ The colour is interpolated linearly in RGB between consecutive keyframes
 and wraps around midnight from the last keyframe back to the first; a
 single keyframe gives a constant tint. The scene's ground and objects are
 multiplied by it (`#ffffff` = unchanged). Without `lighting` nothing is
-tinted. Like `clock`, **at most one** loaded pack may define it.
+tinted. Like `clock`, **one** loaded pack defines it; later packs may
+patch it with `override: true`.
 
 ## Standard packs
 
@@ -1470,7 +1473,131 @@ starved, food items) stays in the genre pack: `zombie` depends on
 - Each kind (measurements, assets, tiles, archetypes, maps, systems,
   statuses, items, loot tables) has its own id space. Tags (tile,
   archetype, item and room tags) are not namespaced.
-- Redefining an existing id is an error — overrides come in M7.
+- Redefining an existing id is an error. To change or delete another
+  pack's entry, restate its qualified id with `override: true` or
+  `remove: true` (see [Mods and overrides](#mods-and-overrides)).
+
+## Mods and overrides
+
+A pack stacked on others can **tune** or **remove** what they define
+without copying it. It patches by **qualified id**: it restates the id and
+only the fields it changes.
+
+```yaml
+# packs/hardmode/tweaks.yaml   (pack.yaml: depends: [std_needs, zmb])
+measurements:
+  - id: std_needs:hunger
+    override: true
+    rate: 0.2              # only this field changes
+archetypes:
+  - id: zmb:shambler
+    override: true
+    tags: [undead, fast]   # lists are replaced wholesale
+    sprite: null           # null clears an optional field (back to its default)
+systems:
+  - id: zmb:crunch
+    remove: true
+clock:
+  override: true
+  start: "20:00"
+```
+
+**Overrides.** Any entry of a list domain (`measurements`, `assets`,
+`tiles`, `archetypes`, `maps`, `systems`, `statuses`, `items`, `loot`,
+`behaviors`, `actions`, `recipes`) may carry `override: true`:
+
+- The `id` must be **qualified**, and its namespace must be one of the
+  pack's **direct `depends`** (the same rule as qualified references). A
+  short id, the pack's own namespace (edit your own entry directly) or a
+  namespace the pack does not depend on is an error, and so is an unknown
+  id (with a *did you mean*).
+- **Shallow merge:** every top-level field the override lists replaces the
+  current one; omitted fields are kept. Nested values are replaced
+  **whole**: a mapping (`inventory`, `use`, `directions`, `target`…) or a
+  list (`tags`, `parts`, `populate`, `effects`, `rows`…). There are no list
+  operators and no deep merge.
+- **`field: null`** removes the field: the entry behaves as if it had never
+  been written, so an optional field gets its default and a required one
+  is reported *missing* at the override.
+- `override: false` is the same as omitting it; any other value is an
+  error. An override that lists only `id` and `override` warns that it
+  changes nothing.
+- The merged entry is validated like a fresh definition (unknown fields,
+  types, references, expressions; a map still cannot mix composite, ASCII
+  and Tiled fields).
+- The entry keeps the **position** of its original definition, so system
+  order, RNG order and indices do not change.
+
+**Provenance.** Each field remembers the pack that **last wrote** it.
+References in it (ids, room tags, every name in an expression) resolve in
+**that pack's scope**: an original `zmb:survivor` listing `hunger` keeps
+resolving it through `zmb`'s depends even if the mod does not depend on
+`std_needs`, while a field the mod writes resolves through the mod's
+depends. Relative paths (asset `file`/`directions`, map `tiled`) are read
+from the writing pack's files, and the asset's images load from that pack.
+Errors and warnings name the writing pack, file, line and key path.
+
+**Removals.** `remove: true` deletes an entry of a direct dependency (same
+id rules). A removal lists only `id` and `remove`; any other field, or
+`override` together with `remove`, is an error. The entry gets no index
+and is not in `def.ids`; later entries move down so indices stay dense.
+Removal is validated **jointly**: any remaining reference to the removed
+id, from any pack (the original one included), is an error naming the
+remover — in fields, legends, Tiled tile properties, loot entries, recipe
+items and expressions (`has_status("x")`, `count_item("x")`…):
+
+```
+zmb survival.yaml:28 systems[0].effects[1].delta: expression error in "1 - 0.5 * self.has_status("hungry")": has_status: unknown status 'std_needs:hungry' (removed by pack 'hardmode')
+```
+
+Overriding a removed entry is an error; removing it again warns.
+
+**Singletons.** `start`, `clock` and `lighting` accept `override: true`
+inside the mapping, with the same merge, `null` and provenance rules.
+`start.defeat`, `start.victory`, `start.simulation` and `lighting.tint`
+are replaced whole; `defeat: null` removes the defeat condition. The
+overriding pack must **transitively depend** on the pack that first
+defined the singleton, and an override with no earlier definition is an
+error ("nothing to override"). A second definition *without* `override`
+is still an error (it suggests `override: true` when the pack depends on
+the first definer).
+
+**Order and conflicts.** Patches apply in pack load order, and within a
+pack in file and entry order; a pack may patch what an earlier pack
+already patched. When a pack **P** writes a field (or removes an entry)
+that an override from an earlier pack **Q** already wrote, and P does
+**not** transitively depend on Q, the load **warns** and P wins:
+
+```
+warning: vamp content.yaml:3 clock.start: also overridden by pack 'zmb' (clock.yaml:2); 'vamp' wins (later in load order)
+```
+
+There is no warning when P depends on Q (the patch is intentional), when
+only the original definer wrote the field, or when the overrides touch
+different fields. `distributions` have no ids and cannot be patched.
+
+**Checking a stack.** `npm run check` prints one line per pack that patched
+anything (`hardmode: 2 overrides, 1 removal`). With `--overrides` it lists
+the stack and every patch:
+
+```
+npm run check -- packs/std packs/std-needs packs/zombie packs/hardmode --overrides
+stack:
+  std        0.1.0
+  std_needs  0.1.0
+  zmb        0.1.0
+  hardmode   1.0.0
+patches:
+  hardmode  override  measurement std_needs:hunger  [rate]
+  hardmode  remove    system      zmb:crunch
+  hardmode  override  clock                         [start]
+```
+
+The loaded definition lists the same patches in `def.patches`
+(`{ domain, id, pack, op, fields }`, `id` null for singletons). It is
+diagnostic only: snapshots, hashes and saves do not include it. A save
+records the packs of its stack, so a mod is part of it; a save naming a
+removed id fails with the usual unknown-id error.
 
 ## Validation
 
@@ -1519,8 +1646,18 @@ item uses and `self` actions included) or placing a tile with a
 id. For recipes: missing or empty `consume`/`produce`, a count that is not
 an integer ≥ 1, an item in both `consume` and `tools`, unknown item or
 tile ids (with suggestions), a malformed `station` filter, and `set_tile`
-in `effects`. Warnings (e.g. a loot table that can exceed a container's capacity, or
-a filter or station tag no tile carries) are printed but do not fail the load.
+in `effects`. For mods (M7): an `override`/`remove` target that is a short
+id, the pack's own namespace, a namespace the pack does not directly
+depend on, or an unknown id (with suggestions); `override`/`remove` values
+other than `true`/`false`; `override` together with `remove`; fields other
+than `id` on a removal; overriding a removed entry; references to a
+removed id (naming the remover); a singleton override without a base
+definition or from a pack that does not depend on its definer; and a
+required field cleared with `null`. Warnings (e.g. a loot table that can
+exceed a container's capacity, a filter or station tag no tile carries, an
+override that changes nothing, a second removal of the same entry, or two
+unrelated packs patching the same field) are printed but do not fail the
+load.
 A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
 

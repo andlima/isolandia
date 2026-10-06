@@ -54,36 +54,15 @@ import {
 import { CARDINALS, FACINGS, MIRROR, facingTable, isDiagonal, isFacing, type Facing } from '../facing.ts';
 import { compileSource, isPointType, nearMiss, type Compiled, type CompiledExpr } from '../expr/index.ts';
 import { at, ErrorSink, formatPath, lineOf, PackLoadError, type LoadError, type Src } from './errors.ts';
-import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawEntry, type RawPack } from './pack.ts';
-import { SymbolTable, type Kind, type Scope } from './resolve.ts';
+import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawPack } from './pack.ts';
+import { applyPatches, type Defined, type LoadedPack, type Merged } from './patch.ts';
+import { SymbolTable, type Scope } from './resolve.ts';
 import { normalizePath, readTiledMap, type TiledMap } from './tiled.ts';
 import { Fields } from './validate.ts';
 
 export type LoadResult =
   | { ok: true; definition: Definition; warnings: readonly LoadError[] }
   | { ok: false; errors: readonly LoadError[]; warnings: readonly LoadError[] };
-
-interface Defined {
-  readonly id: string;
-  readonly index: number;
-  readonly entry: RawEntry;
-  readonly scope: Scope;
-}
-
-const KIND_OF: Record<ListDomain, Kind> = {
-  measurements: 'measurement',
-  assets: 'asset',
-  tiles: 'tile',
-  archetypes: 'archetype',
-  maps: 'map',
-  systems: 'system',
-  statuses: 'status',
-  items: 'item',
-  loot: 'loot',
-  behaviors: 'behavior',
-  actions: 'action',
-  recipes: 'recipe',
-};
 
 const DEFAULT_TICKS_PER_STEP = 2;
 const DEFAULT_TICKS_PER_TURN = 1;
@@ -118,21 +97,11 @@ function deepFreeze<T>(o: T): T {
 class Loader {
   readonly sink = new ErrorSink();
   readonly symbols = new SymbolTable();
-  readonly defined: Record<ListDomain, Defined[]> = {
-    measurements: [],
-    assets: [],
-    tiles: [],
-    archetypes: [],
-    maps: [],
-    systems: [],
-    statuses: [],
-    items: [],
-    loot: [],
-    behaviors: [],
-    actions: [],
-    recipes: [],
-  };
-  packs: { raw: RawPack; scope: Scope }[] = [];
+  defined!: Record<ListDomain, Defined[]>;
+  packs: LoadedPack[] = [];
+  /** The merged singletons (null when no pack defines them). */
+  private singletons!: { start: Merged | null; clock: Merged | null; lighting: Merged | null };
+  private patches: Definition['patches'] = [];
   /** Per map index: the read Tiled map, null after an error, undefined for ASCII maps. */
   private readonly tiledMaps: (TiledMap | null | undefined)[] = [];
   /** Every room tag used by a map, in first-seen order (collected before any expression compiles). */
@@ -144,7 +113,7 @@ class Loader {
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
-    this.defineIds();
+    this.applyPatches();
     this.readTiledMaps();
     this.collectRoomTags();
     const measurements = this.defined.measurements.map((d) => this.measurement(d));
@@ -199,6 +168,7 @@ class Loader {
       start,
       clock,
       lighting,
+      patches: this.patches,
       ids: {
         measurements: ids(measurements),
         assets: ids(assets),
@@ -221,6 +191,7 @@ class Loader {
 
   private parsePacks(sources: readonly PackSource[]): void {
     const seen = new Set<string>();
+    const closures = new Map<string, ReadonlySet<string>>();
     for (const source of sources) {
       const raw = parsePack(source, this.sink);
       if (!raw) continue;
@@ -236,21 +207,30 @@ class Loader {
         } else depends.push(d.ns);
       }
       seen.add(raw.namespace);
-      this.packs.push({ raw, scope: { namespace: raw.namespace, depends } });
+      const closure = new Set(depends.flatMap((d) => [d, ...closures.get(d)!]));
+      closures.set(raw.namespace, closure);
+      this.packs.push({ raw, scope: { namespace: raw.namespace, depends }, closure });
     }
   }
 
-  // ── Stage 2: qualify and register ids ───────────────────────────────────
+  // ── Stage 2: qualify and register ids, apply mods' patches ──────────────
 
-  private defineIds(): void {
-    for (const { raw, scope } of this.packs) {
-      for (const domain of Object.keys(this.defined) as ListDomain[]) {
-        for (const entry of raw.entries[domain]) {
-          const r = this.symbols.define(KIND_OF[domain], entry.value['id'], scope, entry.src, this.sink);
-          if (r) this.defined[domain].push({ ...r, entry, scope });
-        }
-      }
-    }
+  private applyPatches(): void {
+    const { defined, start, clock, lighting, patches } = applyPatches(this.packs, this.symbols, this.sink);
+    this.defined = defined;
+    this.singletons = { start, clock, lighting };
+    this.patches = patches;
+  }
+
+  /** Fields of a (possibly merged) entry: each top-level field located at the entry that wrote it. */
+  private fields(d: Merged, allowed: readonly string[], what: string): Fields {
+    return new Fields(this.sink, d.entry.src, d.entry.value, allowed, what, (k) => d.srcOf(k));
+  }
+
+  /** The pack whose files a path in field `key` of `d` is relative to. */
+  private packOf(d: Merged, key: string): RawPack {
+    const ns = d.scopeOf(key).namespace;
+    return this.packs.find((p) => p.scope.namespace === ns)!.raw;
   }
 
   // ── Expressions ─────────────────────────────────────────────────────────
@@ -337,7 +317,7 @@ class Loader {
   // ── Stage 3: build definitions ──────────────────────────────────────────
 
   private measurement(d: Defined): MeasurementDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'min', 'max', 'initial', 'rate'], 'measurement');
+    const f = this.fields(d, ['id', 'label', 'min', 'max', 'initial', 'rate'], 'measurement');
     const label = f.string('label') ?? d.id;
     const min = f.number('min', false) ?? 0;
     const initial = f.number('initial') ?? min;
@@ -349,14 +329,14 @@ class Loader {
     else if (typeof max === 'string') {
       if (/^([a-z][a-z0-9_]*:)?[a-z][a-z0-9_]*$/.test(max) && !['self', 'player', 'tile', 'world'].includes(max)) {
         // A bare measurement reference means "this entity's value of it".
-        const r = this.symbols.ref('measurement', max, d.scope, f.at('max'), this.sink);
+        const r = this.symbols.ref('measurement', max, d.scopeOf('max'), f.at('max'), this.sink);
         if (r) {
           if (r.index === d.index) this.sink.add(f.at('max'), `measurement '${d.id}' cannot be its own max`);
           const idx = r.index;
           maxFn = (c) => c.self.m[idx]!;
         }
       } else {
-        const e = this.expr(max, d.scope, f.at('max'));
+        const e = this.expr(max, d.scopeOf('max'), f.at('max'));
         if (e?.constant !== undefined) maxConst = e.constant;
         else if (e) maxFn = e.fn;
       }
@@ -370,7 +350,7 @@ class Loader {
     const rate = f.raw('rate');
     if (typeof rate === 'number') rateConst = rate;
     else if (typeof rate === 'string') {
-      const e = this.expr(rate, d.scope, f.at('rate'));
+      const e = this.expr(rate, d.scopeOf('rate'), f.at('rate'));
       if (e?.constant !== undefined) rateConst = e.constant;
       else if (e) rateFn = e.fn;
     } else if (rate !== undefined && rate !== null) {
@@ -381,8 +361,9 @@ class Loader {
   }
 
   private asset(d: Defined): AssetDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'file', 'anchor', 'directions'], 'asset');
-    const pack = this.packs.find((p) => p.scope.namespace === d.scope.namespace)!.raw;
+    const f = this.fields(d, ['id', 'file', 'anchor', 'directions'], 'asset');
+    // The image paths are relative to the files of the pack that wrote them.
+    const pack = this.packOf(d, d.entry.value['directions'] !== undefined && d.entry.value['directions'] !== null ? 'directions' : 'file');
     const anchor = this.anchor(f.raw('anchor'), f.at('anchor')) ?? DEFAULT_ANCHOR;
     const single = (file: string): AssetDef => ({
       id: d.id,
@@ -475,11 +456,11 @@ class Loader {
   /** Optional `sprite` asset reference → asset index or null. */
   private sprite(f: Fields, d: Defined): number | null {
     if (!f.has('sprite')) return null;
-    return this.symbols.ref('asset', f.raw('sprite'), d.scope, f.at('sprite'), this.sink)?.index ?? null;
+    return this.symbols.ref('asset', f.raw('sprite'), d.scopeOf('sprite'), f.at('sprite'), this.sink)?.index ?? null;
   }
 
   private tile(d: Defined): TileDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb'], 'tile');
+    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
     if (d.index >= EMPTY_TILE) this.sink.add(d.entry.src, `too many tiles: at most ${EMPTY_TILE} tiles can be loaded`);
     let climb: TileDef['climb'] = null;
@@ -524,7 +505,7 @@ class Loader {
   }
 
   private item(d: Defined): ItemDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'glyph', 'color', 'weight', 'tags', 'sprite', 'use'], 'item');
+    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'weight', 'tags', 'sprite', 'use'], 'item');
     const label = f.string('label') ?? d.id;
     const glyph = f.glyph() ?? '?';
     const color = f.color() ?? 'white';
@@ -536,8 +517,8 @@ class Loader {
     if (u) {
       const uf = new Fields(this.sink, f.at('use'), u, ['label', 'when', 'effects', 'consume', 'duration', 'interrupt'], 'use');
       const useLabel = uf.string('label', false) ?? DEFAULT_USE_LABEL;
-      const whenFn = this.condition(uf, 'when', d.scope) ?? null;
-      const effects = this.effects(uf, d.scope);
+      const whenFn = this.condition(uf, 'when', d.scopeOf('use')) ?? null;
+      const effects = this.effects(uf, d.scopeOf('use'));
       let consume = 1;
       const cv = uf.raw('consume');
       if (cv !== undefined && cv !== null) {
@@ -545,18 +526,16 @@ class Loader {
           this.sink.add(uf.at('consume'), `field 'consume' must be a non-negative integer, got ${JSON.stringify(cv)}`);
         } else consume = cv;
       }
-      const duration = this.duration(uf, d.scope);
-      const interruptFn = this.condition(uf, 'interrupt', d.scope) ?? null;
+      const duration = this.duration(uf, d.scopeOf('use'));
+      const interruptFn = this.condition(uf, 'interrupt', d.scopeOf('use')) ?? null;
       use = { label: useLabel, whenFn, effects, consume, duration, interruptFn };
     }
     return { id: d.id, index: d.index, label, glyph, color, weight, tags, sprite, use };
   }
 
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
-    const f = new Fields(
-      this.sink,
-      d.entry.src,
-      d.entry.value,
+    const f = this.fields(
+      d,
       ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior'],
       'archetype',
     );
@@ -567,7 +546,7 @@ class Loader {
 
     const indices: number[] = [];
     (f.list('measurements') ?? []).forEach((ref, i) => {
-      const r = this.symbols.ref('measurement', ref, d.scope, f.at('measurements', i), this.sink);
+      const r = this.symbols.ref('measurement', ref, d.scopeOf('measurements'), f.at('measurements', i), this.sink);
       if (!r) return;
       if (indices.includes(r.index)) this.sink.add(f.at('measurements', i), `measurement '${r.id}' is listed twice`);
       else indices.push(r.index);
@@ -578,7 +557,7 @@ class Loader {
     const overrides = f.mapping('initial');
     for (const [ref, value] of Object.entries(overrides ?? {})) {
       const src = f.at('initial', ref);
-      const r = this.symbols.ref('measurement', ref, d.scope, src, this.sink);
+      const r = this.symbols.ref('measurement', ref, d.scopeOf('initial'), src, this.sink);
       if (!r) continue;
       const k = indices.indexOf(r.index);
       if (k < 0) this.sink.add(src, `initial override for '${r.id}', which is not in this archetype's measurements`);
@@ -598,7 +577,7 @@ class Loader {
     }
     const sprite = this.sprite(f, d);
     const inventory = this.inventory(f, d, items);
-    const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scope, f.at('behavior'), this.sink)?.index ?? null) : null;
+    const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scopeOf('behavior'), f.at('behavior'), this.sink)?.index ?? null) : null;
     return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior };
   }
 
@@ -611,7 +590,7 @@ class Loader {
     let total = 0;
     for (const [ref, value] of Object.entries(inf.mapping('items') ?? {})) {
       const src = inf.at('items', ref);
-      const r = this.symbols.ref('item', ref, d.scope, src, this.sink);
+      const r = this.symbols.ref('item', ref, d.scopeOf('inventory'), src, this.sink);
       if (!r) continue;
       if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
         this.sink.add(src, `starting item count must be a positive integer, got ${JSON.stringify(value)}`);
@@ -640,7 +619,7 @@ class Loader {
       const v = d.entry.value;
       if (v['tiled'] === undefined || isComposite(v)) continue;
       this.tiledMaps[d.index] = null;
-      const src = at(d.entry.src, 'tiled');
+      const src = at(d.srcOf('tiled'), 'tiled');
       const mixed = ASCII_MAP_FIELDS.filter((k) => v[k] !== undefined);
       if (mixed.length) {
         this.sink.add(src, `a map takes either the ASCII fields (legend, rows or floors, rooms) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
@@ -655,7 +634,7 @@ class Loader {
         this.sink.add(src, `'${raw}' is a TMX (XML) map: save the map as JSON in Tiled (File → Export As… → JSON map files) and reference the .tmj`);
         continue;
       }
-      const pack = this.packs.find((p) => p.scope.namespace === d.scope.namespace)!.raw;
+      const pack = this.packOf(d, 'tiled');
       const path = normalizePath(raw);
       if (path === null || !path.endsWith('.tmj') || pack.tiledFiles[path] === undefined) {
         const known = Object.keys(pack.tiledFiles).filter((k) => k.endsWith('.tmj'));
@@ -667,8 +646,8 @@ class Loader {
       const { map, problems } = readTiledMap({
         files: pack.tiledFiles,
         path,
-        tile: (ref) => this.symbols.resolve('tile', ref, d.scope),
-        archetype: (ref) => this.symbols.resolve('archetype', ref, d.scope),
+        tile: (ref) => this.symbols.resolve('tile', ref, d.scopeOf('tiled')),
+        archetype: (ref) => this.symbols.resolve('archetype', ref, d.scopeOf('tiled')),
       });
       const line = lineOf(src.source, src.path);
       const from = `in map '${d.id}', from ${src.source.file}${line !== undefined ? `:${line}` : ''} ${formatPath(src.path)}`;
@@ -680,16 +659,16 @@ class Loader {
   private map(d: Defined): MapDef {
     const tiled = this.tiledMaps[d.index];
     if (tiled !== undefined) {
-      const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
+      const f = this.fields(d, MAP_FIELDS, 'map');
       if (!tiled) return this.emptyMap(d);
       const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, z: r.z, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
       const { width, height, floors, cells, facings, spawns, playerStart } = tiled;
-      this.checkLinks(cells, width, height, floors, () => at(d.entry.src, 'tiled'));
+      this.checkLinks(cells, width, height, floors, () => f.at('tiled'));
       const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: false };
-      return this.withPopulate(map, f, d.scope);
+      return this.withPopulate(map, f, d.scopeOf('populate'));
     }
     const before = this.sink.count;
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
+    const f = this.fields(d, MAP_FIELDS, 'map');
 
     interface Legend {
       tile: number;
@@ -710,8 +689,8 @@ class Loader {
         continue;
       }
       const lf = new Fields(this.sink, src, value, ['tile', 'spawn', 'player', 'facing'], 'legend');
-      const tile = lf.has('tile') ? this.symbols.ref('tile', value['tile'], d.scope, lf.at('tile'), this.sink) : lf.string('tile');
-      const spawn = lf.has('spawn') ? this.symbols.ref('archetype', value['spawn'], d.scope, lf.at('spawn'), this.sink) : null;
+      const tile = lf.has('tile') ? this.symbols.ref('tile', value['tile'], d.scopeOf('legend'), lf.at('tile'), this.sink) : lf.string('tile');
+      const spawn = lf.has('spawn') ? this.symbols.ref('archetype', value['spawn'], d.scopeOf('legend'), lf.at('spawn'), this.sink) : null;
       const player = lf.boolean('player', false) ?? false;
       let facing: Facing | null = null;
       const rawFacing = lf.has('facing') ? value['facing'] : undefined;
@@ -808,7 +787,7 @@ class Loader {
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, (i) => layers[Math.floor(i / (width * height))]!.at(Math.floor(i / width) % height));
     const rooms = this.roomSets(this.roomRects(f, width, height, floors), width, height, floors);
     const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms, populate: [], composite: false };
-    return this.sink.count === before ? this.withPopulate(map, f, d.scope) : map;
+    return this.sink.count === before ? this.withPopulate(map, f, d.scopeOf('populate')) : map;
   }
 
   private emptyMap(d: Defined, composite = false): MapDef {
@@ -832,7 +811,7 @@ class Loader {
    */
   private compositeMap(d: Defined, maps: readonly MapDef[]): MapDef {
     const before = this.sink.count;
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, MAP_FIELDS, 'map');
+    const f = this.fields(d, MAP_FIELDS, 'map');
     const mixed = ['tiled', 'legend', 'rows', 'floors'].filter((k) => f.has(k));
     if (mixed.length) {
       this.sink.add(f.at(mixed[0]!), `a composite map (${COMPOSITE_MAP_FIELDS.join(', ')}) cannot also take ASCII or Tiled fields (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
@@ -861,7 +840,7 @@ class Loader {
         return;
       }
       const pf = new Fields(this.sink, src, raw, ['map', 'at'], 'part');
-      const ref = pf.has('map') ? this.symbols.ref('map', pf.raw('map'), d.scope, pf.at('map'), this.sink) : pf.string('map');
+      const ref = pf.has('map') ? this.symbols.ref('map', pf.raw('map'), d.scopeOf('parts'), pf.at('map'), this.sink) : pf.string('map');
       const pos = pf.raw('at');
       let ok = true;
       if (pos === undefined || pos === null) ok = pf.present('at');
@@ -929,14 +908,14 @@ class Loader {
     }
     const uncovered = covered.indexOf(0);
     if (uncovered >= 0) {
-      const fill = f.has('fill') ? this.symbols.ref('tile', f.raw('fill'), d.scope, f.at('fill'), this.sink) : null;
+      const fill = f.has('fill') ? this.symbols.ref('tile', f.raw('fill'), d.scopeOf('fill'), f.at('fill'), this.sink) : null;
       if (!f.has('fill')) {
         const n = covered.reduce((a, c) => a + (c ? 0 : 1), 0);
         this.sink.add(d.entry.src, `missing required field 'fill': ${n} floor-0 cell${n === 1 ? ' is' : 's are'} not covered by any part (first at (${uncovered % width}, ${Math.floor(uncovered / width)}))`);
       } else if (fill) {
         for (let i = 0; i < area; i++) if (!covered[i]) cells[i] = fill.index;
       }
-    } else if (f.has('fill')) this.symbols.ref('tile', f.raw('fill'), d.scope, f.at('fill'), this.sink);
+    } else if (f.has('fill')) this.symbols.ref('tile', f.raw('fill'), d.scopeOf('fill'), f.at('fill'), this.sink);
 
     let playerStart: { x: number; y: number; z: number } | null = null;
     if (f.has('player')) {
@@ -956,7 +935,7 @@ class Loader {
     rects.push(...this.roomRects(f, width, height, floors));
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, () => d.entry.src);
     const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: true };
-    const own = this.populateEntries(f, d.scope, width, height, floors);
+    const own = this.populateEntries(f, d.scopeOf('populate'), width, height, floors);
     const out = { ...map, populate: [...populate, ...own.map((o) => o.def)] };
     if (this.sink.count !== before) return this.emptyMap(d, true); // reported; keeps `start` quiet
     this.checkPopulate(out, [...popSrc, ...own.map((o) => o.src)]);
@@ -1188,7 +1167,7 @@ class Loader {
   }
 
   private lootTable(d: Defined): LootTableDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'rolls', 'entries'], 'loot table');
+    const f = this.fields(d, ['id', 'rolls', 'entries'], 'loot table');
     let rolls: [number, number] = [1, 1];
     if (f.has('rolls')) rolls = this.range(f.raw('rolls'), 'rolls', 0, f.at('rolls')) ?? rolls;
     const entries: LootEntryDef[] = [];
@@ -1234,10 +1213,10 @@ class Loader {
         }
         push({ kind, weight });
       } else if (kind === 'table') {
-        const r = this.symbols.ref('loot', ef.raw('table'), d.scope, ef.at('table'), this.sink);
+        const r = this.symbols.ref('loot', ef.raw('table'), d.scopeOf('entries'), ef.at('table'), this.sink);
         if (r) push({ kind, table: r.index, weight });
       } else {
-        const r = this.symbols.ref('item', ef.raw('item'), d.scope, ef.at('item'), this.sink);
+        const r = this.symbols.ref('item', ef.raw('item'), d.scopeOf('entries'), ef.at('item'), this.sink);
         const count = ef.has('count') ? this.range(ef.raw('count'), 'count', 1, ef.at('count')) : [1, 1];
         if (r && count) push({ kind, item: r.index, weight, countMin: count[0], countMax: count[1] });
       }
@@ -1318,18 +1297,18 @@ class Loader {
   }
 
   private status(d: Defined): StatusDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
+    const f = this.fields(d, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
     const label = f.string('label') ?? d.id;
-    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forExpr = this.conditionExpr(f, 'for', d.scopeOf('for'));
     const forFn = forExpr?.fn ?? null;
     const forTag = forExpr?.selfTag ?? null;
-    const whenFn = this.condition(f, 'when', d.scope, true) ?? always;
-    const untilFn = this.condition(f, 'until', d.scope) ?? ((c) => !whenFn(c));
+    const whenFn = this.condition(f, 'when', d.scopeOf('when'), true) ?? always;
+    const untilFn = this.condition(f, 'until', d.scopeOf('until')) ?? ((c) => !whenFn(c));
     const rates: StatusRate[] = [];
     for (const [ref, value] of Object.entries(f.mapping('rates') ?? {})) {
       const src = f.at('rates', ref);
-      const r = this.symbols.ref('measurement', ref, d.scope, src, this.sink);
-      const term = this.numberTerm(value, `rates.${ref}`, d.scope, src);
+      const r = this.symbols.ref('measurement', ref, d.scopeOf('rates'), src, this.sink);
+      const term = this.numberTerm(value, `rates.${ref}`, d.scopeOf('rates'), src);
       if (!r || !term) continue;
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
@@ -1338,16 +1317,16 @@ class Loader {
   }
 
   private system(d: Defined): SystemDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'every', 'for', 'when', 'effects'], 'system');
+    const f = this.fields(d, ['id', 'every', 'for', 'when', 'effects'], 'system');
     let every = f.number('every', false) ?? DEFAULT_EVERY;
     const period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
     if (every <= 0) every = DEFAULT_EVERY;
-    const forExpr = this.conditionExpr(f, 'for', d.scope);
+    const forExpr = this.conditionExpr(f, 'for', d.scopeOf('for'));
     const forFn = forExpr?.fn ?? null;
     const forTag = forExpr?.selfTag ?? null;
-    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
 
-    const effects = this.effects(f, d.scope);
+    const effects = this.effects(f, d.scopeOf('effects'));
     return { id: d.id, index: d.index, every, period, forFn, forTag, whenFn, effects };
   }
 
@@ -1369,7 +1348,7 @@ class Loader {
   // ── Behaviors ───────────────────────────────────────────────────────────
 
   private behavior(d: Defined): BehaviorDef {
-    const f = new Fields(this.sink, d.entry.src, d.entry.value, ['id', 'initial', 'states'], 'behavior');
+    const f = this.fields(d, ['id', 'initial', 'states'], 'behavior');
     const raw = f.mapping('states', true);
     const names = Object.keys(raw ?? {});
     if (raw && names.length === 0) this.sink.add(f.at('states'), `field 'states' must define at least one state`);
@@ -1388,7 +1367,7 @@ class Loader {
       return 0;
     };
     const initial = f.present('initial') ? stateRef(f.raw('initial'), f.at('initial')) : 0;
-    const states = names.map((name, index) => this.behaviorState(f.at('states', name), raw![name], name, index, d.scope, stateRef));
+    const states = names.map((name, index) => this.behaviorState(f.at('states', name), raw![name], name, index, d.scopeOf('states'), stateRef));
     return { id: d.id, index: d.index, initial, states };
   }
 
@@ -1627,10 +1606,8 @@ class Loader {
   }
 
   private action(d: Defined, tiles: readonly TileDef[]): ActionDef {
-    const f = new Fields(
-      this.sink,
-      d.entry.src,
-      d.entry.value,
+    const f = this.fields(
+      d,
       ['id', 'label', 'progress', 'target', 'when', 'unavailable', 'tools', 'consume', 'duration', 'interrupt', 'effects'],
       'action',
     );
@@ -1645,17 +1622,17 @@ class Loader {
       if (tv !== 'self') this.sink.add(f.at('target'), `field 'target' must be 'self' or a tile filter like { tiles: [door] }, got ${JSON.stringify(tv)}`);
     } else {
       tileTarget = true;
-      target = this.tileFilter(tv, f.at('target'), d.scope, tiles);
+      target = this.tileFilter(tv, f.at('target'), d.scopeOf('target'), tiles);
     }
 
-    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
     const unavailable = f.string('unavailable', false) ?? null;
-    const tools = this.tools(f, d.scope);
-    const consume = this.itemCounts(f, 'consume', d.scope, 'consumed');
+    const tools = this.tools(f, d.scopeOf('tools'));
+    const consume = this.itemCounts(f, 'consume', d.scopeOf('consume'), 'consumed');
     const rawConsume = f.raw('consume');
-    const duration = this.duration(f, d.scope);
-    const interruptFn = this.condition(f, 'interrupt', d.scope) ?? null;
-    const effects = this.effects(f, d.scope, { optional: true, setTile: tileTarget });
+    const duration = this.duration(f, d.scopeOf('duration'));
+    const interruptFn = this.condition(f, 'interrupt', d.scopeOf('interrupt')) ?? null;
+    const effects = this.effects(f, d.scopeOf('effects'), { optional: true, setTile: tileTarget });
     const rawEffects = f.raw('effects');
     if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && !(isObject(rawConsume) && Object.keys(rawConsume).length > 0)) {
       this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
@@ -1666,10 +1643,8 @@ class Loader {
   // ── Recipes ─────────────────────────────────────────────────────────────
 
   private recipe(d: Defined, tiles: readonly TileDef[]): RecipeDef {
-    const f = new Fields(
-      this.sink,
-      d.entry.src,
-      d.entry.value,
+    const f = this.fields(
+      d,
       ['id', 'label', 'verb', 'category', 'consume', 'tools', 'produce', 'station', 'when', 'unavailable', 'duration', 'interrupt', 'effects', 'progress'],
       'recipe',
     );
@@ -1677,20 +1652,20 @@ class Loader {
     const verb = f.string('verb', false) ?? DEFAULT_RECIPE_VERB;
     const category = f.string('category', false) ?? DEFAULT_RECIPE_CATEGORY;
     const progress = f.string('progress', false) ?? `${verb}: ${label}`;
-    const consume = this.itemCounts(f, 'consume', d.scope, 'consumed', true);
-    const produce = this.itemCounts(f, 'produce', d.scope, 'produced', true);
-    const tools = this.tools(f, d.scope, (item, src, id) => {
+    const consume = this.itemCounts(f, 'consume', d.scopeOf('consume'), 'consumed', true);
+    const produce = this.itemCounts(f, 'produce', d.scopeOf('produce'), 'produced', true);
+    const tools = this.tools(f, d.scopeOf('tools'), (item, src, id) => {
       if (!consume.some((c) => c.item === item)) return true;
       this.sink.add(src, `item '${id}' is both consumed and a tool; list it in 'consume' or 'tools', not both`);
       return false;
     });
     const sv = f.raw('station');
-    const station = sv === undefined || sv === null ? null : this.tileFilter(sv, f.at('station'), d.scope, tiles);
-    const whenFn = this.condition(f, 'when', d.scope) ?? null;
+    const station = sv === undefined || sv === null ? null : this.tileFilter(sv, f.at('station'), d.scopeOf('station'), tiles);
+    const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
     const unavailable = f.string('unavailable', false) ?? null;
-    const duration = this.duration(f, d.scope);
-    const interruptFn = this.condition(f, 'interrupt', d.scope) ?? null;
-    const effects = this.effects(f, d.scope, { optional: true });
+    const duration = this.duration(f, d.scopeOf('duration'));
+    const interruptFn = this.condition(f, 'interrupt', d.scopeOf('interrupt')) ?? null;
+    const effects = this.effects(f, d.scopeOf('effects'), { optional: true });
     return { id: d.id, index: d.index, label, verb, category, progress, tools, consume, produce, station, whenFn, unavailable, duration, interruptFn, effects };
   }
 
@@ -1705,8 +1680,8 @@ class Loader {
   }
 
   private start(maps: readonly MapDef[]): Definition['start'] | null {
-    const all = this.packs.flatMap(({ raw, scope }) => raw.starts.map((entry) => ({ entry, scope })));
-    if (all.length === 0) {
+    const d = this.singletons.start;
+    if (!d) {
       const last = this.packs[this.packs.length - 1];
       if (last) {
         this.sink.add({ source: last.raw.manifest, path: [] }, `no 'start' defined: exactly one loaded pack must define 'start' (map + player)`);
@@ -1715,18 +1690,12 @@ class Loader {
       }
       return null;
     }
-    const [first, ...rest] = all;
-    for (const extra of rest) {
-      const s = first!.entry.src;
-      this.sink.add(extra.entry.src, `duplicate 'start': already defined in pack '${s.source.pack}' (${s.source.file})`);
-    }
-    const { entry, scope } = first!;
-    const f = new Fields(this.sink, entry.src, entry.value, ['map', 'player', 'defeat', 'victory', 'simulation'], 'start');
+    const f = this.fields(d, ['map', 'player', 'defeat', 'victory', 'simulation'], 'start');
     const simulation = this.simulation(f);
-    const defeat = this.outcome(f, 'defeat', scope, DEFAULT_DEFEAT_MESSAGE);
-    const victory = this.outcome(f, 'victory', scope, DEFAULT_VICTORY_MESSAGE);
-    const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), scope, f.at('map'), this.sink) : f.string('map');
-    const player = f.has('player') ? this.symbols.ref('archetype', f.raw('player'), scope, f.at('player'), this.sink) : f.string('player');
+    const defeat = this.outcome(f, 'defeat', d.scopeOf('defeat'), DEFAULT_DEFEAT_MESSAGE);
+    const victory = this.outcome(f, 'victory', d.scopeOf('victory'), DEFAULT_VICTORY_MESSAGE);
+    const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), d.scopeOf('map'), f.at('map'), this.sink) : f.string('map');
+    const player = f.has('player') ? this.symbols.ref('archetype', f.raw('player'), d.scopeOf('player'), f.at('player'), this.sink) : f.string('player');
     if (!map || typeof map !== 'object' || !player || typeof player !== 'object') return null;
     const m = maps[map.index];
     if (m && !m.playerStart) {
@@ -1734,7 +1703,7 @@ class Loader {
       // A Tiled map that failed to read has already been reported.
       if (tiled !== null && !(m.composite && m.width === 0)) {
         const how = m.composite ? `a 'player' field on the composite map` : tiled ? `a 'player' object in the Tiled map` : `a legend entry with 'player: true'`;
-        this.sink.add(at(entry.src, 'map'), `start map '${map.id}' has no player start cell (${how})`);
+        this.sink.add(f.at('map'), `start map '${map.id}' has no player start cell (${how})`);
       }
       return null;
     }
@@ -1762,14 +1731,9 @@ class Loader {
   }
 
   private clock(): ClockDef {
-    const all = this.packs.flatMap(({ raw }) => raw.clocks);
-    const [first, ...rest] = all;
-    if (!first) return DEFAULT_CLOCK;
-    for (const extra of rest) {
-      const s = first.src;
-      this.sink.add(extra.src, `duplicate 'clock': already defined in pack '${s.source.pack}' (${s.source.file})`);
-    }
-    const f = new Fields(this.sink, first.src, first.value, ['day_length', 'start', 'dawn', 'dusk'], 'clock');
+    const d = this.singletons.clock;
+    if (!d) return DEFAULT_CLOCK;
+    const f = this.fields(d, ['day_length', 'start', 'dawn', 'dusk'], 'clock');
     let dayLength = f.number('day_length', false) ?? DEFAULT_CLOCK.dayLength;
     if (dayLength <= 0) {
       this.sink.add(f.at('day_length'), `field 'day_length' must be a number of seconds > 0, got ${dayLength}`);
@@ -1795,14 +1759,9 @@ class Loader {
   }
 
   private lighting(): LightingDef | null {
-    const all = this.packs.flatMap(({ raw }) => raw.lightings);
-    const [first, ...rest] = all;
-    if (!first) return null;
-    for (const extra of rest) {
-      const s = first.src;
-      this.sink.add(extra.src, `duplicate 'lighting': already defined in pack '${s.source.pack}' (${s.source.file})`);
-    }
-    const f = new Fields(this.sink, first.src, first.value, ['tint'], 'lighting');
+    const d = this.singletons.lighting;
+    if (!d) return null;
+    const f = this.fields(d, ['tint'], 'lighting');
     const list = f.list('tint');
     if (!list) {
       if (!f.has('tint')) f.present('tint');

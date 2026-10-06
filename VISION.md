@@ -213,8 +213,19 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   runs stay deterministic. **Utility AI is deferred**; it could come later
   as another activity or state selector. No nested states or enter/exit
   effects yet. See `docs/packs.md`.
-- Override semantics between packs: full replacement by ID, deep merge,
-  or explicit patch operations?
+- ~~Override semantics between packs: full replacement by ID, deep merge,
+  or explicit patch operations?~~ **Decided (spec `m7-overrides`, M7):**
+  **patch by qualified id.** A pack restates a **direct dependency's** id
+  with `override: true` and only the fields it changes (a **shallow**
+  merge: each listed top-level field replaces the old one whole, lists and
+  mappings included; `field: null` clears it), or deletes the entry with
+  `remove: true`. `start`, `clock` and `lighting` take `override: true`
+  too. Each field keeps the **scope and files of the pack that wrote it**;
+  entries keep their position and indices stay dense; references to a
+  removed id are load errors naming the remover. Unrelated packs writing
+  the same field **warn, later wins**. No list operators or deep merge;
+  `distributions` cannot be patched. `check --overrides` lists every
+  patch. See `docs/packs.md` (Mods and overrides).
 - Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
   (wasmoon/fengari)?
 - Combat: real time over ticks, or something more tactical?
@@ -249,8 +260,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   **derived from the tick** — it adds no state, so determinism, snapshots
   and hashes do not change. Expressions read `world.day`, `world.hour`,
   `world.minute`, `world.time_of_day` and `world.is_day`; `rate` stays per
-  simulation second. **At most one pack** defines `clock` until override
-  semantics exist (M7). See `docs/packs.md`.
+  simulation second. **One pack** defines `clock`; since M7 later packs
+  may patch it with `override: true`. See `docs/packs.md`.
 - ~~How do `systems` schedule work, how do `statuses` enter and exit, how
   is day/night configured, and how does the game end?~~ **Decided in M2:**
   - **`systems`** use **simulation seconds** (`every: 1`, default one
