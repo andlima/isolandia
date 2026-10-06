@@ -66,9 +66,18 @@ loot:
     entries:
       - { item: cloak, weight: 1 }
       - { table: vintage, weight: 1 }
+  # The attic study's chest: a scholar's papers and a few vials.
+  - id: study_chest
+    rolls: [2, 3]
+    entries:
+      - { item: tome, weight: 3 }
+      - { item: blood_vial, weight: 2, count: [1, 2] }
+      - { item: empty_vial, weight: 1 }
+      - { item: candle, weight: 1, count: [1, 2] }
 
 distributions:
   - { container: wine_rack, room: cellar, table: cellar_rack }
   - { container: wine_rack, table: vintage }
   - { container: bookshelf, room: library, table: library_shelf }
+  - { container: chest, room: study, table: study_chest }
   - { container: chest, table: heirlooms }

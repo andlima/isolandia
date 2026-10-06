@@ -73,7 +73,8 @@ code.
    of different genres** (e.g. zombie + vampire), to keep genre
    assumptions from leaking into the engine.
 6. **World maps edited in Tiled** (JSON) once the world grows; ASCII stays
-   valid for fixtures.
+   valid for fixtures. **Done (spec `m6-tiled-maps`, M6):** maps take
+   `tiled: <file>.tmj`; the zombie town and vampire mansion are Tiled maps.
 7. **Minimal dependencies**, in the spirit of rogue-engine (YAML parser,
    PixiJS; anything else justified case by case).
 8. **Three tiers, GURPS-style** (a generic core + setting supplements, not
@@ -155,7 +156,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M3 | Items, weight, containers, loot tables by room tag | Loot a house | ✅ done |
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
 | M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
-| M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town |  |
+| M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town | ✅ done |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
 | M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
@@ -175,8 +176,12 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 - **Isometric art is expensive**, and it is what makes one genre *look*
   like another. Start with placeholders (colored blocks, Kenney packs)
   until ~M4.
-- **Performance:** compile expressions to closures at load; LOD
-  simulation for distant chunks; per-chunk depth sorting.
+- **Performance:** compile expressions to closures at load; per-chunk
+  depth sorting; NPCs beyond an active radius go dormant (M6). Measured on
+  the 256×256 zombie city with 961 entities (`docs/perf.md`): **0.22 ms avg,
+  0.38 ms p95 per tick** in Node (0.35 / 0.59 ms without dormancy), far
+  under the 10 ms target. Browser fps on the city is still a manual
+  follow-up (as in S0). LOD for drift and systems is not needed yet.
 - **Scope:** Zomboid has more than a decade of development. The target is
   a small core in which switching genre = switching pack.
 - **YAML creep** (see §2): prefer new primitives or script hooks over ever
@@ -383,12 +388,108 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   Characters face their movement direction. Facing is **simulation
   state** (in snapshots and hashes): an entity turns 45° per
   `ticks_per_turn` beat toward a new direction before it steps (spec
-  `turn-before-move`). Map tiles get a static 4-way `facing` from the
+  `turn-before-move`). In the browser a key tap only turns in place and
+  a hold walks (spec `turn-in-place`). Map tiles get a static 4-way `facing` from the
   legend. Facing-aware actions (vision cones, interact with the faced
   tile) may come in M5.
   Animation frames are a later step. See `docs/iso.md`.
+- ~~How are games saved and loaded?~~ **Decided (spec `m6-save-load`,
+  M6):**
+  - **A save is a snapshot plus pack identity**: `world.save()` is the
+    world snapshot (now with the seed, `nextContainer` and changed tiles
+    as `[x, y, id]`) with the format version, the pack namespaces and
+    versions, and the start map id and size. Plain JSON, qualified ids,
+    no wall-clock time; shells keep their metadata in a wrapper next to it.
+  - **Restore is exact and rolls nothing**: `World.restore` rebuilds the
+    world through a constructor path without spawning, loot, clamp or
+    status updates, so a restored world has the same snapshot and the same
+    future hashes. A shared `assertRoundTrip` test helper guards this for
+    every later format change.
+  - **Pack version drift is a warning, id drift is an error**: unknown
+    archetypes, items, tiles, measurements, statuses, actions, recipes and
+    behavior states fail the restore (with JSON paths and *did you mean*),
+    as do other pack lists or maps; a different pack version, or an added
+    or removed measurement, only warns. Rule changes inside a pack are not
+    detected.
+  - **Saves live in browser `localStorage` slots and exported files**: a
+    quicksave (`F5`/`F9`) and three slots per pack list, plus file export
+    and import; the terminal saves to a file (`S`/`L`, `--load`) and
+    `check --save` validates one. No autosave, compression or cloud sync.
+    See `docs/saves.md`.
+- ~~How are maps authored once they outgrow ASCII rows?~~ **Decided (spec
+  `m6-tiled-maps`, M6):**
+  - **Tiled JSON only**: maps are `.tmj` with embedded or external `.tsj`
+    tilesets; TMX/TSX (XML), compressed layers and infinite maps are load
+    errors. ASCII rows stay supported for fixtures and small maps.
+  - **Tile ids and facings come from tileset tile properties** (`tile`,
+    `facing`), not from gids or flip flags; flipped gids are errors.
+  - **The top-most visible layer wins** per cell; hidden layers are
+    ignored and groups are flattened.
+  - **Objects are matched by class** (`player`, `spawn` with `archetype`,
+    `room` with `tags`); untyped objects are notes.
+  - **Spawns are ordered row-major** (then by object id), so entity ids
+    match the ASCII loader and do not depend on object order.
+  - `npm run map:export` writes an ASCII map as an isometric 64×32 Tiled
+    map; round trips are tested. See `docs/packs.md`.
+- ~~How do buildings get upstairs?~~ **Decided (spec `m6-floors`, M6):**
+  - **Floors are `z ≥ 0` joined by link tiles**: a map is a stack of
+    same-size floors (ASCII `floors:`, Tiled `floor` groups); a tile with
+    `climb: up`/`down` links its cell to the same `(x, y)` one floor up or
+    down, as an edge both ways that exists while both ends are walkable
+    (so `set_tile` can block stairs). Cells may be empty (no tile). One-floor
+    maps keep their cell indices and behave exactly as before. No basements,
+    falling, ramps or multi-cell stairs yet.
+  - **A\* crosses links**: pathfinding searches the 3D grid (8 same-floor
+    neighbours plus links, cost 1, octile heuristic on `(x, y)`), so
+    click-to-move, walk-then-act, `pursue`, `investigate` and `home` work
+    across floors; keyboard steps, `wander` and `flee` stay on their floor.
+  - **No sight across floors, 3D hearing**: `can_see` is false between
+    floors; noises reach 3D euclidean distance with one floor = one tile,
+    and floors do not muffle. Reach is same-floor only.
+  - **Floors above the player are cut away**: the iso view raises floor `z`
+    by `z × BLOCK_H`, hides every floor above the player's (switching at a
+    climb's midpoint) and fades the raised blocks just in front of the
+    player. Saves become version 2 (every cell gets a `z`); version 1 saves
+    still load. See `docs/packs.md#floors` and `docs/iso.md#floors`.
+
+- ~~How does the world scale to a town?~~ **Decided (spec
+  `m6-chunked-world`, M6):**
+  - **Composite maps from parts, without nesting**: a `maps` entry with
+    `size`, `fill`, `parts` (`{ map, at }`), `player`, `rooms` and
+    `populate` is assembled at load from non-composite part maps (ASCII or
+    Tiled), placed any number of times; parts may not overlap or be
+    composites themselves. No rotation, mirroring or random selection.
+  - **Seeded `populate`**: zones on any map (applied per placement on a
+    part) scatter archetypes on candidate cells, without reuse, with a
+    dedicated RNG derived from the seed; counts are checked at load and
+    saves store the placed entities.
+  - **Derived dormancy beyond an active radius**: an NPC farther than
+    `start.simulation.active_radius` (Chebyshev, default 64) from the player
+    neither thinks nor moves that tick, but still drifts, runs systems and
+    statuses and hears. One O(n) pass per tick; never saved or hashed.
+  - **Budgeted A\* with region labels**: searches stop after a node budget
+    (NPC 4 000, player 60 000 by default), and connected-region labels
+    (recomputed lazily after `set_tile`) reject unreachable goals without
+    searching. A 16×16 entity index per floor serves `entitiesNear` and
+    hearing.
+  - **Lazy, evicted render chunks**: the iso scene builds a 16×16 chunk the
+    first time it is near the view, keeps at most 160 in an LRU and
+    destroys the rest; entity and pile sprites exist only in built, visible
+    chunks. F3 shows a perf line.
 
 ## 8. Next step
+
+M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
+`m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked
+world** (spec `m6-chunked-world`). The zombie game is a 256×256 city built
+from house, store, garage, park and road parts around the old town block,
+with ~960 dead (dense downtown, sparse at the edges) that rest while far
+away; the vampire's mansion stands in a 96×96 estate of graveyards and
+village cottages with ~150 bats.
+
+The next step is to author, via `spec-orchestrator`, the **M7 spec**:
+packs as mods (stacking, overrides, joint validation), with zombie and
+vampire as mods of the same base.
 
 M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
 **context menu** (spec `m5-context-menu`) and **recipes** (spec
@@ -397,10 +498,6 @@ hammering, cook canned beans on a kitchen stove and tear rags into
 bandages; the vampire closes shutters before dawn, rests on a crypt floor,
 fills empty vials at the blood font and mixes blood wine. Right-click a
 window or a stove across the room and the character walks up and starts.
-
-The next step is to author, via `spec-orchestrator`, the **M6 spec**: a
-chunked world, multiple floors, Tiled maps and save/load, for an
-explorable small town.
 
 S0, M0, M1, M2, M3 and M4 are delivered: zombie and vampire have a
 survival and looting loop (houses and a mansion with rooms, containers

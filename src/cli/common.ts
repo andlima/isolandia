@@ -3,26 +3,41 @@ import { readPack } from '../node/read-pack.ts';
 
 export interface CliArgs {
   dirs: string[];
-  seed: number;
+  /** `--seed N`, or null when not given (the default seed is 1). */
+  seed: number | null;
+  /** `--load <file>` (play). */
+  load: string | null;
+  /** `--save-file <path>` (play). */
+  saveFile: string | null;
+  /** `--save <file>` (check). */
+  save: string | null;
 }
 
-export function parseArgs(argv: readonly string[], usage: string): CliArgs {
-  const dirs: string[] = [];
-  let seed = 1;
+/** Options that take a value; each CLI accepts its own subset. */
+export type CliOption = '--seed' | '--load' | '--save-file' | '--save';
+
+export function parseArgs(argv: readonly string[], usage: string, options: readonly CliOption[] = ['--seed']): CliArgs {
+  const args: CliArgs = { dirs: [], seed: null, load: null, saveFile: null, save: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--seed') {
-      const v = Number(argv[++i]);
-      if (!Number.isInteger(v)) fail(`--seed expects an integer\n${usage}`);
-      seed = v;
-    } else if (a === '-h' || a === '--help') {
+    if (a === '-h' || a === '--help') {
       console.log(usage);
       process.exit(0);
+    } else if ((options as readonly string[]).includes(a)) {
+      const v = argv[++i];
+      if (v === undefined) fail(`${a} expects a value\n${usage}`);
+      if (a === '--seed') {
+        const n = Number(v);
+        if (v.trim() === '' || !Number.isInteger(n)) fail(`--seed expects an integer\n${usage}`);
+        args.seed = n;
+      } else if (a === '--load') args.load = v;
+      else if (a === '--save-file') args.saveFile = v;
+      else args.save = v;
     } else if (a.startsWith('-')) fail(`unknown option '${a}'\n${usage}`);
-    else dirs.push(a);
+    else args.dirs.push(a);
   }
-  if (dirs.length === 0) fail(usage);
-  return { dirs, seed };
+  if (args.dirs.length === 0) fail(usage);
+  return args;
 }
 
 export function fail(message: string): never {

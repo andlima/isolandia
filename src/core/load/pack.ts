@@ -11,15 +11,22 @@ import { at, type ErrorSink, type SourceFile, type Src } from './errors.ts';
 export interface PackSource {
   /** Human label for errors raised before the namespace is known (e.g. the directory). */
   readonly label: string;
-  /** YAML files: relative path → text. */
+  /**
+   * Text files: relative path → text. YAML files are domain files; Tiled
+   * `.tmj`/`.tsj` files are read only when a map references them.
+   */
   readonly files: Readonly<Record<string, string>>;
-  /** Relative paths of the pack's non-YAML files (names only), for asset checks. */
+  /** Relative paths of the pack's other (non-text) files (names only), for asset checks. */
   readonly otherFiles?: readonly string[];
 }
 
 export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions', 'recipes'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
 export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting'];
+
+/** Pack text files: YAML plus Tiled JSON maps and tilesets. */
+export const TEXT_FILE_RE = /\.(ya?ml|tmj|tsj)$/;
+export const TILED_FILE_RE = /\.(tmj|tsj)$/;
 
 export const ID_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -42,8 +49,10 @@ export interface RawPack {
   readonly version: string;
   readonly depends: readonly { ns: string; src: Src }[];
   readonly manifest: SourceFile;
-  /** Non-YAML files shipped with the pack. */
+  /** Non-text files shipped with the pack. */
   readonly otherFiles: ReadonlySet<string>;
+  /** Tiled `.tmj`/`.tsj` text files: relative path → text. */
+  readonly tiledFiles: Readonly<Record<string, string>>;
   readonly entries: Record<ListDomain, RawEntry[]>;
   /** `distributions` entries (a list without ids). */
   readonly distributions: RawEntry[];
@@ -130,6 +139,7 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     depends,
     manifest,
     otherFiles: new Set(source.otherFiles ?? []),
+    tiledFiles: Object.fromEntries(Object.entries(source.files).filter(([f]) => TILED_FILE_RE.test(f))),
     entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [], recipes: [] },
     distributions: [],
     starts: [],

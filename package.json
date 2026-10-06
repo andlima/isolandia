@@ -13,7 +13,8 @@
     "smoke": "node scripts/smoke.mjs",
     "bench:sim": "node --import tsx scripts/sim-bench.ts",
     "play": "node --import tsx src/cli/play.ts",
-    "check": "node --import tsx src/cli/check.ts"
+    "check": "node --import tsx src/cli/check.ts",
+    "map:export": "node --import tsx scripts/map-export.ts"
   },
   "dependencies": {
     "pixi.js": "^8.21.0",

@@ -1,0 +1,247 @@
+{
+  "columns": 0,
+  "grid": {
+    "height": 32,
+    "orientation": "isometric",
+    "width": 64
+  },
+  "margin": 0,
+  "name": "mansion",
+  "spacing": 0,
+  "tilecount": 18,
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tiles": [
+    {
+      "id": 0,
+      "image": "../../std/assets/door.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:door"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "image": "../../std/assets/floor.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:floor"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "image": "../../std/assets/landing.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:landing"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "image": "../../std/assets/wall.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "std:wall"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "image": "../assets/bookshelf_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "bookshelf"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "image": "../assets/carpet.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "carpet"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "image": "../assets/chest_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "chest"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "image": "../assets/chest_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "chest"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "image": "../assets/coffin_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "e"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "coffin"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "image": "../assets/coffin_s.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "coffin"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "image": "../assets/coffin_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "w"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "coffin"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "image": "../assets/creaky.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "creaky"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "image": "../assets/crypt.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "crypt"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "image": "../assets/font.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "font"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "image": "../assets/ladder_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "w"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "ladder"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "image": "../assets/sunbeam.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "sunbeam"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "image": "../assets/window.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "window"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "image": "../assets/wine_rack_s.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "wine_rack"
+        }
+      ]
+    }
+  ],
+  "tilewidth": 64,
+  "type": "tileset",
+  "version": "1.10"
+}

@@ -10,6 +10,9 @@ assets:
   - { id: floor_img, file: assets/floor.svg }   # flat
   - { id: wall_img, file: assets/wall.svg }   # block
   - { id: door_img, file: assets/door.svg }   # block, walkable (raised: true)
+  - id: stairs_img        # 4-way: n and e are the mirrors of w and s; rises toward its facing
+    directions: { s: assets/stairs_s.svg, w: assets/stairs_w.svg }
+  - { id: landing_img, file: assets/landing.svg }   # flat
   - id: humanoid_img      # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
     directions:

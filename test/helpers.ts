@@ -1,4 +1,5 @@
-import { loadPacksOrThrow, type Definition, type PackSource } from '../src/core/index.ts';
+import assert from 'node:assert/strict';
+import { loadPacksOrThrow, World, type Definition, type PackSource } from '../src/core/index.ts';
 
 /** Build an in-memory pack from `{ path: yamlText }`. */
 export function pack(label: string, files: Record<string, string>): PackSource {
@@ -11,6 +12,23 @@ export const GAMES = {
   vampire: ['packs/std', 'packs/vampire'],
   garden: ['packs/std', 'packs/garden'],
 } as const;
+
+/**
+ * Where each genre's original map sits in its composite start map: genre
+ * scenarios written for the old single maps add these to their coordinates
+ * (`zmb:town_center` in `zmb:city`, `vamp:mansion` in `vamp:estate`; the
+ * garden is not a composite).
+ */
+export const GENRE_AT = {
+  zombie: { x: 106, y: 117 },
+  vampire: { x: 37, y: 41 },
+  garden: { x: 0, y: 0 },
+} as const;
+
+/** A cell of a genre's original map, in its start map's coordinates. */
+export function genreCell(name: keyof typeof GENRE_AT, x: number, y: number): [number, number] {
+  return [x + GENRE_AT[name].x, y + GENRE_AT[name].y];
+}
 
 export const MANIFEST_T = 'namespace: t\nname: Test\nversion: 1.0.0\n';
 
@@ -71,4 +89,34 @@ start:
 
 export function loadFixture(files: Record<string, string> = {}): Definition {
   return loadPacksOrThrow([fixture(files)]);
+}
+
+/** Input for one tick, applied alike to the original and the restored world (it may only read the world it gets). */
+export type Script = (w: World) => void;
+
+const viaJson = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+/**
+ * The save round-trip invariant (docs/saves.md): `world` saved and restored
+ * through JSON has the same snapshot, saves to the same `SaveFile` again, and
+ * reaches the same `hash()` on every one of `ticks` further ticks when both
+ * get the same `script` input. Steps `world` too; returns the restored copy.
+ */
+export function assertRoundTrip(world: World, script: Script = () => {}, ticks = 60): World {
+  const save = viaJson(world.save());
+  const r = World.restore(world.def, save);
+  if (!r.ok) assert.fail(`restore failed at tick ${world.tick}:\n${r.errors.join('\n')}`);
+  assert.deepEqual(r.warnings, []);
+  const copy = r.world;
+  assert.deepStrictEqual(copy.snapshot(), viaJson(world.snapshot()), `restored snapshot at tick ${world.tick}`);
+  assert.deepStrictEqual(viaJson(copy.save()), save, 'saving the restored world again');
+  assert.equal(copy.hash(), world.hash());
+  for (let i = 0; i < ticks; i++) {
+    script(world);
+    script(copy);
+    world.step();
+    copy.step();
+    assert.equal(copy.hash(), world.hash(), `hash ${i + 1} ticks after the save (tick ${world.tick})`);
+  }
+  return copy;
 }

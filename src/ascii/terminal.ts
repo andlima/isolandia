@@ -103,7 +103,12 @@ export interface ActEntry {
   readonly hint: string;
   /** Queued in order when chosen. */
   readonly actions: readonly Action[];
+  /** Queued when chosen, before the actions (`Go up` / `Go down`). */
+  readonly intent?: Intent;
 }
+
+/** Climb keys: `<` goes up a floor, `>` down. */
+export const CLIMB_KEYS: Readonly<Record<string, 1 | -1>> = { '<': 1, '>': -1 };
 
 /** The `c` list: recipes that can be made now, or (when there are none) a few that cannot, with hints. */
 export interface CraftMenu {
@@ -120,24 +125,30 @@ export interface KeyState {
   actions?: ActEntry[] | null;
   /** The open `c` list, or null/absent when closed. */
   crafting?: CraftMenu | null;
+  /** A message for the help line set by the last key (e.g. `No way up here.`), or null/absent. */
+  message?: string | null;
 }
 
 /**
- * The `x` list, at most 9 entries: the self and tile actions that can be
- * started here (`availableActions`), then `take all` for each reachable
- * non-empty container (`interactionsAt` over the reachable cells, row-major).
+ * The `x` list, at most 9 entries: `Go up` / `Go down` when the player
+ * stands on a link, the self and tile actions that can be started here
+ * (`availableActions`), then `take all` for each reachable non-empty
+ * container (`interactionsAt` over the reachable cells, row-major).
  */
 export function actionMenu(world: World): ActEntry[] {
   const out: ActEntry[] = [];
+  const { x: px, y: py, z: pz } = world.player;
+  for (const e of world.interactionsAt(px, py, pz)) {
+    if (e.kind === 'climb') out.push({ label: e.label, ok: e.ok, hint: '', actions: [], intent: e.intent! });
+  }
   for (const a of world.availableActions()) {
     if (a.kind !== 'act') continue;
-    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y! } : { kind: 'act', action: a.action! };
+    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y!, z: a.z! } : { kind: 'act', action: a.action! };
     out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y! } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
   }
-  const { x: px, y: py } = world.player;
   for (let y = py - 1; y <= py + 1; y++) {
     for (let x = px - 1; x <= px + 1; x++) {
-      for (const e of world.interactionsAt(x, y)) {
+      for (const e of world.interactionsAt(x, y, pz)) {
         if (e.kind === 'take_all') out.push({ label: e.label, x, y, ok: e.ok, hint: reasonText(e), actions: e.actions! });
       }
     }
@@ -160,7 +171,7 @@ export function craftMenu(world: World): CraftMenu {
       ...(r.station ? { x: r.station.x, y: r.station.y } : {}),
       ok: r.ok,
       hint: r.ok ? '' : recipeHint(world, r),
-      actions: [r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y } : { kind: 'craft', recipe: r.recipe }],
+      actions: [r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y, z: r.station.z } : { kind: 'craft', recipe: r.recipe }],
     }),
   );
   const entries = all.filter((e) => e.ok).slice(0, 9);
@@ -173,6 +184,9 @@ export function craftMenuText(menu: CraftMenu): string {
   return ['Nothing to craft', ...menu.blocked.map((e) => `${e.label} [${e.hint}]`)].join('  ');
 }
 
+/** What a key asks of the terminal loop, beyond changing the world. */
+export type KeyResult = 'quit' | 'save' | 'load' | void;
+
 /**
  * Apply one key to the world. `x` opens the list of pack actions and
  * `take all`s that can be done here, `c` the list of recipes that can be
@@ -180,21 +194,38 @@ export function craftMenuText(menu: CraftMenu): string {
  * inventory, `g` takes everything that fits from every reachable container,
  * `1`–`9` use inventory stack N and `d` then `1`–`9` drops stack N (so
  * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
- * NumLock off still do, and cancel what the player is doing). Returns
- * `'quit'` for `q`/Ctrl-C.
+ * NumLock off still do, and cancel what the player is doing). `<` / `>`
+ * climb through the link at the player's cell (`climbIntent`), or set
+ * `state.message` to `No way up here.` / `No way down here.`. Returns
+ * `'quit'` for `q`/Ctrl-C, and `'save'` / `'load'` for `S` / `L` (the
+ * caller does the file work; lowercase `s`/`l` still move).
  */
-export function handleKey(world: World, key: string, state: KeyState): 'quit' | void {
+export function handleKey(world: World, key: string, state: KeyState): KeyResult {
+  state.message = null;
   if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  if (key === 'S' || key === 'L') {
+    state.actions = null;
+    state.crafting = null;
+    state.dropPending = false;
+    return key === 'S' ? 'save' : 'load';
+  }
   const open = state.actions ?? state.crafting?.entries;
   if (open) {
     state.actions = null;
     state.crafting = null;
     const a = /^[1-9]$/.test(key) ? open[Number(key) - 1] : undefined;
     if (a) {
+      if (a.intent) world.queueIntent(a.intent);
       for (const action of a.actions) world.queueAction(action);
       return;
     }
     if (/^[1-9]$/.test(key)) return;
+  } else if (CLIMB_KEYS[key] && !state.dropPending) {
+    const dz = CLIMB_KEYS[key];
+    const intent = world.climbIntent(dz);
+    if (intent) world.queueIntent(intent);
+    else state.message = dz > 0 ? 'No way up here.' : 'No way down here.';
+    return;
   } else if (key === 'x' && !state.dropPending) {
     state.actions = actionMenu(world);
     return;
@@ -234,31 +265,79 @@ export interface TerminalIO {
   readonly stdout: NodeJS.WriteStream;
 }
 
+/** File work for `S` / `L`, done by the caller (see `src/cli/saves.ts`). */
+export interface TerminalSaves {
+  /** Write the save; returns the message to show. */
+  save(world: World): string;
+  /** Read the save: a new world (or null on errors) and the message to show. */
+  load(): { world: World | null; message: string };
+}
+
+/** `active N, dormant M` for the status line, or '' while no NPC is dormant. */
+export function simStatus(world: World): string {
+  const active = world.activeCount;
+  const dormant = world.entities.length - active;
+  return dormant > 0 ? `active ${active}, dormant ${dormant}` : '';
+}
+
+/** How long a save/load message stays on the help line. */
+const STATUS_MS = 4000;
+
 /** Run an interactive session until `q`/Ctrl-C. Resolves when the session ends. */
-export function runTerminal(world: World, io: TerminalIO): Promise<void> {
+export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSaves, status = ''): Promise<void> {
   const { stdin, stdout } = io;
+  let world = initial;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  // Clock, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
-  const HUD_ROWS = 2 + world.player.archetype.measurements.length + 7 + 2;
-  const help = world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act';
   const keys: KeyState = { dropPending: false, actions: null, crafting: null };
+  let message = status;
+  let messageAt = Date.now();
+  const say = (text: string) => {
+    message = text;
+    messageAt = Date.now();
+  };
 
   return new Promise((resolve) => {
     const draw = () => {
+      // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + world.player.archetype.measurements.length + 7 + 2;
+      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + (saves ? '  S: save  L: load' : '');
       const width = Math.max(10, stdout.columns ?? 80);
-      const height = Math.max(5, (stdout.rows ?? 24) - HUD_ROWS);
+      const height = Math.max(5, (stdout.rows ?? 24) - hudRows);
       const frame = renderAscii(world, { width, height });
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : help}\x1b[0m\x1b[J`);
+      if (message && Date.now() - messageAt > STATUS_MS) message = '';
+      const sim = simStatus(world);
+      const line = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : (message || help) + (sim ? `  |  ${sim}` : '');
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${line}\x1b[0m\x1b[J`);
     };
+
+    // Sim time tracks wall time from (startMs, startTick); a load restarts the count.
+    let startMs = Date.now();
+    let startTick = world.tick;
 
     const onKey = (buf: Buffer) => {
-      if (handleKey(world, buf.toString('utf8'), keys) === 'quit') return stop();
+      const r = handleKey(world, buf.toString('utf8'), keys);
+      if (r === 'quit') return stop();
+      if (keys.message) {
+        say(keys.message);
+        draw();
+      }
+      if (!saves) return;
+      if (r === 'save') say(saves.save(world));
+      else if (r === 'load') {
+        const loaded = saves.load();
+        say(loaded.message);
+        if (loaded.world) {
+          world = loaded.world;
+          startMs = Date.now();
+          startTick = world.tick;
+        }
+      }
+      if (r) draw();
     };
 
-    const start = Date.now();
     const timer = setInterval(() => {
       // Catch up on missed ticks so sim time tracks wall time.
-      const due = Math.floor((Date.now() - start) / tickMs);
+      const due = startTick + Math.floor((Date.now() - startMs) / tickMs);
       let n = 0;
       while (world.tick < due && n++ < 10) world.step();
       draw();

@@ -4,7 +4,7 @@ import { formatError, loadPacks, loadPacksOrThrow, Rng, World, type Entity, type
 import { compileSource } from '../src/core/expr/index.ts';
 import { add } from '../src/core/sim/containers.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { fixture, GAMES, loadFixture } from './helpers.ts';
+import { fixture, GAMES, genreCell, loadFixture } from './helpers.ts';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -235,12 +235,12 @@ test('hearing: inclusive euclidean radius, walls ignored, the source never hears
   place(b!, 5, 6); // 3-4-5
   place(c!, 6, 6); // √32 > 5
   shout(w, [[w.player, 5]]);
-  assert.deepEqual(w.noises, [{ x: 2, y: 2, radius: 5, source: w.player.id }]);
+  assert.deepEqual(w.noises, [{ x: 2, y: 2, z: 0, radius: 5, source: w.player.id }]);
   assert.deepEqual(heard(a!), [2, 2, 0]);
   assert.deepEqual(heard(b!), [2, 2, 0]);
   assert.equal(heard(c!), null);
   assert.equal(w.player.heardTick, -1);
-  assert.deepEqual(w.snapshot().entities[a!.id]!.heard, { x: 2, y: 2, tick: 0 });
+  assert.deepEqual(w.snapshot().entities[a!.id]!.heard, { x: 2, y: 2, z: 0, tick: 0 });
   assert.equal(w.snapshot().entities[c!.id]!.heard, null);
 
   // Memory persists across silent ticks; noises are cleared.
@@ -354,7 +354,7 @@ test('item use emits a noise only on success', () => {
   w.queueAction({ kind: 'use', item: 't:bell' });
   w.step();
   assert.equal(w.lastAction!.ok, true);
-  assert.deepEqual(w.noises, [{ x: 2, y: 2, radius: 5, source: w.player.id }]);
+  assert.deepEqual(w.noises, [{ x: 2, y: 2, z: 0, radius: 5, source: w.player.id }]);
   assert.deepEqual(heard(a!), [2, 2, 2]);
 });
 
@@ -430,20 +430,22 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 }
 
 const byHome = (w: World, x: number, y: number) => w.entities.find((e) => e.homeX === x && e.homeY === y)!;
+const T = (x: number, y: number) => genreCell('zombie', x, y);
+const M = (x: number, y: number) => genreCell('vampire', x, y);
 
 test('zombie: crunching over broken glass draws a shambler to the spot', () => {
   const w = game('zombie');
-  const z = byHome(w, 16, 10);
+  const z = byHome(w, ...T(16, 10));
   assert.equal(z.archetype.id, 'zmb:shambler');
-  assert.equal(w.grid.tileAt(12, 6)!.id, 'zmb:glass');
-  place(w.player, 12, 6); // the hallway of the north-west house, out of z's sight
+  assert.equal(w.grid.tileAt(...T(12, 6))!.id, 'zmb:glass');
+  place(w.player, ...T(12, 6)); // the hallway of the north-west house, out of z's sight
   const seen: string[] = [];
   let end = -1;
   for (let t = 0; t < 200 && end < 0; t++) {
     w.step();
     const s = stateOf(z);
     if (seen[seen.length - 1] !== s) seen.push(s);
-    if (s === 'chase' || (seen.includes('investigate') && cheb(z.x, z.y, 12, 6) <= 1)) end = t;
+    if (s === 'chase' || (seen.includes('investigate') && cheb(z.x, z.y, ...T(12, 6)) <= 1)) end = t;
   }
   assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
   assert.ok(end >= 0, `never arrived: ${seen.join(' → ')} at ${z.x},${z.y}`);
@@ -453,7 +455,7 @@ test('zombie: winding up an alarm clock sets shamblers investigating', () => {
   const w = game('zombie');
   const item = w.def.ids.items['zmb:alarm_clock']!;
   add(w.player.inv!, item, 1, w.def.items[item]!.weight);
-  place(w.player, 12, 3); // a bedroom, walled off from everyone
+  place(w.player, ...T(12, 3)); // a bedroom, walled off from everyone
   for (let t = 0; t < 3; t++) w.step();
   assert.ok(w.entities.every((e) => e.heardTick === -1));
   w.queueAction({ kind: 'use', item: 'zmb:alarm_clock' });
@@ -464,17 +466,17 @@ test('zombie: winding up an alarm clock sets shamblers investigating', () => {
   w.step();
   const investigating = w.entities.filter((e) => e.behavior && stateOf(e) === 'investigate');
   assert.ok(investigating.length >= 2, `only ${investigating.length} investigating`);
-  assert.ok(byHome(w, 16, 10) && investigating.includes(byHome(w, 16, 10)));
+  assert.ok(byHome(w, ...T(16, 10)) && investigating.includes(byHome(w, ...T(16, 10))));
   assert.ok(w.player.inv!.stacks.some((s) => s.item === item), 'the clock is reusable');
 });
 
 test('vampire: creaky floorboards bring a bat over; it then returns to roost', () => {
   const w = game('vampire');
-  const bat = byHome(w, 3, 6);
+  const bat = byHome(w, ...M(3, 6));
   assert.equal(bat.archetype.id, 'vamp:bat');
-  assert.equal(w.grid.tileAt(8, 5)!.id, 'vamp:creaky');
-  assert.ok(w.grid.tileAt(8, 5)!.tags.includes('shade'));
-  place(w.player, 8, 5);
+  assert.equal(w.grid.tileAt(...M(8, 5))!.id, 'vamp:creaky');
+  assert.ok(w.grid.tileAt(...M(8, 5))!.tags.includes('shade'));
+  place(w.player, ...M(8, 5));
   const states: string[] = [];
   const track = () => {
     const s = stateOf(bat);
@@ -486,13 +488,13 @@ test('vampire: creaky floorboards bring a bat over; it then returns to roost', (
   }
   assert.ok(states.includes('investigate') || states.includes('flee'), states.join(' → '));
   // The vampire leaves for the cellar.
-  place(w.player, 18, 11);
+  place(w.player, ...M(18, 11));
   for (let t = 0; t < 300 && !(states.length > 1 && stateOf(bat) === 'roost'); t++) {
     w.step();
     track();
   }
   assert.equal(stateOf(bat), 'roost', states.join(' → '));
-  assert.ok(cheb(bat.x, bat.y, 3, 6) <= 3);
+  assert.ok(cheb(bat.x, bat.y, ...M(3, 6)) <= 3);
 });
 
 test('garden: hopping on the gravel path draws a napping cat over to investigate', () => {
@@ -531,9 +533,9 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
   if (name === 'zombie') {
     const item = w.def.ids.items['zmb:alarm_clock']!;
     add(w.player.inv!, item, 1, w.def.items[item]!.weight);
-    place(w.player, 8, 8);
+    place(w.player, ...T(8, 8));
   } else if (name === 'garden') place(w.player, 8, 7);
-  else place(w.player, 8, 5);
+  else place(w.player, ...M(8, 5));
   const input = new Rng(seed ^ 0x5eed);
   let noisy = 0;
   for (let t = 0; t < ticks; t++) {

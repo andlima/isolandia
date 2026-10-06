@@ -11,16 +11,18 @@ import type { Grid } from './grid.ts';
  * tested. Same and adjacent cells are always visible. A diagonal step
  * between two opaque orthogonal neighbours is blocked (no corner peeking).
  * The result is symmetric: the pair is visible if a Bresenham walk in either
- * direction is clear. Out-of-bounds endpoints are never visible.
+ * direction is clear. Out-of-bounds endpoints are never visible. Sight
+ * stays on one floor: cells on different floors (`z0` ≠ `z1`) never see each
+ * other.
  */
-export function lineOfSight(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
-  if (!grid.inBounds(x0, y0) || !grid.inBounds(x1, y1)) return false;
+export function lineOfSight(grid: Grid, x0: number, y0: number, x1: number, y1: number, z0 = 0, z1 = z0): boolean {
+  if (z0 !== z1 || !grid.inBounds(x0, y0, z0) || !grid.inBounds(x1, y1, z1)) return false;
   if (Math.abs(x1 - x0) <= 1 && Math.abs(y1 - y0) <= 1) return true;
-  return clearWalk(grid, x0, y0, x1, y1) || clearWalk(grid, x1, y1, x0, y0);
+  return clearWalk(grid, x0, y0, x1, y1, z0) || clearWalk(grid, x1, y1, x0, y0, z0);
 }
 
-/** One Bresenham walk from (x0, y0) to (x1, y1); true when nothing between them blocks. */
-function clearWalk(grid: Grid, x0: number, y0: number, x1: number, y1: number): boolean {
+/** One Bresenham walk from (x0, y0) to (x1, y1) on floor z; true when nothing between them blocks. */
+function clearWalk(grid: Grid, x0: number, y0: number, x1: number, y1: number, z: number): boolean {
   const dx = Math.abs(x1 - x0);
   const dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1;
@@ -40,10 +42,10 @@ function clearWalk(grid: Grid, x0: number, y0: number, x1: number, y1: number): 
       err += dx;
       ny += sy;
     }
-    if (nx !== x && ny !== y && grid.opaqueAt(nx, y) && grid.opaqueAt(x, ny)) return false;
+    if (nx !== x && ny !== y && grid.opaqueAt(nx, y, z) && grid.opaqueAt(x, ny, z)) return false;
     x = nx;
     y = ny;
     if (x === x1 && y === y1) return true;
-    if (grid.opaqueAt(x, y)) return false;
+    if (grid.opaqueAt(x, y, z)) return false;
   }
 }

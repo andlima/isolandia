@@ -128,7 +128,7 @@ export function craftingView(world: World, readOnly: boolean): CraftingView {
   for (const r of world.availableRecipes()) {
     const def = recipes[ids.recipes[r.recipe]!]!;
     const station = stationLabel(world, r.recipe);
-    const action: Action = r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y } : { kind: 'craft', recipe: r.recipe };
+    const action: Action = r.station ? { kind: 'craft', recipe: r.recipe, x: r.station.x, y: r.station.y, z: r.station.z } : { kind: 'craft', recipe: r.recipe };
     const craft: PanelButton = r.ok ? button('Craft', action, readOnly) : { ...button('Craft', action, true), hint: recipeHint(world, r) };
     const row: CraftingRow = {
       recipe: r.recipe,
@@ -150,10 +150,14 @@ export function craftingRowText(r: CraftingRow): string {
   return [`${r.label}: ${r.inputs}`, ...(r.tools ? [`tools: ${r.tools}`] : []), ...(r.station ? [r.station] : [])].join(' · ');
 }
 
-/** Click-to-move: a non-walkable container tile is approached (`adjacent: true`) instead of entered. */
-export function clickIntent(world: World, x: number, y: number): GotoIntent {
-  const t = world.grid.tileAt(x, y);
-  return t?.container && !t.walkable ? { kind: 'goto', x, y, adjacent: true } : { kind: 'goto', x, y };
+/**
+ * Click-to-move to (x, y) on floor `z` (default the player's): a
+ * non-walkable container tile is approached (`adjacent: true`) instead of
+ * entered.
+ */
+export function clickIntent(world: World, x: number, y: number, z: number = world.player.z): GotoIntent {
+  const t = world.grid.tileAt(x, y, z);
+  return t?.container && !t.walkable ? { kind: 'goto', x, y, z, adjacent: true } : { kind: 'goto', x, y, z };
 }
 
 /** DOM rendering of the panels. Re-renders only when their content changes. */
@@ -161,6 +165,7 @@ export class Panels {
   private readonly inv: HTMLDivElement;
   private readonly loot: HTMLDivElement;
   private readonly craft: HTMLDivElement;
+  private readonly toggle: HTMLButtonElement | null = null;
   private invKey = '';
   private lootKey = '';
   private craftKey = '';
@@ -191,12 +196,17 @@ export class Panels {
     this.loot.addEventListener('click', (ev) => this.onClick(ev));
     this.craft.addEventListener('click', (ev) => this.onClick(ev));
     if (world.def.recipes.length > 0 && world.player.inv) {
-      const toggle = document.createElement('button');
+      const toggle = (this.toggle = document.createElement('button'));
       toggle.id = 'craft-toggle';
       toggle.textContent = 'Crafting [C]';
       toggle.addEventListener('click', () => this.toggleCrafting());
       parent.append(toggle);
     }
+  }
+
+  /** Remove the panels' elements (the world is being replaced). */
+  dispose(): void {
+    for (const el of [this.inv, this.loot, this.craft, this.toggle]) el?.remove();
   }
 
   /** `C` or the HUD button: show or hide the crafting panel. */

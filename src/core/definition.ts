@@ -85,7 +85,12 @@ export interface TileDef {
   readonly tags: readonly string[];
   /** Every map cell with this tile gets its own container; null for none. */
   readonly container: ContainerSpec | null;
+  /** Link to the same (x, y) one floor up (`up`) or down (`down`); null for none. */
+  readonly climb: 'up' | 'down' | null;
 }
+
+/** Tile index of an empty map cell: no tile, not walkable, not opaque, not drawn. */
+export const EMPTY_TILE = 0xffff;
 
 /** A weight-capped container declaration. */
 export interface ContainerSpec {
@@ -246,10 +251,12 @@ export interface DistributionDef {
   readonly table: number;
 }
 
-/** A map room: a rectangle of cells with room tags. */
+/** A map room: a rectangle of cells on one floor with room tags. */
 export interface RoomDef {
   readonly x: number;
   readonly y: number;
+  /** Floor of the rectangle. */
+  readonly z: number;
   readonly w: number;
   readonly h: number;
   /** Indices into `Definition.roomTags`. */
@@ -261,7 +268,7 @@ export interface RoomsDef {
   readonly rects: readonly RoomDef[];
   /** Unique room-tag combinations (tag indices, sorted); set 0 is always the empty set. */
   readonly sets: readonly (readonly number[])[];
-  /** Room-set index per cell, row-major. */
+  /** Room-set index per cell (cell index order). */
   readonly cellSet: readonly number[];
 }
 
@@ -325,7 +332,26 @@ export interface BehaviorDef {
 export interface SpawnDef {
   readonly x: number;
   readonly y: number;
+  readonly z: number;
   readonly archetype: number;
+}
+
+/**
+ * A `populate` entry, resolved to the map it is used in: an entry of a part
+ * map is offset by the part's `at` (once per placement). Candidate cells are
+ * computed from it (see `populateCandidates`).
+ */
+export interface PopulateDef {
+  readonly archetype: number;
+  readonly count: number;
+  /** Rectangle in this map's coordinates (already clipped to a part's area). */
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly z: number;
+  /** Room tag index, or null for any cell. */
+  readonly room: number | null;
 }
 
 export interface MapDef {
@@ -333,16 +359,59 @@ export interface MapDef {
   readonly index: number;
   readonly width: number;
   readonly height: number;
-  /** Tile index per cell, row-major. */
+  /** Number of stacked floors (≥ 1), `z = 0, 1, …`. */
+  readonly floors: number;
+  /**
+   * Tile index per cell (`EMPTY_TILE` for none), by cell index
+   * `(z * height + y) * width + x`.
+   */
   readonly cells: readonly number[];
   /**
-   * Legend `facing` per cell, row-major; null where the legend does not set
+   * Legend `facing` per cell, by cell index; null where the legend does not set
    * one (shown as the default `s`). Render-only: the simulation ignores it.
    */
   readonly facings: readonly (Facing | null)[];
+  /** Ordered by `z`, then row-major. */
   readonly spawns: readonly SpawnDef[];
-  readonly playerStart: { readonly x: number; readonly y: number } | null;
+  readonly playerStart: { readonly x: number; readonly y: number; readonly z: number } | null;
   readonly rooms: RoomsDef;
+  /** Seeded scatter zones, applied in order at world creation (parts first, then the map's own). */
+  readonly populate: readonly PopulateDef[];
+  /** True for a map composed of part maps (`parts`). */
+  readonly composite: boolean;
+}
+
+/**
+ * Candidate cells of a populate entry, ascending cell index: walkable, inside
+ * the rect, on its floor, in its room (when set), not a container tile and not
+ * the player start. Independent of the seed.
+ */
+export function populateCandidates(map: MapDef, tiles: readonly TileDef[], p: PopulateDef): number[] {
+  const out: number[] = [];
+  const { width, height } = map;
+  if (p.z < 0 || p.z >= map.floors) return out;
+  const start = map.playerStart;
+  const sets = map.rooms.sets;
+  let inRoom: Uint8Array | null = null;
+  if (p.room !== null) {
+    inRoom = new Uint8Array(sets.length);
+    sets.forEach((set, k) => (inRoom![k] = set.includes(p.room!) ? 1 : 0));
+  }
+  const x1 = Math.min(width, p.x + p.w);
+  const y1 = Math.min(height, p.y + p.h);
+  for (let y = Math.max(0, p.y); y < y1; y++) {
+    for (let x = Math.max(0, p.x); x < x1; x++) {
+      const i = (p.z * height + y) * width + x;
+      const t = map.cells[i]!;
+      if (t === EMPTY_TILE) continue;
+      const tile = tiles[t]!;
+      if (!tile.walkable || tile.container) continue;
+      if (inRoom && inRoom[map.rooms.cellSet[i]!] !== 1) continue;
+      if (start && start.x === x && start.y === y && start.z === p.z) continue;
+      out.push(i);
+    }
+  }
+  return out;
 }
 
 /** A numeric term: a folded constant, or a closure when `fn` is set. */
@@ -383,6 +452,8 @@ export interface SystemDef {
   readonly period: number;
   /** Entity filter; null means always true. */
   readonly forFn: Compiled | null;
+  /** Set when `for` is exactly `self.has_tag("<tag>")`, so it is decided once per archetype. */
+  readonly forTag: string | null;
   /** Extra condition, evaluated after `for`; null means always true. */
   readonly whenFn: Compiled | null;
   readonly effects: readonly EffectDef[];
@@ -400,6 +471,8 @@ export interface StatusDef {
   readonly label: string;
   /** Which entities can have the status; null means always true. */
   readonly forFn: Compiled | null;
+  /** Set when `for` is exactly `self.has_tag("<tag>")`, so it is decided once per archetype. */
+  readonly forTag: string | null;
   readonly whenFn: Compiled;
   /** Exit condition (defaults to `not when`). */
   readonly untilFn: Compiled;
@@ -430,6 +503,18 @@ export type DefeatDef = OutcomeDef;
 /** `start.victory`: the game is won when `when` holds. */
 export type VictoryDef = OutcomeDef;
 
+/** `start.simulation`: scale settings. */
+export interface SimulationDef {
+  /** Chebyshev tiles from the player beyond which NPCs go dormant; null = never. */
+  readonly activeRadius: number | null;
+  /** A* node budget of an NPC search. */
+  readonly npcPathBudget: number;
+  /** A* node budget of the player's searches. */
+  readonly playerPathBudget: number;
+}
+
+export const DEFAULT_SIMULATION: SimulationDef = { activeRadius: 64, npcPathBudget: 4000, playerPathBudget: 60000 };
+
 export interface Definition {
   readonly ticksPerSecond: number;
   readonly packs: readonly PackInfo[];
@@ -453,6 +538,7 @@ export interface Definition {
     readonly player: number;
     readonly defeat: DefeatDef | null;
     readonly victory: VictoryDef | null;
+    readonly simulation: SimulationDef;
   };
   /** In-game calendar; engine defaults when no pack defines `clock`. */
   readonly clock: ClockDef;

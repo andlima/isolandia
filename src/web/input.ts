@@ -1,16 +1,21 @@
 /**
  * DOM input wiring: pointer gestures, right-click and wheel on the canvas,
- * keyboard on the window. Movement keys are tracked while held; `beforeTick` re-queues
- * the held direction so the player keeps walking at a constant pace.
+ * keyboard on the window. Movement keys are tracked while held. A fresh press
+ * queues a turn-in-place step: a tap in a new direction only turns the player,
+ * a tap in the faced direction steps. Once the latest press is `HOLD_MS` old,
+ * `beforeTick` re-queues the held direction as plain steps so the player
+ * walks at a constant pace.
  */
 
 import type { World } from '../core/index.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
-import { heldDirection, MOVE_KEYS } from './keys.ts';
+import { climbKey, MOVE_KEYS, MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
 
 export interface InputHandlers extends GestureHandlers {
   /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
   key(code: string): void;
+  /** A climb key (PageUp/PageDown, `<`/`>`): one floor up (1) or down (-1), without auto-repeat. */
+  climb?(dz: 1 | -1): void;
   /** Right-click on the canvas (the browser's own menu is suppressed there only). */
   menu(sx: number, sy: number): void;
   /** Offered every key press first (auto-repeat included); true consumes it (e.g. an open menu). */
@@ -18,13 +23,15 @@ export interface InputHandlers extends GestureHandlers {
 }
 
 export class Input {
-  private readonly held = new Set<string>();
+  private readonly moves = new MoveKeys();
   private readonly gestures: Gestures;
 
   constructor(
     el: HTMLElement,
-    private readonly world: World,
+    /** The running world (it changes when a save is loaded). */
+    private readonly world: () => World,
     on: InputHandlers,
+    private readonly now: () => number = () => performance.now(),
   ) {
     const gestures = (this.gestures = new Gestures(on));
     el.style.touchAction = 'none';
@@ -53,22 +60,26 @@ export class Input {
     );
 
     window.addEventListener('keydown', (ev) => {
+      // F5/F9 are quicksave/quickload: never reload the page, even with a modifier or on auto-repeat.
+      if (suppressesDefault(ev.code)) ev.preventDefault();
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (on.captureKey?.(ev.code)) {
         ev.preventDefault();
         return;
       }
-      if (MOVE_KEYS[ev.code]) {
+      const dz = climbKey(ev.key);
+      if (dz !== 0) {
         ev.preventDefault();
-        this.held.add(ev.code);
-        if (!ev.repeat) this.queueHeld();
+        if (!ev.repeat) on.climb?.(dz);
+      } else if (MOVE_KEYS[ev.code]) {
+        ev.preventDefault();
+        this.queue(this.moves.down(ev.code, ev.repeat, this.now()));
       } else if (!ev.repeat) {
-        if (ev.code === 'Space' || ev.code === 'Tab') ev.preventDefault();
         on.key(ev.code);
       }
     });
-    window.addEventListener('keyup', (ev) => this.held.delete(ev.code));
-    window.addEventListener('blur', () => this.held.clear());
+    window.addEventListener('keyup', (ev) => this.moves.up(ev.code));
+    window.addEventListener('blur', () => this.moves.clear());
   }
 
   /** Call once per frame: fires a pending long-press. */
@@ -77,16 +88,16 @@ export class Input {
   }
 
   /**
-   * Call right before each sim tick. Re-queues the held direction only on
-   * the tick where the player can step again, so releasing a key between
-   * ticks never leaves a stale step queued.
+   * Call right before each sim tick. Once the key has been held for
+   * `HOLD_MS`, re-queues the held direction as a plain step, only on the tick
+   * where the player can step again, so releasing a key between ticks never
+   * leaves a stale step queued. Before that, the pending turn is left alone.
    */
   beforeTick(): void {
-    if (this.world.player.moveCooldown <= 1) this.queueHeld();
+    this.queue(this.moves.repeat(this.now(), this.world().player.moveCooldown));
   }
 
-  private queueHeld(): void {
-    const d = heldDirection(this.held);
-    if (d) this.world.queueIntent({ kind: 'step', ...d });
+  private queue(step: MoveStep | null): void {
+    if (step) this.world().queueIntent(step);
   }
 }

@@ -5,7 +5,7 @@ import { CameraRig } from '../src/iso/camera.ts';
 import { cameraAt, isoToScreen } from '../src/iso/projection.ts';
 import { errorReport } from '../src/web/errors.ts';
 import { Gestures, LONG_PRESS_MS } from '../src/web/gestures.ts';
-import { heldDirection } from '../src/web/keys.ts';
+import { HOLD_MS, heldDirection, MoveKeys } from '../src/web/keys.ts';
 import { FixedTickLoop } from '../src/web/loop.ts';
 import { assetUrls, availablePacks, buildPackSources } from '../src/web/packs.ts';
 import { parseParams } from '../src/web/params.ts';
@@ -73,8 +73,20 @@ test('web packs: unknown pack names are reported like load errors', () => {
   );
 });
 
+test('web packs: Tiled .tmj/.tsj files come in as text, not as asset URLs', () => {
+  const text = { ...YAML, '/packs/base/maps/m.tmj': '{"width":1}', '/packs/base/maps/m.tsj': '{"tiles":[]}', '/packs/tiled-only/x.tmj': '{}' };
+  const files = { ...FILES, '/packs/base/maps/m.tmj': '/assets/m.tmj', '/packs/base/maps/m.tsj': '/assets/m.tsj' };
+  assert.deepEqual(availablePacks(text), ['base', 'game', 'other']);
+  const w = buildPackSources(text, files, ['base']);
+  assert.equal(w.sources[0]!.files['maps/m.tmj'], '{"width":1}');
+  assert.equal(w.sources[0]!.files['maps/m.tsj'], '{"tiles":[]}');
+  assert.deepEqual(w.sources[0]!.otherFiles, ['README.md', 'art/floor.svg']);
+  assert.equal(w.urls[0]!['maps/m.tmj'], undefined);
+});
+
 test('web packs: equivalent to the Node reader for the real packs', () => {
   const node = readPack('packs/zombie');
+  assert.ok(Object.keys(node.files).some((f) => f.endsWith('.tmj')));
   const yaml = Object.fromEntries(Object.entries(node.files).map(([f, t]) => [`/packs/zombie/${f}`, t]));
   const files = Object.fromEntries((node.otherFiles ?? []).map((f) => [`/packs/zombie/${f}`, `/u/${f}`]));
   const w = buildPackSources(yaml, files, ['zombie']);
@@ -223,6 +235,37 @@ test('keys: arrows, WASD and numpad are screen-relative and map to grid steps', 
   assert.deepEqual(heldDirection(['Numpad3']), { dx: 1, dy: 0 });
   assert.equal(heldDirection(['KeyA', 'KeyD']), null);
   assert.equal(heldDirection(['KeyH', 'Space']), null);
+});
+
+test('keys: a fresh press turns in place; plain steps repeat once held for HOLD_MS', () => {
+  assert.ok(HOLD_MS >= 150 && HOLD_MS <= 300);
+  const k = new MoveKeys();
+  assert.deepEqual(k.down('KeyD', false, 1000), { kind: 'step', dx: 1, dy: -1, turnInPlace: true });
+  assert.equal(k.down('KeyD', true, 1030), null, 'auto-repeat queues nothing');
+  assert.equal(k.repeat(1000, 0), null);
+  assert.equal(k.repeat(1000 + HOLD_MS - 1, 0), null, 'no re-queue before HOLD_MS');
+  assert.deepEqual(k.repeat(1000 + HOLD_MS, 1), { kind: 'step', dx: 1, dy: -1 });
+  assert.equal(k.repeat(1000 + HOLD_MS, 2), null, 'only when the player can step again');
+});
+
+test('keys: a release before HOLD_MS gives no step', () => {
+  const k = new MoveKeys();
+  k.down('KeyW', false, 0);
+  k.up('KeyW');
+  assert.equal(k.repeat(HOLD_MS * 2, 0), null);
+  k.down('KeyW', false, 500);
+  k.clear();
+  assert.equal(k.repeat(500 + HOLD_MS, 0), null, 'blur clears too');
+});
+
+test('keys: a new press (e.g. a second key for a diagonal) turns in place and resets the clock', () => {
+  const k = new MoveKeys();
+  k.down('KeyW', false, 0);
+  assert.deepEqual(k.down('KeyD', false, 150), { kind: 'step', dx: 0, dy: -1, turnInPlace: true });
+  assert.equal(k.repeat(HOLD_MS, 0), null, 'the clock restarted at the second press');
+  assert.deepEqual(k.repeat(150 + HOLD_MS, 0), { kind: 'step', dx: 0, dy: -1 });
+  k.up('KeyD');
+  assert.deepEqual(k.repeat(150 + HOLD_MS + 100, 0), { kind: 'step', dx: -1, dy: -1 }, 'releasing one of two keys keeps walking');
 });
 
 // ── Camera ────────────────────────────────────────────────────────────────

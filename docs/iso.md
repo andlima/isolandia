@@ -41,6 +41,7 @@ unknown pack name — the page shows the complete error list, formatted like
 | `Space`                        | Re-centre on the player and follow again |
 | `H`                            | Toggle the HUD |
 | `I` / `Tab`                    | Toggle the inventory panel (when the player has an inventory) |
+| `PageUp` / `<`, `PageDown` / `>` | Climb the stairs or ladder you stand on, up or down a floor |
 
 A drag never counts as a click (8 px threshold). The HUD shows the
 in-game day and time (`Day 1 08:02`, from the pack's `clock`) and the
@@ -98,6 +99,10 @@ iso.y = (x + y) * 16
 screen = iso * zoom + offset
 ```
 
+Maps exported for [Tiled](packs.md#tiled-maps) (`npm run map:export`)
+are isometric with the same 64×32 tile diamond and axes, so Tiled shows a
+map as the game does, minus the height of raised blocks.
+
 World coordinates are continuous tile units; tile `(i, j)` covers
 `[i, i+1)×[j, j+1)` and its diamond's top vertex is at `iso(i, j)`. Picking
 inverts the projection and floors; a click on a raised block's top face
@@ -113,6 +118,60 @@ inverts the projection and floors; a click on a raised block's top face
 - The sim runs at 10 ticks/s from an accumulator (at most 5 ticks per
   frame; any further backlog is dropped); every animation frame renders with
   interpolation, so walking is smooth and has constant speed.
+
+## Floors
+
+On a map with stacked [floors](packs.md#floors) (`src/iso/scene.ts`,
+rules in `src/iso/cutaway.ts`):
+
+- **Height.** Floor `z` is drawn raised by `z × FLOOR_H` iso px, with
+  `FLOOR_H = BLOCK_H` (32), so a floor sits on top of the walls below it.
+  An entity's height is interpolated with its position, so climbing the
+  stairs is smooth; the camera follows that height.
+- **Draw order** is floor by floor: floor 0 ground, floor 0 markers,
+  floor 0 objects, then floor 1, and so on. Each floor keeps its own
+  per-diagonal depth buckets. Empty cells draw nothing, so the floors below
+  and the outside show through.
+- **Cutaway.** The **view floor** is the player's floor; while climbing,
+  it switches at the step's midpoint. Floors **above** the view floor are
+  hidden (their whole container: ground, blocks, piles, entities and
+  markers), so you see inside buildings.
+- **Fade.** On the view floor, a raised block fades to alpha 0.35 when it
+  is in front of the player and close on screen: its diagonal `x + y` is
+  in `(px + py, px + py + 3]` and `|(x − y) − (px − py)| ≤ 2`. This also
+  applies on one-floor maps; with no raised blocks in front of the player
+  the view is unchanged.
+- **Picking.** A click picks on the view floor, with its offset (raised
+  blocks by their top face, as above). When that cell is empty (or outside
+  the map), the floors below are tried in order, so clicking the street
+  from a balcony works. Clicks yield `{ x, y, z }`, and click-to-move
+  issues a goto with that `z`.
+- The HUD shows `Floor N` when the map has more than one floor.
+
+## Lazy chunks and culling
+
+The scene never builds the whole map (`src/iso/scene.ts`; the bookkeeping
+is the Pixi-free `src/iso/chunks.ts`, tested headless):
+
+- **Render chunks** are 16×16 cells of one floor. A chunk's ground
+  container and raised blocks are built **the first time it is near the
+  view**: visible (its iso bounds, grown for tall blocks, meet the view
+  plus a 96 px margin), or one chunk away from a visible one on the same
+  floor.
+- Built chunks live in an **LRU**; past `MAX_BUILT_CHUNKS` (160) the least
+  recently needed are **destroyed** (sprites and containers), never one
+  needed this frame. Built chunks that leave the view are hidden.
+- **Map edits** (`world.tileVersion`) rebuild only the built chunks whose
+  cells changed; an unbuilt chunk is built from the live grid, so it picks
+  up its edits when it is first built.
+- **Culling.** Entity and ground-pile sprites exist only while their cell
+  (an entity's interpolated position and floor) is in a **built, visible**
+  chunk: they are created when they enter one and destroyed when they
+  leave. A new sprite takes the entity's current facing and its depth
+  bucket, so depth sorting and facing carry over.
+- `scene.update()` returns stats: built, visible and total chunks, entities
+  drawn on visible floors, and live sprites. The browser's F3 line shows
+  them (see `docs/ui.md`).
 
 ## Sprites and placeholders
 
@@ -158,6 +217,11 @@ down-right, `se` = toward the camera…; the full table is in
   turns the entity to face it; `ticks_per_turn: 0` turns and steps in the
   same tick. Each turning beat is a discrete sprite switch (no turn
   interpolation); an entity that stops keeps its last facing.
+- **Browser keys: tap turns, hold walks.** A fresh movement key press
+  queues a step with `turnInPlace: true`: the player turns toward it and
+  stays put (or steps at once if already facing that way). Holding the key
+  past `HOLD_MS` (200 ms, `src/web/keys.ts`) then walks as usual. Paths,
+  click-to-move, NPCs and the terminal still turn and then walk.
 - **Tiles** face their map cell's legend `facing` (default `s`); **ground
   piles** always face `s`.
 - **Mirroring.** A directional asset's missing facing uses its mirror

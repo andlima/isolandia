@@ -4,7 +4,7 @@ import { add, hudModel, loadPacksOrThrow, reasonText, World, type Action, type A
 import { readPack } from '../src/node/read-pack.ts';
 import { clampMenu, contextMenu, menuTitle, moveSelection, runMenuItem } from '../src/web/menu.ts';
 import { clickIntent } from '../src/web/panels.ts';
-import { fixture, GAMES } from './helpers.ts';
+import { fixture, GAMES, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -123,7 +123,7 @@ function give(w: World, item: string, count: number): void {
   add(w.player.inv!, k, count, w.def.items[k]!.weight);
 }
 
-const BOARD: Action = { kind: 'act', action: 't:board_up', x: 7, y: 1 };
+const BOARD: Action = { kind: 'act', action: 't:board_up', x: 7, y: 1, z: 0 };
 
 // ── Walk-then-act ───────────────────────────────────────────────────────────
 
@@ -131,7 +131,7 @@ test('then: queued on arrival and applied in the same tick', () => {
   const w = world();
   give(w, 't:board', 2);
   const intent = w.approachIntent(BOARD);
-  assert.deepEqual(intent, { kind: 'goto', x: 7, y: 1, adjacent: true, then: BOARD });
+  assert.deepEqual(intent, { kind: 'goto', x: 7, y: 1, z: 0, adjacent: true, then: BOARD });
   w.queueIntent(intent!);
   w.step();
   assert.deepEqual(w.player.then, BOARD);
@@ -153,19 +153,19 @@ test('then: an empty path queues it in the same tick', () => {
   const w = world();
   give(w, 't:board', 2);
   moveTo(w.player, 6, 1);
-  w.queueIntent({ kind: 'goto', x: 7, y: 1, adjacent: true, then: BOARD });
+  w.queueIntent({ kind: 'goto', x: 7, y: 1, z: 0, adjacent: true, then: BOARD });
   w.step();
   assert.equal(w.player.activity?.startTick, 0);
   // A goto to the player's own cell with a self action.
   const v = world();
-  v.queueIntent({ kind: 'goto', x: 1, y: 1, then: { kind: 'act', action: 't:nap' } });
+  v.queueIntent({ kind: 'goto', x: 1, y: 1, z: 0, then: { kind: 'act', action: 't:nap' } });
   v.step();
   assert.equal(v.player.activity?.action, v.def.ids.actions['t:nap']);
 });
 
 test('then: no path drops it and records unreachable', () => {
   const w = world();
-  const act: Action = { kind: 'act', action: 't:board_up', x: 9, y: 1 };
+  const act: Action = { kind: 'act', action: 't:board_up', x: 9, y: 1, z: 0 };
   w.queueIntent(w.approachIntent(act)!);
   w.step();
   assert.equal(w.player.then, null);
@@ -174,7 +174,7 @@ test('then: no path drops it and records unreachable', () => {
   assert.equal(hudModel(w).lastAction, "You can't get there.");
   // A take from afar names its item.
   const bin = w.containersAt(1, 3)[0]!;
-  w.queueIntent({ kind: 'goto', x: 9, y: 1, adjacent: true, then: { kind: 'take', container: bin.id, item: 't:saw' } });
+  w.queueIntent({ kind: 'goto', x: 9, y: 1, z: 0, adjacent: true, then: { kind: 'take', container: bin.id, item: 't:saw' } });
   w.step();
   assert.equal(w.lastAction!.item, 't:saw');
   assert.equal(w.lastAction!.reason, 'unreachable');
@@ -201,13 +201,13 @@ test('then: a new intent or an activity replaces it', () => {
   give(w, 't:board', 2);
   w.queueIntent(w.approachIntent(BOARD)!);
   w.step();
-  w.queueIntent({ kind: 'goto', x: 5, y: 2 });
+  w.queueIntent({ kind: 'goto', x: 5, y: 2, z: 0 });
   w.step();
   assert.equal(w.player.then, null);
   const nap: Action = { kind: 'act', action: 't:nap' };
   w.queueIntent(w.approachIntent(BOARD)!);
   w.step();
-  w.queueIntent({ kind: 'goto', x: 5, y: 2, then: nap });
+  w.queueIntent({ kind: 'goto', x: 5, y: 2, z: 0, then: nap });
   w.step();
   assert.deepEqual(w.player.then, nap);
   w.queueIntent({ kind: 'step', dx: 1, dy: 0 });
@@ -232,15 +232,15 @@ test('then: a new intent or an activity replaces it', () => {
 
 test('then: only the player may carry it', () => {
   const w = world();
-  assert.throws(() => w.queueIntent({ kind: 'goto', x: 2, y: 2, then: BOARD }, w.entities[1]!), /only the player/);
-  w.queueIntent({ kind: 'goto', x: 2, y: 2 }, w.entities[1]!);
+  assert.throws(() => w.queueIntent({ kind: 'goto', x: 2, y: 2, z: 0, then: BOARD }, w.entities[1]!), /only the player/);
+  w.queueIntent({ kind: 'goto', x: 2, y: 2, z: 0 }, w.entities[1]!);
 });
 
 test('then: part of the snapshot and hash; deterministic', () => {
   const run = (withThen: boolean) => {
     const w = world(7);
     give(w, 't:board', 2);
-    w.queueIntent(withThen ? w.approachIntent(BOARD)! : { kind: 'goto', x: 7, y: 1, adjacent: true });
+    w.queueIntent(withThen ? w.approachIntent(BOARD)! : { kind: 'goto', x: 7, y: 1, z: 0, adjacent: true });
     w.step();
     return w;
   };
@@ -263,15 +263,15 @@ test('approachIntent: in reach, no reach needed, out of reach, walkable and cont
   assert.equal(w.approachIntent({ kind: 'act', action: 't:nap' }), null);
   assert.equal(w.approachIntent({ kind: 'use', item: 't:salve' }), null);
   assert.equal(w.approachIntent({ kind: 'drop', item: 't:saw' }), null);
-  assert.equal(w.approachIntent({ kind: 'act', action: 't:sweep', x: 2, y: 2 }), null);
-  const fill: Action = { kind: 'act', action: 't:fill', x: 4, y: 3 };
-  assert.deepEqual(w.approachIntent(fill), { kind: 'goto', x: 4, y: 3, adjacent: false, then: fill });
+  assert.equal(w.approachIntent({ kind: 'act', action: 't:sweep', x: 2, y: 2, z: 0 }), null);
+  const fill: Action = { kind: 'act', action: 't:fill', x: 4, y: 3, z: 0 };
+  assert.deepEqual(w.approachIntent(fill), { kind: 'goto', x: 4, y: 3, z: 0, adjacent: false, then: fill });
   const bin = w.containersAt(1, 3)[0]!;
   const take: Action = { kind: 'take', container: bin.id, item: 't:saw' };
-  assert.deepEqual(w.approachIntent(take), { kind: 'goto', x: 1, y: 3, adjacent: true, then: take });
+  assert.deepEqual(w.approachIntent(take), { kind: 'goto', x: 1, y: 3, z: 0, adjacent: true, then: take });
   moveTo(w.player, 2, 2);
   assert.equal(w.approachIntent(take), null);
-  assert.equal(w.approachIntent({ kind: 'act', action: 't:nope', x: 9, y: 9 }), null);
+  assert.equal(w.approachIntent({ kind: 'act', action: 't:nope', x: 9, y: 9, z: 0 }), null);
 });
 
 // ── interactionsAt ──────────────────────────────────────────────────────────
@@ -415,15 +415,15 @@ test('menu: fixture mappings for tile actions, open, take all and walk', () => {
   give(w, 't:board', 2);
   const bin = w.containersAt(1, 3)[0]!;
   bin.stacks.push({ item: w.def.ids.items['t:salve']!, count: 2 });
-  assert.deepEqual(contextMenu(w, 7, 1), [{ label: 'Board up', disabled: false, run: { intent: { kind: 'goto', x: 7, y: 1, adjacent: true, then: BOARD } } }]);
+  assert.deepEqual(contextMenu(w, 7, 1), [{ label: 'Board up', disabled: false, run: { intent: { kind: 'goto', x: 7, y: 1, z: 0, adjacent: true, then: BOARD } } }]);
   const far = contextMenu(w, 1, 3);
   assert.deepEqual(far[0], { label: 'Open Bin', disabled: false, run: { intent: clickIntent(w, 1, 3), openLoot: true, container: bin.id } });
   assert.deepEqual(far[1]!.run, {
-    intent: { kind: 'goto', x: 1, y: 3, adjacent: true, then: { kind: 'take', container: bin.id, item: 't:salve' } },
+    intent: { kind: 'goto', x: 1, y: 3, z: 0, adjacent: true, then: { kind: 'take', container: bin.id, item: 't:salve' } },
     openLoot: true,
     container: bin.id,
   });
-  assert.deepEqual(contextMenu(w, 5, 2)[1], { label: 'Walk here', disabled: false, run: { intent: { kind: 'goto', x: 5, y: 2 } } });
+  assert.deepEqual(contextMenu(w, 5, 2)[1], { label: 'Walk here', disabled: false, run: { intent: { kind: 'goto', x: 5, y: 2, z: 0 } } });
   moveTo(w.player, 2, 2);
   const near = contextMenu(w, 1, 3);
   assert.deepEqual(near[0]!.run, { openLoot: true, container: bin.id });
@@ -447,7 +447,7 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 
 test('menu: zombie window from afar, without and with materials', () => {
   const w = game('zombie');
-  const [wx, wy] = [16, 3];
+  const [wx, wy] = genreCell('zombie', 16, 3);
   assert.equal(w.grid.tileAt(wx, wy)!.id, 'zmb:window');
   assert.ok(Math.max(Math.abs(w.player.x - wx), Math.abs(w.player.y - wy)) > 1);
   const ids = w.def.ids.items;
@@ -461,8 +461,8 @@ test('menu: zombie window from afar, without and with materials', () => {
   assert.equal(without.hint, 'Needs: Hammer, 2× Plank, 4× Nails');
   inv.stacks.push({ item: ids['zmb:hammer']!, count: 1 }, { item: ids['zmb:plank']!, count: 2 }, { item: ids['zmb:nails']!, count: 4 });
   const item = contextMenu(w, wx, wy).find((i) => i.label === 'Barricade')!;
-  const act: Action = { kind: 'act', action: 'zmb:barricade', x: wx, y: wy };
-  assert.deepEqual(item, { label: 'Barricade', disabled: false, run: { intent: { kind: 'goto', x: wx, y: wy, adjacent: true, then: act } } });
+  const act: Action = { kind: 'act', action: 'zmb:barricade', x: wx, y: wy, z: 0 };
+  assert.deepEqual(item, { label: 'Barricade', disabled: false, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, adjacent: true, then: act } } });
   // The survivor walks up and starts hammering.
   runMenuItem(w, item);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();
@@ -472,20 +472,22 @@ test('menu: zombie window from afar, without and with materials', () => {
 
 test('menu: vampire shutters from afar, and rest on your own cell', () => {
   const w = game('vampire');
-  const shutter = contextMenu(w, 3, 0).find((i) => i.label === 'Close shutters')!;
-  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: 3, y: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: 3, y: 0 } } });
+  const [sx, sy] = genreCell('vampire', 3, 0);
+  const shutter = contextMenu(w, sx, sy).find((i) => i.label === 'Close shutters')!;
+  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: sx, y: sy, z: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: sx, y: sy, z: 0 } } });
   assert.equal(shutter.disabled, false);
   const { x, y } = w.player;
   const rest = contextMenu(w, x, y).find((i) => i.label === 'Rest')!;
   assert.deepEqual([rest.disabled, rest.hint], [true, 'Only in the crypt']);
   assert.ok(!contextMenu(w, x, y).some((i) => i.label === 'Walk here'));
   // Over in the crypt.
-  w.queueIntent({ kind: 'goto', x: 10, y: 2 });
-  for (let i = 0; i < 200 && (w.player.x !== 10 || w.player.y !== 2); i++) w.step();
-  const ok = contextMenu(w, 10, 2).find((i) => i.label === 'Rest')!;
+  const [cx, cy] = genreCell('vampire', 10, 2);
+  w.queueIntent({ kind: 'goto', x: cx, y: cy, z: 0 });
+  for (let i = 0; i < 200 && (w.player.x !== cx || w.player.y !== cy); i++) w.step();
+  const ok = contextMenu(w, cx, cy).find((i) => i.label === 'Rest')!;
   assert.deepEqual(ok, { label: 'Rest', disabled: false, run: { actions: [{ kind: 'act', action: 'vamp:rest' }] } });
-  assert.equal(menuTitle(w, 10, 2), `${w.grid.tileAt(10, 2)!.label} · hall`);
-  assert.equal(menuTitle(w, 3, 0), w.grid.tileAt(3, 0)!.label);
+  assert.equal(menuTitle(w, cx, cy), `${w.grid.tileAt(cx, cy)!.label} · hall`);
+  assert.equal(menuTitle(w, sx, sy), w.grid.tileAt(sx, sy)!.label);
   assert.equal(menuTitle(w, -1, 0), '');
 });
 

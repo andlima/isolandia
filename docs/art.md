@@ -69,6 +69,11 @@ the horizontal mirrors of their partners. See the facing table in
   `n` and mirroring `s` gives `e`.
 - Because a mirror flips the light, mirrored blocks are lit from the
   top-right. That is accepted.
+- Stairs and ladders (`std:stairs`, `vamp:ladder`) are 4-way blocks that
+  **rise toward their facing**: drawn `w`, the risers face the camera on
+  the screen-right face; drawn `s`, the staircase climbs toward the
+  screen-left face, so its stepped profile shows on the right. Their block
+  is a full wall height, the height of one floor.
 
 ## The generator
 

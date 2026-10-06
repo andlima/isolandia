@@ -262,6 +262,25 @@ const ITEMS = {
   candle: ['..y..', '.yWy.', '..C..', '.WWW.', '.WWW.', '.WWW.', 'eeeee'],
 };
 
+/**
+ * A steep oak ladder up to a trapdoor, on creaky boards: drawn `s` the
+ * rungs face screen-left (it climbs toward the south), drawn `w` they face
+ * screen-right. `n` and `e` are the mirrors.
+ */
+function ladder(facing) {
+  const { c, I } = blockTile();
+  I.top(0, 0, 1, 1, 0, (u, v, x, y) => (px(facing === 's' ? v : u) % 4 === 3 ? 'board_lo' : hash(x, y, 41) < 0.06 ? 'board_hi' : 'board'));
+  const rungs = (a, z, lit) => {
+    const [A, Z] = [px(a), px(z)];
+    if (A <= 1 || A >= 14) return lit ? 'oak' : 'oak_lo'; // rails
+    if (Z % 4 === 1) return lit ? 'oak_hi' : 'oak'; // rungs
+    return null; // the floor shows between the rungs
+  };
+  if (facing === 's') I.south(0.75, 0.2, 0.8, 0, 1, (u, z) => rungs((u - 0.2) / 0.6, z, true));
+  else I.east(0.75, 0.2, 0.8, 0, 1, (v, z) => rungs((v - 0.2) / 0.6, z, false));
+  return c;
+}
+
 export function images() {
   const furn = (name, draw) => ['s', 'w'].map((f) => ({ file: `${name}_${f}.svg`, canvas: draw(f), note: `block, facing ${f}` }));
   return [
@@ -276,6 +295,7 @@ export function images() {
     ...furn('bookshelf', bookshelf),
     ...furn('chest', chest),
     ...furn('wine_rack', wineRack),
+    ...['s', 'w'].map((f) => ({ file: `ladder_${f}.svg`, canvas: ladder(f), note: `block, climbing toward ${f}` })),
     ...FACINGS.map((f) => ({ file: `vampire_${f}.svg`, canvas: humanoid(f, vampire), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `bat_${f}.svg`, canvas: bat(f, batLook), note: `facing ${f}` })),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),

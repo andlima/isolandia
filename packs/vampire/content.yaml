@@ -75,6 +75,16 @@ tiles:
     sprite: bookshelf_img
     walkable: false
     container: { capacity: 20 }
+  # A steep ladder up to the attic: links its cell to the one above (docs/packs.md#floors).
+  - id: ladder
+    label: Ladder
+    glyph: "<"
+    color: "#b08850"
+    sprite: ladder_img
+    walkable: true
+    raised: true
+    opaque: false
+    climb: up
   - id: chest
     label: Oak chest
     glyph: "X"
@@ -118,7 +128,7 @@ clock:
   start: "20:00"
 
 start:
-  map: mansion
+  map: estate
   player: vampire
   defeat:
     when: "self.hp <= 0"

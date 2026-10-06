@@ -18,3 +18,20 @@ tiles:
     sprite: door_img
     walkable: true
     raised: true                    # iso: a door in a wall-height frame
+  # Floors: stairs link their cell to the same cell one floor up (`climb: up`);
+  # the landing is the floor cell at the top of the stairs.
+  - id: stairs
+    label: Stairs
+    glyph: "<"
+    color: "#c08a4e"
+    sprite: stairs_img
+    walkable: true
+    raised: true                    # iso: a staircase block, as tall as a wall
+    opaque: false
+    climb: up
+  - id: landing
+    label: Landing
+    glyph: ">"
+    color: "#c08a4e"
+    sprite: landing_img
+    walkable: true

@@ -11,7 +11,7 @@ const STACKS = [
   ['std', 'vampire'],
   ['std', 'garden'],
 ];
-const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow'];
+const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow', 'stairs', 'ladder'];
 const MAX_COLOURS = 32;
 
 function load(dirs: string[]): { def: Definition; dirOf: Map<string, string> } {

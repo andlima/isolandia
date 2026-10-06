@@ -6,8 +6,8 @@ Right-click a tile (or long-press it on a touch screen) to open the
 **context menu**: everything you can do at that cell, near or far. Press
 `E` to open it for your own cell, at your character.
 
-The menu is built from the core query `world.interactionsAt(x, y)` (see
-[packs](packs.md#actions)) by the pure function `contextMenu(world, x, y)`
+The menu is built from the core query `world.interactionsAt(x, y, z)` (see
+[packs](packs.md#actions)) by the pure function `contextMenu(world, x, y, z)`
 in `src/web/menu.ts`; `src/web/menu-dom.ts` only renders it. Entries, in
 order:
 
@@ -18,8 +18,11 @@ order:
    behaviour as tile actions;
 3. **Open** and, when not empty, **Take all from …** for each container on
    the cell;
-4. on your own cell, the **self actions** (e.g. *Rest*);
-5. **Walk here**, on any other walkable cell.
+4. **Go up** / **Go down** on a stairs (or landing) cell whose
+   [link](packs.md#floors) is open: it walks there first when needed, then
+   climbs to the far end;
+5. on your own cell, the **self actions** (e.g. *Rest*);
+6. **Walk here**, on any other walkable cell.
 
 Entries that cannot be done stay in the list, greyed out, with the reason
 underneath (`Needs: Hammer, 2× Plank`, `Only in the crypt`, …), so you
@@ -64,3 +67,60 @@ to walk there and craft). The view is the pure function
 `world.availableRecipes()`; it re-renders when `tick`, `containerVersion`
 or `tileVersion` changes. Recipes without a station live only here, not in
 the context menu.
+
+## Saving and loading
+
+The browser keeps a **quicksave** and **three slots** per pack list in
+`localStorage` (see [saves](saves.md)).
+
+- **`F5`** quicksaves and **`F9`** quickloads. The page never reloads on
+  `F5`, even with a modifier held.
+- **`O`** (or the **Game [O]** button at the bottom centre) toggles the
+  **Game panel**: the quicksave and each slot with `Day N, HH:MM`, the
+  tick and when it was saved, and **Save**, **Load** (disabled when empty)
+  and **Delete** buttons. **Export** downloads the running game as
+  `isolandia-<packs>-day<N>.json`; **Import** loads such a file (or a bare
+  save file).
+- A load replaces the running world: the scene, HUD, panels and context
+  menu are rebuilt and the camera recenters on the player. Errors (wrong
+  packs, unknown ids…) are listed in the panel and the current game keeps
+  running; warnings (e.g. a newer pack version) show in a dismissible note.
+- Saving and loading work after defeat or victory; loading a save of a
+  game in progress un-freezes it.
+- A storage failure (full quota, private mode, blocked storage) shows a
+  short message and never stops the game.
+
+The panel's view is the pure function `gameView` in `src/web/saves.ts`;
+storage goes through the small `SaveStore` interface (`localStorage` in
+the browser, `MemoryStore` in tests).
+
+## Keys
+
+| Key | Action |
+|---|---|
+| Arrows, WASD, numpad | Move (screen-relative) |
+| Click / right-click / long-press | Walk there / context menu |
+| `E` | Context menu on your own cell |
+| `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
+| `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
+| `I` / `Tab` | Inventory panel |
+| `C` | Crafting panel |
+| `O` | Game panel (save slots, export, import) |
+| `F5` / `F9` | Quicksave / quickload |
+| `H` | Toggle the HUD text |
+| `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
+| `Space` | Recenter the camera |
+
+The climb keys are matched by `KeyboardEvent.key`, so `<` and `>` follow
+the keyboard layout; with no link at your cell they do nothing. On a map
+with more than one floor the HUD shows `Floor N` (your floor `z`, the
+ground floor being `Floor 0`).
+
+In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
+loads it; lowercase `s` and `l` still move. `<` / `>` climb (with no link
+the message line says `No way up here.` / `No way down here.`), the `x`
+list starts with *Go up* / *Go down* when you stand on a link, the map
+shows your floor only (empty cells are spaces), and the status lines add
+`Floor N` on multi-floor maps. While any NPC is dormant (beyond the active
+radius, see `docs/packs.md#simulation`), the bottom line ends with
+`active N, dormant M`.

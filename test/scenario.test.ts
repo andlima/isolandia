@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clockAt, formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
+import { clockAt, EMPTY_TILE, formatError, loadPacks, World, type Container, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES } from './helpers.ts';
 import { Looter, type LooterOptions } from './looter.ts';
@@ -9,6 +9,12 @@ import { Looter, type LooterOptions } from './looter.ts';
 
 const DAY_TICKS = 14400; // 1440 s × 10 ticks/s
 const SEEDS = [1, 2, 3, 4, 5];
+/**
+ * Seeds for the composite start maps (the 256×256 zombie city with ~1000
+ * entities, the vampire estate): two in-game days cost ~25× the old maps per
+ * seed, so they run on fewer seeds to keep this file within a few seconds each.
+ */
+const BIG_SEEDS = [1, 2];
 
 function genre(name: string): Definition {
   const r = loadPacks(GAMES[name as keyof typeof GAMES].map(readPack));
@@ -36,7 +42,7 @@ const LOOTERS: Record<string, LooterOptions> = {
 for (const name of ['zombie', 'vampire']) {
   test(`scenario (${name}): an idle player gains a status on day 1 and is defeated within 2 days`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       let firstStatus = -1;
       while (!w.defeat && w.tick < 2 * DAY_TICKS) {
@@ -50,7 +56,7 @@ for (const name of ['zombie', 'vampire']) {
 
   test(`scenario (${name}): a looting player survives to the end of day 2 with goto/take/use only`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       const bot = new Looter(w, LOOTERS[name]!);
       const kinds = new Set<string>();
@@ -73,7 +79,7 @@ for (const name of ['zombie', 'vampire']) {
 
   test(`scenario (${name}): taking stops at capacity with reason too_heavy`, () => {
     const def = genre(name);
-    for (const seed of SEEDS) {
+    for (const seed of BIG_SEEDS) {
       const w = World.create(def, seed);
       const inv = w.player.inv!;
       const tried = new Set<number>();
@@ -93,7 +99,7 @@ for (const name of ['zombie', 'vampire']) {
             if (best) {
               tried.add(best.id);
               target = best;
-              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, adjacent: true });
+              w.queueIntent({ kind: 'goto', x: best.x, y: best.y, z: best.z, adjacent: true });
             }
           }
         }
@@ -193,7 +199,7 @@ test('genre packs use every M2 and M3 primitive', () => {
     // Tile containers in at least two kinds of room.
     const roomsWithContainers = new Set<number>();
     map.cells.forEach((t, i) => {
-      if (def.tiles[t]!.container) for (const tag of map.rooms.sets[map.rooms.cellSet[i]!]!) roomsWithContainers.add(tag);
+      if (t !== EMPTY_TILE && def.tiles[t]!.container) for (const tag of map.rooms.sets[map.rooms.cellSet[i]!]!) roomsWithContainers.add(tag);
     });
     assert.ok(roomsWithContainers.size >= 2, `${name}: containers in ${roomsWithContainers.size} room kinds`);
     // count_item / has_item in a status or system (expressions are compiled away, so check the source).

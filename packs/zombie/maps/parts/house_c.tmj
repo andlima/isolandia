@@ -1,0 +1,185 @@
+{
+  "compressionlevel": -1,
+  "height": 11,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "layers": [
+        {
+          "data": [
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 5, 5, 5, 5, 12, 5, 5, 5, 5, 10,
+            10, 5, 9, 7, 11, 5, 8, 2, 2, 5, 10,
+            10, 12, 2, 2, 2, 1, 2, 2, 4, 5, 10,
+            10, 5, 2, 2, 2, 5, 2, 2, 2, 5, 10,
+            10, 5, 5, 1, 5, 5, 5, 1, 5, 5, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10
+          ],
+          "height": 11,
+          "id": 2,
+          "name": "ground",
+          "opacity": 1,
+          "type": "tilelayer",
+          "visible": true,
+          "width": 11,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "draworder": "topdown",
+          "id": 3,
+          "name": "objects",
+          "objects": [
+            {
+              "height": 96,
+              "id": 1,
+              "name": "kitchen",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "kitchen"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 96,
+              "x": 64,
+              "y": 64
+            },
+            {
+              "height": 96,
+              "id": 2,
+              "name": "hallway",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "hallway"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 96,
+              "x": 192,
+              "y": 64
+            }
+          ],
+          "opacity": 1,
+          "type": "objectgroup",
+          "visible": true,
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "name": "floor 0",
+      "opacity": 1,
+      "properties": [
+        {
+          "name": "floor",
+          "type": "int",
+          "value": 0
+        }
+      ],
+      "type": "group",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": 4,
+      "layers": [
+        {
+          "data": [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 5, 5, 5, 5, 12, 5, 5, 5, 5, 0,
+            0, 5, 8, 2, 2, 2, 2, 2, 6, 5, 0,
+            0, 12, 2, 2, 2, 2, 2, 2, 3, 5, 0,
+            0, 5, 2, 2, 2, 2, 2, 2, 2, 5, 0,
+            0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+          ],
+          "height": 11,
+          "id": 5,
+          "name": "ground",
+          "opacity": 1,
+          "type": "tilelayer",
+          "visible": true,
+          "width": 11,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "draworder": "topdown",
+          "id": 6,
+          "name": "objects",
+          "objects": [
+            {
+              "height": 96,
+              "id": 3,
+              "name": "bedroom",
+              "properties": [
+                {
+                  "name": "tags",
+                  "type": "string",
+                  "value": "bedroom"
+                }
+              ],
+              "rotation": 0,
+              "type": "room",
+              "visible": true,
+              "width": 224,
+              "x": 64,
+              "y": 64
+            }
+          ],
+          "opacity": 1,
+          "type": "objectgroup",
+          "visible": true,
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "name": "floor 1",
+      "opacity": 1,
+      "properties": [
+        {
+          "name": "floor",
+          "type": "int",
+          "value": 1
+        }
+      ],
+      "type": "group",
+      "visible": true,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "nextlayerid": 7,
+  "nextobjectid": 4,
+  "orientation": "isometric",
+  "renderorder": "right-down",
+  "tiledversion": "1.10.2",
+  "tileheight": 32,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "house_c.tsj"
+    }
+  ],
+  "tilewidth": 64,
+  "type": "map",
+  "version": "1.10",
+  "width": 11
+}

@@ -6,6 +6,8 @@ const SQRT2 = Math.SQRT2;
 const DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const DY = [0, 0, 1, -1, 1, -1, 1, -1];
 const COST = [1, 1, 1, 1, SQRT2, SQRT2, SQRT2, SQRT2];
+// Links are tried after the 8 directions: up, then down.
+const LINKS = [1, -1] as const;
 
 export function octile(ax: number, ay: number, bx: number, by: number): number {
   const dx = Math.abs(ax - bx);
@@ -14,12 +16,15 @@ export function octile(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /**
- * 8-directional A* over a Grid with an octile heuristic and no corner
- * cutting (a diagonal needs both orthogonal neighbours walkable).
+ * A* over a Grid's floors: the 8 same-floor neighbours with an octile cost
+ * and no corner cutting (a diagonal needs both orthogonal neighbours
+ * walkable), then the cell's links up and down (cost 1, see `Grid.link`).
+ * The heuristic is octile on (x, y) only, which stays admissible.
  *
- * Per-node state lives in typed arrays indexed by `y * width + x`, reused
- * across searches via a generation stamp. The open set is a binary min-heap
- * with lazy deletion; ties on f are broken by insertion order, so results
+ * Per-node state lives in typed arrays indexed by cell index
+ * (`(z * height + y) * width + x`), reused across searches via a generation
+ * stamp. The open set is a binary min-heap with lazy deletion; ties on f are
+ * broken by insertion order (links after the 8 directions), so results
  * depend only on the grid and the endpoints.
  */
 export class Pathfinder {
@@ -35,9 +40,15 @@ export class Pathfinder {
   private heapSeq = new Uint32Array(256);
   private heapSize = 0;
   private seq = 0;
+  /** Nodes expanded by the latest search (0 when it failed without searching). */
+  lastExpanded = 0;
+  /** Whether the latest search stopped at its budget. */
+  lastBudgetHit = false;
+  /** Whether the latest search failed on region labels, without searching. */
+  lastRegionReject = false;
 
   constructor(readonly grid: Grid) {
-    const n = grid.width * grid.height;
+    const n = grid.width * grid.height * grid.floors;
     this.g = new Float64Array(n);
     this.parent = new Int32Array(n);
     this.seen = new Uint32Array(n);
@@ -46,47 +57,83 @@ export class Pathfinder {
   }
 
   /**
-   * Path as cell indices (`y * width + x`) from start (exclusive) to goal
-   * (inclusive); empty if start === goal; null if the goal is out of bounds,
-   * not walkable, or unreachable.
+   * Path as cell indices from start (exclusive) to goal (inclusive); empty
+   * if start === goal; null if the goal is out of bounds, not walkable, or
+   * unreachable, or when the search expands `budget` nodes without reaching
+   * it. A goal in another connected region than a walkable start (see
+   * `Grid.regions`) fails without searching. `sz`/`gz` are the start and
+   * goal floors (default 0).
    */
-  findPath(sx: number, sy: number, gx: number, gy: number): Int32Array | null {
-    const { width, walk } = this.grid;
-    if (!this.grid.inBounds(sx, sy) || !this.grid.inBounds(gx, gy)) return null;
-    const goal = gy * width + gx;
+  findPath(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
+    this.reset();
+    const { walk } = this.grid;
+    if (!this.grid.inBounds(sx, sy, sz) || !this.grid.inBounds(gx, gy, gz)) return null;
+    const goal = this.grid.index(gx, gy, gz);
     if (walk[goal] !== 1) return null;
+    const start = this.grid.index(sx, sy, sz);
+    if (walk[start] === 1) {
+      const labels = this.grid.regions();
+      if (labels[start] !== labels[goal]) {
+        this.lastRegionReject = true;
+        return null;
+      }
+    }
     const gen = ++this.gen;
     this.goal[goal] = gen;
-    return this.search(sx, sy, gx, gy, 0);
+    return this.search(sx, sy, sz, gx, gy, 0, budget);
+  }
+
+  private reset(): void {
+    this.lastExpanded = 0;
+    this.lastBudgetHit = false;
+    this.lastRegionReject = false;
   }
 
   /**
-   * Shortest path to any walkable tile 8-adjacent to (gx, gy), or to the
-   * goal itself when it is walkable (same return convention as `findPath`).
-   * One multi-goal search; ties are broken like `findPath`.
+   * Shortest path to any walkable tile 8-adjacent to (gx, gy) on the goal's
+   * floor `gz`, or to the goal itself when it is walkable (same return
+   * convention and budget as `findPath`). One multi-goal search; ties are
+   * broken like `findPath`. Fails without searching when no goal cell shares
+   * a walkable start's region.
    */
-  findPathAdjacent(sx: number, sy: number, gx: number, gy: number): Int32Array | null {
+  findPathAdjacent(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
+    this.reset();
     const { width, height, walk } = this.grid;
-    if (!this.grid.inBounds(sx, sy) || !this.grid.inBounds(gx, gy)) return null;
+    if (!this.grid.inBounds(sx, sy, sz) || !this.grid.inBounds(gx, gy, gz)) return null;
+    const start = this.grid.index(sx, sy, sz);
+    const labels = walk[start] === 1 ? this.grid.regions() : null;
     const gen = ++this.gen;
     let any = false;
+    let reachable = labels === null;
     for (let y = Math.max(0, gy - 1); y <= Math.min(height - 1, gy + 1); y++) {
       for (let x = Math.max(0, gx - 1); x <= Math.min(width - 1, gx + 1); x++) {
-        const i = y * width + x;
+        const i = this.grid.index(x, y, gz);
         if (walk[i] === 1) {
           this.goal[i] = gen;
           any = true;
+          if (labels && labels[i] === labels[start]) reachable = true;
         }
       }
     }
+    if (!any) return null;
+    if (!reachable) {
+      this.lastRegionReject = true;
+      return null;
+    }
     // Every goal is within octile distance √2 of (gx, gy), so this stays admissible.
-    return any ? this.search(sx, sy, gx, gy, SQRT2) : null;
+    return this.search(sx, sy, sz, gx, gy, SQRT2, budget);
   }
 
-  /** A* towards the cells stamped in `goal` for the current generation; h = octile to (gx, gy) − slack. */
-  private search(sx: number, sy: number, gx: number, gy: number, slack: number): Int32Array | null {
-    const { width, height, walk } = this.grid;
-    const start = sy * width + sx;
+  /**
+   * A* towards the cells stamped in `goal` for the current generation; h =
+   * octile to (gx, gy) − slack. Gives up (null) once `budget` nodes have been
+   * expanded without reaching a goal.
+   */
+  private search(sx: number, sy: number, sz: number, gx: number, gy: number, slack: number, budget: number): Int32Array | null {
+    const grid = this.grid;
+    const { width, height, walk } = grid;
+    const multi = grid.floors > 1;
+    const start = grid.index(sx, sy, sz);
     const gen = this.gen;
     const goal = this.goal;
     if (goal[start] === gen) return new Int32Array(0);
@@ -100,22 +147,34 @@ export class Pathfinder {
     seen[start] = gen;
     this.push(start, h(sx, sy));
 
+    let expanded = 0;
     while (this.heapSize > 0) {
       const cur = this.pop();
       if (closed[cur] === gen) continue;
       closed[cur] = gen;
-      if (goal[cur] === gen) return this.reconstruct(cur);
+      if (goal[cur] === gen) {
+        this.lastExpanded = expanded;
+        return this.reconstruct(cur);
+      }
+      if (expanded >= budget) {
+        this.lastExpanded = expanded;
+        this.lastBudgetHit = true;
+        return null;
+      }
+      expanded++;
 
       const cx = cur % width;
-      const cy = (cur / width) | 0;
+      const rest = (cur - cx) / width;
+      const cy = rest % height;
+      const base = cur - cy * width - cx; // first cell of this floor
       const gc = g[cur]!;
       for (let d = 0; d < 8; d++) {
         const nx = cx + DX[d]!;
         const ny = cy + DY[d]!;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-        const ni = ny * width + nx;
+        const ni = base + ny * width + nx;
         if (walk[ni] !== 1 || closed[ni] === gen) continue;
-        if (d >= 4 && (walk[cy * width + nx] !== 1 || walk[ny * width + cx] !== 1)) continue;
+        if (d >= 4 && (walk[base + cy * width + nx] !== 1 || walk[base + ny * width + cx] !== 1)) continue;
         const ng = gc + COST[d]!;
         if (seen[ni] === gen && ng >= g[ni]!) continue;
         seen[ni] = gen;
@@ -123,7 +182,19 @@ export class Pathfinder {
         parent[ni] = cur;
         this.push(ni, ng + h(nx, ny));
       }
+      if (!multi) continue;
+      for (const dz of LINKS) {
+        const ni = grid.link(cur, dz);
+        if (ni < 0 || closed[ni] === gen) continue;
+        const ng = gc + 1;
+        if (seen[ni] === gen && ng >= g[ni]!) continue;
+        seen[ni] = gen;
+        g[ni] = ng;
+        parent[ni] = cur;
+        this.push(ni, ng + h(cx, cy));
+      }
     }
+    this.lastExpanded = expanded;
     return null;
   }
 

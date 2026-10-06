@@ -1,4 +1,5 @@
 import { hudLines, hudModel, type HudModel, type World } from '../core/index.ts';
+import { perfLine, type PerfFigures } from './perf.ts';
 
 /** The progress bar's content: label and filled width in percent; null hides it. */
 export function activityBar(m: HudModel): { label: string; percent: number } | null {
@@ -13,8 +14,10 @@ export class Hud {
   private readonly bar: HTMLDivElement;
   private readonly barFill: HTMLDivElement;
   private readonly barLabel: HTMLSpanElement;
+  private readonly perf: HTMLDivElement;
   private lastTick = -1;
   private barTick = -1;
+  private perfShown = 0;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement('pre');
@@ -33,7 +36,32 @@ export class Hud {
     this.barLabel = document.createElement('span');
     this.barLabel.className = 'activity-label';
     this.bar.append(this.barFill, this.barLabel);
-    parent.append(this.el, this.banner, this.victoryBanner, this.bar);
+    this.perf = document.createElement('div');
+    this.perf.id = 'perf';
+    this.perf.hidden = true;
+    parent.append(this.el, this.banner, this.victoryBanner, this.bar, this.perf);
+  }
+
+  /** Remove the overlay's elements (the world is being replaced). */
+  dispose(): void {
+    for (const el of [this.el, this.banner, this.victoryBanner, this.bar, this.perf]) el.remove();
+  }
+
+  /** Show or hide the perf line (F3). */
+  togglePerf(): void {
+    this.perf.hidden = !this.perf.hidden;
+    this.perfShown = 0;
+  }
+
+  get perfVisible(): boolean {
+    return !this.perf.hidden;
+  }
+
+  /** Refresh the perf line (at most 4 times a second). */
+  updatePerf(f: PerfFigures, now: number): void {
+    if (this.perf.hidden || now - this.perfShown < 250) return;
+    this.perfShown = now;
+    this.perf.textContent = perfLine(f);
   }
 
   toggle(): void {
@@ -64,6 +92,6 @@ export class Hud {
     if (this.el.hidden || world.tick === this.lastTick) return;
     this.lastTick = world.tick;
     const m = hudModel(world);
-    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', '[drag] pan  [wheel] zoom  [space] follow  [H] hud', ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
+    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', ...(world.grid.floors > 1 ? ['[PgUp/PgDn or </>] climb'] : []), '[drag] pan  [wheel] zoom  [space] follow  [H] hud  [F3] perf', '[O] game  [F5] quicksave  [F9] quickload', ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
   }
 }
