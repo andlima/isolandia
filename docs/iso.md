@@ -25,15 +25,16 @@ screen.
 | `?packs=a,b,…`   | none: the title screen | Packs to play: directory names under `packs/` or namespaces. Dependencies are added and ordered by the [stack resolver](packs.md#stacks), as on the command line |
 | `?seed=N`        | `1`           | Integer world seed |
 
-For example `?packs=vampire&seed=7`, or `?packs=zombie,hardmode` for a
-game plus a mod (`?packs=std,std-needs,zombie` still works and loads the
+For example `?packs=town`, `?packs=vampire&seed=7`, or
+`?packs=zombie,hardship` for the town with two mods
+(`?packs=std,std-needs,town,zombie,hardship` still works and loads the
 same stack). When loading fails — including an unknown pack name or a
 resolver error — the page shows the complete error list, formatted like
 `npm run check`, instead of the game, with a **Back to the title screen**
 link.
 
 Saves, exports and imports are keyed on the **resolved** pack directory
-list, so `?packs=zombie` and `?packs=std,std-needs,zombie` share the same
+list, so `?packs=zombie` and `?packs=std,std-needs,town,zombie` share the same
 slots (and slots saved under the full list before stacks existed stay
 reachable).
 

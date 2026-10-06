@@ -1,16 +1,19 @@
 # Packs
 
 A **pack** is a directory of YAML files that defines game content. The
-engine has no genre knowledge: the zombie, vampire and garden mini-games
-under `packs/` are pure data on top of the same code.
+engine has no genre knowledge: the games under `packs/` are pure data on
+top of the same code. The `town` base game is genre-free; `zombie` and
+`vampire` are [mods](#mods-and-overrides) of it, so switching genre is
+switching mod (see [Shipped packs](#shipped-packs)).
 
 ```sh
 npm run packs                       # list the packs under packs/
-npm run check -- zombie             # validate only (adds std, std-needs)
+npm run check -- zombie             # validate only (adds std, std-needs, town)
+npm run play  -- town               # the base game: a quiet sandbox
 npm run play  -- zombie             # play in the terminal
 npm run play  -- vampire --seed 7
 npm run play  -- garden
-npm run play  -- zombie hardmode    # a game plus a mod
+npm run play  -- zombie hardship    # the town, a genre mod and a balance mod
 ```
 
 `check` also accepts a *library* stack with no `start` (e.g.
@@ -38,7 +41,7 @@ alike).
 ## Layout
 
 ```
-packs/zombie/
+packs/town/
   pack.yaml            # manifest (required)
   archetypes.yaml      # any other *.yaml / *.yml file, at any depth
   assets.yaml
@@ -87,10 +90,10 @@ domain. Any other top-level key is a load error.
 ```yaml
 namespace: zmb          # required, [a-z][a-z0-9_]*
 name: Zombie Town       # required
-version: 0.1.0          # required
-depends: [std, std_needs]  # optional; each loads before this pack
-kind: game              # optional: game | mod | library (default: library)
-description: Scavenge a 256×256 town while the dead close in.  # optional
+version: 0.2.0          # required
+depends: [std, std_needs, town]  # optional; each loads before this pack
+kind: mod               # optional: game | mod | library (default: library)
+description: The dead rise in the town. Find a car battery and get out.  # optional
 ```
 
 `kind` tells tools and the browser's title screen what the pack is. The
@@ -105,7 +108,8 @@ loader checks it against the whole stack:
 Any other `kind` is an error with a suggestion; `description` must be a
 string. Both end up in `Definition.packs` (`PackInfo.kind`,
 `PackInfo.description`). The shipped `std` and `std-needs` are libraries;
-`zombie`, `vampire` and `garden` are games.
+`town` and `garden` are games; `zombie`, `vampire` and `hardship` are mods
+(see [Shipped packs](#shipped-packs)).
 
 ## Stacks
 
@@ -117,7 +121,7 @@ transitive closure of their `depends`, each once.
 
 - **Tokens.** A token is a pack's **directory name** or its
   **namespace**: `std-needs` and `std_needs` both work. On the command
-  line, a token with a path separator (`packs/zombie`, `../mods/hard`) is
+  line, a token with a path separator (`packs/town`, `../mods/hard`) is
   a pack **directory**. An unknown token is an error with a *did you
   mean* suggestion and the list of available packs.
 - **Order.** Dependencies always load before their dependents. Otherwise
@@ -125,9 +129,9 @@ transitive closure of their `depends`, each once.
   visiting each pack's `depends` in listed order and emitting a pack after
   its dependencies. So:
   - a list that already has its dependencies first (`std std-needs
-    zombie`) resolves to exactly that order;
-  - `zombie` resolves to `std, std_needs, zmb`;
-  - `zombie hardmode` puts `hardmode` after `zmb` and everything it
+    town zombie`) resolves to exactly that order;
+  - `zombie` resolves to `std, std_needs, town, zmb`;
+  - `zombie hardship` puts `hardship` after `zmb` and everything it
     needs;
   - between **unrelated** mods, the request order decides which loads
     later, and so which wins an [override](#mods-and-overrides)
@@ -147,13 +151,14 @@ arguments, both print it on one line to stderr:
 
 ```sh
 $ npm run check -- zombie
-stack: std, std_needs, zmb
-OK: std@0.1.0, std_needs@0.1.0, zmb@0.1.0 — …
+stack: std, std_needs, town, zmb
+OK: std@0.1.0, std_needs@0.1.0, town@0.1.0, zmb@0.2.0 — …
+zmb: 5 overrides
 ```
 
 **`npm run packs`** lists the catalog: directory, namespace, version,
 kind, depends and description, games first, then mods, then libraries,
-each sorted by directory. `npm run packs -- --stack zombie hardmode`
+each sorted by directory. `npm run packs -- --stack zombie hardship`
 prints the resolved stack instead, in load order. It also takes
 `--packs-dir`.
 
@@ -251,12 +256,15 @@ shows `n`/`e`/`s`/`w`), **archetypes** face their movement direction, and
 snaps to a neighbouring cardinal (see [iso.md](iso.md#facing)).
 
 ```yaml
-# packs/zombie/assets.yaml
+# packs/town/assets.yaml
 assets:
   - id: car_img                # 4-way: n and e are mirrors of w and s
     directions:
       s: assets/car_s.svg      # 64×64 block
       w: assets/car_w.svg
+
+# packs/zombie/assets.yaml
+assets:
   - id: shambler_img           # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]        # shared by every direction
     directions:
@@ -266,7 +274,7 @@ assets:
       w:  assets/shambler_w.svg
       nw: { file: assets/shambler_nw.svg, anchor: [0.5, 0.92] }
 
-# packs/zombie/tiles.yaml
+# packs/town/tiles.yaml
 tiles:
   - { id: car, label: Wrecked car, glyph: "&", color: "#a33a2a", walkable: false, sprite: car_img }
 ```
@@ -333,7 +341,7 @@ archetypes:
     tags: [undead]
     measurements: [std:hp]
     initial: { hp: 40 }
-  - id: survivor
+  - id: resident
     # …
     inventory:
       capacity: 15
@@ -358,6 +366,7 @@ maps like `garden`); real worlds are edited in [Tiled](#tiled-maps).
 | `rows`   | list of equal-length strings | a one-floor map; every character must be in the legend, except the space (an [empty cell](#floors)) |
 | `floors` | list of `{ rows }`           | a map with stacked floors instead of `rows`: entry *z* is floor *z*, and every floor has the same size (see [Floors](#floors)) |
 | `rooms`  | list of `{ rect: [x, y, w, h], tags: [...], floor? }` | optional; see below |
+| `spawns` | list of `{ archetype, at: [x, y] \| [x, y, z] }` | optional, on ASCII and Tiled maps (not composites); see [Spawns](#spawns) |
 
 ```yaml
 maps:
@@ -406,6 +415,32 @@ archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
 ```
 
 A room lies on one floor: `floor` (default `0`) must exist.
+
+#### Spawns
+
+Besides legend `spawn` cells and Tiled `spawn` objects, a plain (ASCII or
+Tiled) map may list **`spawns`** in YAML: one archetype per cell, placed at
+world creation like the others.
+
+```yaml
+# packs/zombie/outbreak.yaml: the town's town_center part has no NPCs of its own
+maps:
+  - id: town:town_center
+    override: true
+    spawns:
+      - { archetype: shambler, at: [16, 10] }
+      - { archetype: shambler, at: [38, 4, 1] }   # [x, y, z]: upstairs
+```
+
+They are merged with the map's own spawns and ordered by floor, then
+row-major (a legend or Tiled spawn comes first on the same cell), so entity
+ids do not depend on where a spawn was written. That is what lets a
+[mod](#mods-and-overrides) put NPCs on exact cells of a base map: `spawns`
+is an ordinary field, so an override replaces the list whole. `at` must lie
+inside the map, on an existing floor and on a non-empty cell; the
+archetype resolves in the scope of the pack that wrote the field. A
+composite cannot take `spawns` (add them to a part, or use `populate` with
+a one-cell rect).
 
 #### Floors
 
@@ -543,7 +578,7 @@ entry that referenced the file.
 image-collection tileset, to start editing in Tiled:
 
 ```sh
-npm run map:export -- packs/std packs/std-needs packs/zombie --map town_center --out packs/zombie/maps/parts
+npm run map:export -- packs/std packs/std-needs packs/town --map town_center --out packs/town/maps/parts
 ```
 
 It writes `town_center.tmj` (one `ground` tile layer and one `objects` layer with
@@ -560,7 +595,8 @@ A big map is assembled from reusable **part maps**: a house drawn once and
 placed twenty times. A composite `maps` entry has no cells of its own:
 
 ```yaml
-# packs/zombie/maps/city.yaml (abridged)
+# packs/town/maps/city.yaml (abridged; the town's own city has no populate:
+# the zombie mod adds it with an override)
 maps:
   - id: house_a
     tiled: maps/parts/house_a.tmj
@@ -575,7 +611,7 @@ maps:
     rooms:                 # extra rooms, in composite coordinates (as ASCII `rooms`)
       - { rect: [0, 0, 256, 9], tags: [fields] }
     populate:              # see below
-      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: guard, count: 50, rect: [56, 56, 50, 50] }
 ```
 
 | Field | Notes |
@@ -1382,7 +1418,7 @@ behavior transitions see it in the next tick's think phase.
 ```yaml
 start:
   map: town           # map id
-  player: survivor    # archetype id
+  player: resident    # archetype id
   defeat:             # optional
     when: "self.hp <= 0"
     message: "You did not survive the outbreak."
@@ -1462,8 +1498,9 @@ Times are 24-hour `HH:MM` strings (`00:00`–`23:59`); quote them in YAML.
 Daylight does not wrap past midnight.
 
 ```yaml
-# packs/vampire/content.yaml
+# packs/vampire/content.yaml (a mod of `town`, which defines the clock)
 clock:
+  override: true
   start: "20:00"      # the game begins at dusk (night)
 ```
 
@@ -1514,22 +1551,43 @@ need status tests in its `for` filter:
 
 ```yaml
 archetypes:
-  - id: survivor
+  - id: resident
     tags: [humanoid, living]
     measurements: [hp, hunger, thirst, fatigue]
 ```
 
 An entity without the tag or the measurements is unaffected. What the
 needs *do* beyond those statuses (sleeping in a bed, collapsing when
-starved, food items) stays in the genre pack: `zombie` depends on
-`[std, std_needs]` and adds its own systems, while `vampire` depends on
-`[std]` only. More stdpacks are added as genres repeat patterns.
+starved, food items) stays in a game: `town` depends on `[std, std_needs]`
+and adds its own systems, all filtered on `living`, so the vampire and its
+bats (which are not `living`) are untouched when `vampire` stacks on it.
+More stdpacks are added as genres repeat patterns.
+
+## Shipped packs
+
+Everything under `packs/`, extending the [stdpack](#standard-packs) table.
+One genre-free base game, `town`, carries the generic content; the genres
+are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
+
+| Pack (directory) | Namespace | Kind | Depends | Contents |
+|---|---|---|---|---|
+| `std` | `std` | library | — | see [Standard packs](#standard-packs) |
+| `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
+| `town` | `town` | game | `std`, `std_needs` | the 256×256 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
+| `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`, status `alert`); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
+| `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
+| `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
+| `garden` | `gdn` | game | `std` | a bunny gathers carrots in a garden; shares nothing with the town |
+
+Stacking both genres (`zombie vampire`) loads too: each mod writes its own
+fields, and the one field both write, `start.defeat`, warns and goes to the
+later pack (see [Mods and overrides](#mods-and-overrides)).
 
 ## Namespaces and references
 
 - Namespaces and local ids match `[a-z][a-z0-9_]*`.
-- **Definitions** may write a short id (`survivor`) — the loader prefixes
-  the pack's namespace (`zmb:survivor`) — or a qualified id, which must use
+- **Definitions** may write a short id (`resident`) — the loader prefixes
+  the pack's namespace (`town:resident`) — or a qualified id, which must use
   the pack's own namespace.
 - **References** (in fields such as `measurements`, `tile`, `spawn`,
   `start.map`, and in expressions) may be qualified (`std:hp`) or short.
@@ -1553,7 +1611,7 @@ without copying it. It patches by **qualified id**: it restates the id and
 only the fields it changes.
 
 ```yaml
-# packs/hardmode/tweaks.yaml   (pack.yaml: kind: mod, depends: [std_needs, zmb])
+# a hypothetical mods/hardmode/tweaks.yaml   (pack.yaml: kind: mod, depends: [std_needs, town, zmb])
 measurements:
   - id: std_needs:hunger
     override: true
@@ -1564,7 +1622,7 @@ archetypes:
     tags: [undead, fast]   # lists are replaced wholesale
     sprite: null           # null clears an optional field (back to its default)
 systems:
-  - id: zmb:crunch
+  - id: town:crunch
     remove: true
 clock:
   override: true
@@ -1599,9 +1657,9 @@ clock:
 
 **Provenance.** Each field remembers the pack that **last wrote** it.
 References in it (ids, room tags, every name in an expression) resolve in
-**that pack's scope**: an original `zmb:survivor` listing `hunger` keeps
-resolving it through `zmb`'s depends even if the mod does not depend on
-`std_needs`, while a field the mod writes resolves through the mod's
+**that pack's scope**: an original `town:resident` listing `hunger` keeps
+resolving it through `town`'s depends even if the mod does not depend on
+`std_needs` (the vampire mod does not), while a field the mod writes resolves through the mod's
 depends. Relative paths (asset `file`/`directions`, map `tiled`) are read
 from the writing pack's files, and the asset's images load from that pack.
 Errors and warnings name the writing pack, file, line and key path.
@@ -1616,7 +1674,7 @@ remover — in fields, legends, Tiled tile properties, loot entries, recipe
 items and expressions (`has_status("x")`, `count_item("x")`…):
 
 ```
-zmb survival.yaml:28 systems[0].effects[1].delta: expression error in "1 - 0.5 * self.has_status("hungry")": has_status: unknown status 'std_needs:hungry' (removed by pack 'hardmode')
+town survival.yaml:22 systems[0].effects[1].delta: expression error in "1 - 0.5 * self.has_status("hungry")": has_status: unknown status 'std_needs:hungry' (removed by pack 'hardmode')
 ```
 
 Overriding a removed entry is an error; removing it again warns.
@@ -1638,7 +1696,7 @@ that an override from an earlier pack **Q** already wrote, and P does
 **not** transitively depend on Q, the load **warns** and P wins:
 
 ```
-warning: vamp content.yaml:3 clock.start: also overridden by pack 'zmb' (clock.yaml:2); 'vamp' wins (later in load order)
+warning: vamp content.yaml:136 start.defeat: also overridden by pack 'zmb' (outbreak.yaml:71); 'vamp' wins (later in load order)
 ```
 
 There is no warning when P depends on Q (the patch is intentional), when
@@ -1646,20 +1704,24 @@ only the original definer wrote the field, or when the overrides touch
 different fields. `distributions` have no ids and cannot be patched.
 
 **Checking a stack.** `npm run check` prints one line per pack that patched
-anything (`hardmode: 2 overrides, 1 removal`). With `--overrides` it lists
+anything (`hardship: 3 overrides, 1 removal`). With `--overrides` it lists
 the stack and every patch:
 
 ```
-npm run check -- zombie hardmode --overrides
+npm run check -- zombie hardship --overrides
 stack:
   std        0.1.0
   std_needs  0.1.0
-  zmb        0.1.0
-  hardmode   1.0.0
+  town       0.1.0
+  zmb        0.2.0
+  hardship   0.1.0
 patches:
-  hardmode  override  measurement std_needs:hunger  [rate]
-  hardmode  remove    system      zmb:crunch
-  hardmode  override  clock                         [start]
+  zmb       override  archetype   town:resident      [label]
+  …
+  hardship  override  measurement std_needs:hunger   [rate]
+  hardship  override  measurement std_needs:thirst   [rate]
+  hardship  override  loot        town:kitchen_food  [rolls, entries]
+  hardship  remove    recipe      town:tear_bandage
 ```
 
 The loaded definition lists the same patches in `def.patches`
@@ -1668,13 +1730,86 @@ diagnostic only: snapshots, hashes and saves do not include it. A save
 records the packs of its stack, so a mod is part of it; a save naming a
 removed id fails with the usual unknown-id error.
 
+### Worked examples: two genres on one town
+
+The shipped genres are mods of the [`town`](#shipped-packs) base: they add
+their own content and patch the town with overrides only.
+
+**Zombie** (`packs/zombie/outbreak.yaml`) fills the empty town and gives it a
+goal:
+
+```
+npm run check -- zombie --overrides     (abridged)
+patches:
+  zmb  override  archetype town:resident     [label]
+  zmb  override  map       town:town_center  [spawns]
+  zmb  override  map       town:house_c      [populate]
+  zmb  override  map       town:city         [populate]
+  zmb  override  start                       [defeat, victory]
+```
+
+```yaml
+maps:
+  - id: town:town_center         # a part of the city: exact cells (see Spawns)
+    override: true
+    spawns:
+      - { archetype: shambler, at: [16, 10] }
+      # …
+  - id: town:house_c             # a part: applied once per placement
+    override: true
+    populate:
+      - { archetype: crawler, count: 1, floor: 1, room: bedroom }
+  - id: town:city
+    override: true
+    populate:
+      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+      # …
+archetypes:
+  - { id: town:resident, override: true, label: Survivor }
+start:
+  override: true
+  defeat: { when: "self.hp <= 0", message: "You did not survive the outbreak." }
+  victory:
+    when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+    message: "You got the car running!"
+```
+
+`shambler` and `crawler` in these fields resolve in `zmb`'s scope (the pack
+that wrote them); `car_battery` and `garage` come from the town.
+
+**Vampire** keeps its own estate and reuses the town's generic content: its
+maps use `town:window` (its own window tile is gone), and its `shutter`
+action targets it.
+
+```
+npm run check -- vampire --overrides     (abridged)
+patches:
+  vamp  override  tile     town:window  [color, sprite]
+  vamp  override  start                 [map, player, defeat]
+  vamp  override  clock                 [start]
+  vamp  override  lighting              [tint]
+```
+
+The town's needs systems and statuses all filter on `living`, which the
+vampire and its bats do not carry, so they never apply on the estate. The
+town's `barricade` is offered on the estate's windows too: the stack really
+contains it.
+
+**Both genres.** `npm run check -- zombie vampire` loads with one warning,
+for `start.defeat`, the only field both mods write: the later pack (the
+vampire) wins it. `start.map` and `start.player` are the vampire's and the
+zombie's `victory` is inherited, because each was written by one mod only.
+`vampire zombie` gives the mirror warning and the zombie's defeat message,
+but still the estate and the vampire: load order settles only the
+conflicting fields.
+
 ## Validation
 
 The loader collects **every** error before failing; each names the pack,
 file, line and YAML key path:
 
 ```
-zmb archetypes.yaml:6 archetypes[0].measurements[1]: unknown measurement 'hungr' (did you mean 'hunger'?)
+town archetypes.yaml:9 archetypes[0].measurements[1]: unknown measurement 'hungr' (did you mean 'hunger'?)
 ```
 
 It checks YAML syntax, unknown top-level keys and fields, required fields
@@ -1722,7 +1857,10 @@ other than `true`/`false`; `override` together with `remove`; fields other
 than `id` on a removal; overriding a removed entry; references to a
 removed id (naming the remover); a singleton override without a base
 definition or from a pack that does not depend on its definer; and a
-required field cleared with `null`. Warnings (e.g. a loot table that can
+required field cleared with `null`. Map `spawns`: an entry that is not a
+mapping, a missing or unknown `archetype`, an `at` that is not
+`[x, y]`/`[x, y, z]` integers or lies outside the map or on an empty cell,
+and `spawns` on a composite. Warnings (e.g. a loot table that can
 exceed a container's capacity, a filter or station tag no tile carries, an
 override that changes nothing, a second removal of the same entry, or two
 unrelated packs patching the same field) are printed but do not fail the

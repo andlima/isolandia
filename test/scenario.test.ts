@@ -23,23 +23,26 @@ function genre(name: string): Definition {
 }
 
 /** Tile tags that restore a need just by standing on them (the survivor must never use these). */
-const RESTORING: Record<string, readonly string[]> = { zombie: ['bed', 'food', 'water'], vampire: ['blood'] };
+const RESTORING: Record<string, readonly string[]> = { town: ['bed', 'food', 'water'], zombie: ['bed', 'food', 'water'], vampire: ['blood'] };
+
+const TOWN_LOOTER: LooterOptions = {
+  needs: [
+    { measurement: 'std_needs:thirst', above: 40, items: ['town:water_bottle', 'town:soda'], stock: 3 },
+    { measurement: 'std_needs:hunger', above: 40, items: ['town:canned_beans', 'town:crackers'], stock: 3 },
+    { measurement: 'std_needs:fatigue', above: 45, items: ['town:coffee'], stock: 2 },
+    { measurement: 'std:hp', below: 70, items: ['town:bandage'], stock: 1 },
+  ],
+};
 
 const LOOTERS: Record<string, LooterOptions> = {
-  zombie: {
-    needs: [
-      { measurement: 'std_needs:thirst', above: 40, items: ['town:water_bottle', 'town:soda'], stock: 3 },
-      { measurement: 'std_needs:hunger', above: 40, items: ['town:canned_beans', 'town:crackers'], stock: 3 },
-      { measurement: 'std_needs:fatigue', above: 45, items: ['town:coffee'], stock: 2 },
-      { measurement: 'std:hp', below: 70, items: ['town:bandage'], stock: 1 },
-    ],
-  },
+  town: TOWN_LOOTER,
+  zombie: TOWN_LOOTER,
   vampire: {
     needs: [{ measurement: 'vamp:blood', below: 30, items: ['vamp:blood_vial'], stock: 6 }],
   },
 };
 
-for (const name of ['zombie', 'vampire']) {
+for (const name of ['town', 'zombie', 'vampire']) {
   test(`scenario (${name}): an idle player gains a status on day 1 and is defeated within 2 days`, () => {
     const def = genre(name);
     for (const seed of BIG_SEEDS) {

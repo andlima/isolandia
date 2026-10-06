@@ -4,7 +4,7 @@
 //   npm run bench:sim [-- --seed 1337 --ticks 600 --burst 100 --n 500,2000]
 // The real World on a shipped game, with the player walking a fixed route
 // across the map so the active area moves (docs/perf.md):
-//   npm run bench:sim -- --packs std,std-needs,zombie [--ticks 3000] [--seed 1] [--active-radius 64|none]
+//   npm run bench:sim -- --packs std,std-needs,town,zombie [--ticks 3000] [--seed 1] [--active-radius 64|none]
 import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
 import { Sim } from '../spike/sim/sim.ts';
@@ -193,8 +193,8 @@ console.log(`\nWorld.step(), ${SIZE}×${SIZE} map, ${worldTicks} ticks\n`);
 console.log('| variant | entities | ticks/s | avg tick |');
 console.log('|---|---|---|---|');
 const variants: [string, () => PackSource[]][] = [
-  ['std+std-needs+zombie', () => ['packs/std', 'packs/std-needs', 'packs/zombie'].map(readPack)],
-  ['std+vampire', () => ['packs/std', 'packs/vampire'].map(readPack)],
+  ['town+zombie', () => ['packs/std', 'packs/std-needs', 'packs/town', 'packs/zombie'].map(readPack)],
+  ['town+vampire', () => ['packs/std', 'packs/std-needs', 'packs/town', 'packs/vampire'].map(readPack)],
   ['std+garden', () => ['packs/std', 'packs/garden'].map(readPack)],
   ['stress plain', () => [stressPack(false)]],
   ['stress survival', () => [stressPack(true)]],

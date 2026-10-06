@@ -605,3 +605,64 @@ test('def.patches is not part of the world state: a no-op override hashes like n
   assert.equal(b.hash(), a.hash());
   assert.deepEqual(b.snapshot(), a.snapshot());
 });
+
+// ── Map spawns (a mod places NPCs exactly) ─────────────────────────────────
+
+test('map spawns: a mod adds spawns to a base map, merged with its own in floor and row-major order', () => {
+  // `t:room` has a rock spawn at (3, 1) from its legend.
+  const { def } = load(mod('m', ['t'], `maps:\n  - id: t:room\n    override: true\n    spawns:\n      - { archetype: rock, at: [3, 2] }\n      - { archetype: t:rock, at: [1, 1, 0] }\n`));
+  const room = def.maps[def.ids.maps['t:room']!]!;
+  assert.deepEqual(
+    room.spawns.map((s) => [s.x, s.y, s.z, def.archetypes[s.archetype]!.id]),
+    [
+      [1, 1, 0, 't:rock'],
+      [3, 1, 0, 't:rock'],
+      [3, 2, 0, 't:rock'],
+    ],
+  );
+  const w = World.create(def, 1);
+  assert.deepEqual(
+    w.entities.slice(1).map((e) => [e.x, e.y]),
+    [
+      [1, 1],
+      [3, 1],
+      [3, 2],
+    ],
+  );
+  assert.deepEqual(patchSummary(def), ['m: 1 override']);
+});
+
+test('map spawns: errors name the entry', () => {
+  const r = loadPacks([
+    fixture({
+      'more.yaml': `maps:
+  - id: other
+    legend: { ".": { tile: floor }, " ": { tile: floor } }
+    rows: ["..", ".."]
+    spawns:
+      - { archetype: rok, at: [0, 0] }
+      - { archetype: rock, at: [2, 0] }
+      - { archetype: rock, at: [0, 0, 1] }
+      - { archetype: rock, at: [0] }
+      - { archetype: rock }
+      - rock
+  - id: big
+    size: [4, 4]
+    fill: floor
+    parts: [{ map: other, at: [0, 0] }]
+    spawns: [{ archetype: rock, at: [3, 3] }]
+`,
+    }),
+  ]);
+  assert.ok(!r.ok);
+  const got = r.errors.filter((e) => e.file === 'more.yaml').map((e) => `${e.path}: ${e.message}`);
+  assert.deepEqual(got, [
+    "maps[0].spawns[0].archetype: unknown archetype 'rok' (did you mean 'rock'?)",
+    'maps[0].spawns[1].at: spawn [2,0] is outside the map (2×2, 1 floor)',
+    'maps[0].spawns[2].at: spawn [0,0,1] is outside the map (2×2, 1 floor)',
+    'maps[0].spawns[3].at: field \'at\' must be [x, y] or [x, y, z], integers, got [0]',
+    "maps[0].spawns[4]: missing required field 'at'",
+    'maps[0].spawns[5]: spawns entries must be mappings like { archetype: guard, at: [x, y] }',
+    "maps[1].spawns: a composite map cannot take 'spawns': add them to a part map, or use 'populate' with a one-cell rect",
+  ]);
+});
