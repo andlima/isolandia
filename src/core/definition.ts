@@ -23,6 +23,10 @@ export interface PackInfo {
   readonly namespace: string;
   readonly name: string;
   readonly version: string;
+  /** Manifest `kind` (`library` when absent): metadata for tools and the title screen. */
+  readonly kind: 'game' | 'mod' | 'library';
+  /** Manifest `description` (empty when absent). */
+  readonly description: string;
   readonly depends: readonly string[];
 }
 

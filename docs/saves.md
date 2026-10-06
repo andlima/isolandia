@@ -170,8 +170,9 @@ The map itself is not saved, only the cells that changed.
 quickloads, `O` opens the Game panel with the quicksave, three slots, and
 Export / Import. Slots live in `localStorage` under
 `isolandia:save:<packs>:<slot>` (e.g.
-`isolandia:save:std,std-needs,zombie:slot1`, with the `?packs=` list), so
-each game has its own slots.
+`isolandia:save:std,std-needs,zombie:slot1`, with the resolved
+[stack](packs.md#stacks) of `?packs=`), so each game has its own slots and
+`?packs=zombie` shares them with `?packs=std,std-needs,zombie`.
 
 **Terminal**:
 

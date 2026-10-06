@@ -2,3 +2,5 @@ namespace: vamp
 name: Vampire Mansion
 version: 0.1.0
 depends: [std]
+kind: game
+description: Play a vampire stalking the night across a mansion estate.

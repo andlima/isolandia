@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { hudModel, loadPacks, World } from '../src/core/index.ts';
+import { hudModel, loadPacks, resolveStack, World } from '../src/core/index.ts';
 import { CameraRig } from '../src/iso/camera.ts';
 import { cameraAt, isoToScreen } from '../src/iso/projection.ts';
 import { errorReport } from '../src/web/errors.ts';
 import { Gestures, LONG_PRESS_MS } from '../src/web/gestures.ts';
 import { HOLD_MS, heldDirection, MoveKeys } from '../src/web/keys.ts';
 import { FixedTickLoop } from '../src/web/loop.ts';
-import { assetUrls, availablePacks, buildPackSources } from '../src/web/packs.ts';
+import { assetUrls, availablePacks, buildPackSources, webCatalog } from '../src/web/packs.ts';
 import { parseParams } from '../src/web/params.ts';
+import { pickerModel } from '../src/web/picker.ts';
+import { exportFileName, slotKey } from '../src/web/saves.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { loadFixture } from './helpers.ts';
 
@@ -96,11 +98,148 @@ test('web packs: equivalent to the Node reader for the real packs', () => {
 
 // ── Query params ───────────────────────────────────────────────────────────
 
-test('params: packs list, seed, defaults and errors', () => {
-  assert.deepEqual(parseParams('', ['base', 'game']), { packs: ['base', 'game'], seed: 1, errors: [] });
-  assert.deepEqual(parseParams('?packs=base,%20other&seed=42', ['x']), { packs: ['base', 'other'], seed: 42, errors: [] });
-  assert.deepEqual(parseParams('?seed=abc', ['x']).errors, ["?seed= expects an integer, got 'abc'"]);
-  assert.equal(parseParams('?packs=', ['x']).errors.length, 1);
+test('params: packs list, seed, title screen and errors', () => {
+  assert.deepEqual(parseParams(''), { packs: null, seed: 1, errors: [] });
+  assert.deepEqual(parseParams('?seed=3'), { packs: null, seed: 3, errors: [] });
+  assert.deepEqual(parseParams('?packs=base,%20other&seed=42'), { packs: ['base', 'other'], seed: 42, errors: [] });
+  assert.deepEqual(parseParams('?seed=abc').errors, ["?seed= expects an integer, got 'abc'"]);
+  assert.equal(parseParams('?packs=').errors.length, 1);
+});
+
+// ── Stacks and the title screen ────────────────────────────────────────────
+
+/** Glob-shaped manifests of a small pack set with mods. */
+const STACK_YAML = {
+  '/packs/base/pack.yaml': 'namespace: base\nname: Base\nversion: 1\n',
+  '/packs/base/tiles.yaml': 'tiles: []\n',
+  '/packs/game/pack.yaml': 'namespace: game\nname: Game\nversion: 1\nkind: game\ndescription: A game.\ndepends: [base]\n',
+  '/packs/other/pack.yaml': 'namespace: oth\nname: Other\nversion: 1\nkind: game\ndepends: [base]\n',
+  '/packs/hardmode/pack.yaml': 'namespace: hard\nname: Hard mode\nversion: 1\nkind: mod\ndescription: Harder.\ndepends: [game]\n',
+  '/packs/extra/pack.yaml': 'namespace: extra\nname: Extra\nversion: 1\nkind: mod\ndepends: [base]\n',
+  '/packs/broken/pack.yaml': 'namespace: broken\nname: Broken\nversion: 1\nkind: mod\ndepends: [nothing]\n',
+  '/packs/tiled-only/x.tmj': '{}',
+};
+
+test('web catalog: from the glob manifests; ?packs= tokens resolve with the shared resolver', () => {
+  const c = webCatalog(STACK_YAML);
+  assert.deepEqual(c.errors, []);
+  assert.deepEqual(
+    c.packs.map((p) => p.dir),
+    ['base', 'broken', 'extra', 'game', 'hardmode', 'other'],
+  );
+  const r = resolveStack(c, ['hardmode', 'extra']);
+  assert.ok(r.ok);
+  assert.deepEqual(
+    r.packs.map((p) => p.dir),
+    ['base', 'game', 'hardmode', 'extra'],
+  );
+  const bad = webCatalog({ ...STACK_YAML, '/packs/dup/pack.yaml': 'namespace: base\nname: B\nversion: 1\n' });
+  assert.match(bad.errors[0]!.message, /namespace 'base' is already used/);
+});
+
+test('web catalog: the real packs resolve short stacks', () => {
+  const text: Record<string, string> = {};
+  for (const dir of ['std', 'std-needs', 'zombie', 'vampire', 'garden']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
+  const c = webCatalog(text);
+  const r = resolveStack(c, ['zombie']);
+  assert.ok(r.ok);
+  assert.deepEqual(
+    r.packs.map((p) => p.dir),
+    ['std', 'std-needs', 'zombie'],
+  );
+});
+
+test('saves: a short and a full request share slot keys and export names', () => {
+  const text: Record<string, string> = {};
+  for (const dir of ['std', 'std-needs', 'zombie']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
+  const c = webCatalog(text);
+  const dirs = (tokens: string[]) => {
+    const r = resolveStack(c, tokens);
+    assert.ok(r.ok);
+    return r.packs.map((p) => p.dir);
+  };
+  const short = dirs(parseParams('?packs=zombie').packs!);
+  const full = dirs(parseParams('?packs=std,std-needs,zombie').packs!);
+  assert.equal(slotKey(short, 'slot1'), slotKey(full, 'slot1'));
+  // Slots saved before stacks (under the full list) stay reachable.
+  assert.equal(slotKey(short, 'quick'), 'isolandia:save:std,std-needs,zombie:quick');
+  assert.equal(exportFileName(short, 2), exportFileName(full, 2));
+});
+
+test('picker: games then mods, with names, descriptions and stacks; nothing chosen', () => {
+  const v = pickerModel(webCatalog(STACK_YAML), null, []);
+  assert.deepEqual(
+    v.rows.map((r) => [r.dir, r.kind, r.enabled]),
+    [
+      ['game', 'game', true],
+      ['other', 'game', true],
+      ['broken', 'mod', false],
+      ['extra', 'mod', true],
+      ['hardmode', 'mod', true],
+    ],
+  );
+  const game = v.rows[0]!;
+  assert.equal(game.name, 'Game');
+  assert.equal(game.description, 'A game.');
+  assert.deepEqual(game.stack, ['base', 'game']);
+  assert.deepEqual(v.rows.find((r) => r.dir === 'hardmode')!.stack, ['base', 'game', 'hard']);
+  assert.match(v.rows.find((r) => r.dir === 'broken')!.reason!, /depends on unknown pack 'nothing'/);
+  assert.deepEqual(v.mods, []);
+  assert.equal(v.query, null);
+});
+
+test('picker: choosing a game offers the other mods; unresolvable ones are disabled with a reason', () => {
+  const c = webCatalog(STACK_YAML);
+  const v = pickerModel(c, 'game', []);
+  assert.ok(v.rows.find((r) => r.dir === 'game')!.chosen);
+  assert.deepEqual(
+    v.mods.map((m) => [m.dir, m.checked, m.enabled]),
+    [
+      ['broken', false, false],
+      ['extra', false, true],
+      ['hardmode', false, true],
+    ],
+  );
+  assert.match(v.mods[0]!.reason!, /unknown pack 'nothing'/);
+  assert.equal(v.query, '?packs=game&seed=1');
+  assert.deepEqual(v.stack, ['base', 'game']);
+
+  // Checked mods are appended in click order.
+  const two = pickerModel(c, 'game', ['hardmode', 'extra'], 7);
+  assert.equal(two.query, '?packs=game,hardmode,extra&seed=7');
+  assert.deepEqual(two.stack, ['base', 'game', 'hard', 'extra']);
+  assert.deepEqual(
+    two.mods.filter((m) => m.checked).map((m) => m.dir),
+    ['extra', 'hardmode'],
+  );
+  assert.equal(pickerModel(c, 'game', ['extra', 'hardmode']).query, '?packs=game,extra,hardmode&seed=1');
+  // Unresolvable or unknown checks are dropped.
+  assert.equal(pickerModel(c, 'game', ['broken', 'nope', 'extra']).query, '?packs=game,extra&seed=1');
+});
+
+test('picker: choosing a mod; mods already in its stack are disabled', () => {
+  const v = pickerModel(webCatalog(STACK_YAML), 'hardmode', []);
+  assert.equal(v.query, '?packs=hardmode&seed=1');
+  assert.deepEqual(
+    v.mods.map((m) => m.dir),
+    ['broken', 'extra'],
+  );
+  const twice = pickerModel(
+    webCatalog({ ...STACK_YAML, '/packs/plus/pack.yaml': 'namespace: plus\nname: Plus\nversion: 1\nkind: mod\ndepends: [hard]\n' }),
+    'plus',
+    [],
+  );
+  const hard = twice.mods.find((m) => m.dir === 'hardmode')!;
+  assert.equal(hard.enabled, false);
+  assert.equal(hard.reason, 'already in the stack');
+  // A disabled row cannot be chosen.
+  assert.equal(pickerModel(webCatalog(STACK_YAML), 'broken', []).query, null);
+});
+
+test('picker: catalog errors are listed', () => {
+  const v = pickerModel(webCatalog({ ...STACK_YAML, '/packs/bad/pack.yaml': 'name: X\n' }), null, []);
+  assert.equal(v.errors.length, 1);
+  assert.match(v.errors[0]!, /^bad pack\.yaml.*missing required field 'namespace'/);
 });
 
 // ── Loop ──────────────────────────────────────────────────────────────────

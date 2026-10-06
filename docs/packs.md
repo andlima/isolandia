@@ -5,17 +5,20 @@ engine has no genre knowledge: the zombie, vampire and garden mini-games
 under `packs/` are pure data on top of the same code.
 
 ```sh
-npm run check -- packs/std packs/std-needs packs/zombie   # validate only
-npm run play  -- packs/std packs/std-needs packs/zombie   # play in the terminal
-npm run play  -- packs/std packs/vampire --seed 7
-npm run play  -- packs/std packs/garden
+npm run packs                       # list the packs under packs/
+npm run check -- zombie             # validate only (adds std, std-needs)
+npm run play  -- zombie             # play in the terminal
+npm run play  -- vampire --seed 7
+npm run play  -- garden
+npm run play  -- zombie hardmode    # a game plus a mod
 ```
 
 `check` also accepts a *library* stack with no `start` (e.g.
-`npm run check -- packs/std packs/std-needs`): it validates the content and
+`npm run check -- std std-needs`): it validates the content and
 reports it as not playable on its own. `play` still requires a `start`.
 
-Packs are loaded in the order given. Keys: arrows / WASD / numpad /
+Name only the packs you want: the engine adds their dependencies and
+orders the [stack](#stacks). Keys: arrows / WASD / numpad /
 `hjklyubn` move (8 directions), `q` quits. When the player has an
 inventory, `g` takes everything that fits from every reachable container,
 `1`–`9` use inventory stack N and `d` followed by `1`–`9` drops stack N (so
@@ -85,8 +88,74 @@ domain. Any other top-level key is a load error.
 namespace: zmb          # required, [a-z][a-z0-9_]*
 name: Zombie Town       # required
 version: 0.1.0          # required
-depends: [std, std_needs]  # optional; each must be loaded earlier
+depends: [std, std_needs]  # optional; each loads before this pack
+kind: game              # optional: game | mod | library (default: library)
+description: Scavenge a 256×256 town while the dead close in.  # optional
 ```
+
+`kind` tells tools and the browser's title screen what the pack is. The
+loader checks it against the whole stack:
+
+| Kind      | Meaning | Check |
+|-----------|---------|-------|
+| `game`    | A playable game | The pack itself defines a base `start` (not an `override: true` one) |
+| `mod`     | Changes other packs ([overrides](#mods-and-overrides)) | Lists at least one `depends` |
+| `library` | Shared content (the [stdpack](#standard-packs)) | None |
+
+Any other `kind` is an error with a suggestion; `description` must be a
+string. Both end up in `Definition.packs` (`PackInfo.kind`,
+`PackInfo.description`). The shipped `std` and `std-needs` are libraries;
+`zombie`, `vampire` and `garden` are games.
+
+## Stacks
+
+A playable game is a **stack** of packs: stdpacks, a game, and maybe
+mods. `play`, `check`, `npm run packs -- --stack` and the browser's
+`?packs=` take the packs you **want**; the resolver (`resolveStack` in
+`src/core/load/stack.ts`) returns every requested pack plus the
+transitive closure of their `depends`, each once.
+
+- **Tokens.** A token is a pack's **directory name** or its
+  **namespace**: `std-needs` and `std_needs` both work. On the command
+  line, a token with a path separator (`packs/zombie`, `../mods/hard`) is
+  a pack **directory**. An unknown token is an error with a *did you
+  mean* suggestion and the list of available packs.
+- **Order.** Dependencies always load before their dependents. Otherwise
+  the request order is kept: a depth-first walk over the tokens in order,
+  visiting each pack's `depends` in listed order and emitting a pack after
+  its dependencies. So:
+  - a list that already has its dependencies first (`std std-needs
+    zombie`) resolves to exactly that order;
+  - `zombie` resolves to `std, std_needs, zmb`;
+  - `zombie hardmode` puts `hardmode` after `zmb` and everything it
+    needs;
+  - between **unrelated** mods, the request order decides which loads
+    later, and so which wins an [override](#mods-and-overrides)
+    conflict.
+- **Errors.** A dependency cycle names it (`a → b → a`); a `depends` on a
+  namespace that no pack has names the pack that declares it. Duplicate
+  tokens collapse to the first occurrence.
+
+**Catalog.** The resolver works over a catalog of manifests
+(`buildCatalog`): on the command line, every directory directly under
+`packs/` (relative to the current directory) that has a `pack.yaml`, plus
+any explicit directory argument outside it; `--packs-dir <dir>` replaces
+`packs/`. Two directories with the same namespace, or a malformed
+manifest, are catalog errors; `play` and `check` print them like load
+errors and exit non-zero. When the resolved stack differs from the
+arguments, both print it on one line to stderr:
+
+```sh
+$ npm run check -- zombie
+stack: std, std_needs, zmb
+OK: std@0.1.0, std_needs@0.1.0, zmb@0.1.0 — …
+```
+
+**`npm run packs`** lists the catalog: directory, namespace, version,
+kind, depends and description, games first, then mods, then libraries,
+each sorted by directory. `npm run packs -- --stack zombie hardmode`
+prints the resolved stack instead, in load order. It also takes
+`--packs-dir`.
 
 ## Domains
 
@@ -1484,7 +1553,7 @@ without copying it. It patches by **qualified id**: it restates the id and
 only the fields it changes.
 
 ```yaml
-# packs/hardmode/tweaks.yaml   (pack.yaml: depends: [std_needs, zmb])
+# packs/hardmode/tweaks.yaml   (pack.yaml: kind: mod, depends: [std_needs, zmb])
 measurements:
   - id: std_needs:hunger
     override: true
@@ -1581,7 +1650,7 @@ anything (`hardmode: 2 overrides, 1 removal`). With `--overrides` it lists
 the stack and every patch:
 
 ```
-npm run check -- packs/std packs/std-needs packs/zombie packs/hardmode --overrides
+npm run check -- zombie hardmode --overrides
 stack:
   std        0.1.0
   std_needs  0.1.0
@@ -1664,7 +1733,8 @@ resolved definition (ids → indices, expressions → closures).
 ## Engine layout
 
 - `src/core/` — platform-free simulation core: `expr/` (lexer, parser,
-  compiler), `load/` (pack parsing, namespaces, validation), `clock.ts`
+  compiler), `load/` (pack parsing, namespaces, validation, and `stack.ts`: the pack
+  catalog and stack resolver), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
   `hud.ts` (renderer-independent HUD model), `sim/`
   (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
@@ -1678,6 +1748,7 @@ resolved definition (ids → indices, expressions → closures).
 - `src/web/` — browser shell: pack loading via Vite, input, HUD,
   inventory, loot and crafting panels (`panels.ts`, `I`/`Tab` toggles the
   inventory, `C` the crafting panel),
-  error screen, `main.ts`.
+  title screen (`picker.ts`, `picker-dom.ts`), error screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
-- `src/cli/` — `play` and `check`.
+- `src/cli/` — `play`, `check` and `packs`; `common.ts` turns arguments
+  into a resolved stack for all three.
