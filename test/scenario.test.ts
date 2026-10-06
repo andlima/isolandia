@@ -28,10 +28,10 @@ const RESTORING: Record<string, readonly string[]> = { zombie: ['bed', 'food', '
 const LOOTERS: Record<string, LooterOptions> = {
   zombie: {
     needs: [
-      { measurement: 'std_needs:thirst', above: 40, items: ['zmb:water_bottle', 'zmb:soda'], stock: 3 },
-      { measurement: 'std_needs:hunger', above: 40, items: ['zmb:canned_beans', 'zmb:crackers'], stock: 3 },
-      { measurement: 'std_needs:fatigue', above: 45, items: ['zmb:coffee'], stock: 2 },
-      { measurement: 'std:hp', below: 70, items: ['zmb:bandage'], stock: 1 },
+      { measurement: 'std_needs:thirst', above: 40, items: ['town:water_bottle', 'town:soda'], stock: 3 },
+      { measurement: 'std_needs:hunger', above: 40, items: ['town:canned_beans', 'town:crackers'], stock: 3 },
+      { measurement: 'std_needs:fatigue', above: 45, items: ['town:coffee'], stock: 2 },
+      { measurement: 'std:hp', below: 70, items: ['town:bandage'], stock: 1 },
     ],
   },
   vampire: {
@@ -183,7 +183,7 @@ test('scenario (garden): a collecting bunny wins within 1 in-game day with goto/
 });
 
 test('genre packs use every M2 and M3 primitive', () => {
-  for (const name of ['zombie', 'vampire']) {
+  for (const name of ['town', 'zombie', 'vampire']) {
     const def = genre(name);
     assert.ok(def.tiles.some((t) => t.tags.length > 0), `${name}: tile tags`);
     assert.ok(def.statuses.some((s) => s.rates.length > 0), `${name}: status rates`);
@@ -203,8 +203,8 @@ test('genre packs use every M2 and M3 primitive', () => {
     });
     assert.ok(roomsWithContainers.size >= 2, `${name}: containers in ${roomsWithContainers.size} room kinds`);
     // count_item / has_item in a status or system (expressions are compiled away, so check the source).
-    const src = readPack(`packs/${name}`);
-    const uses = Object.values(src.files).some((text) => /^(statuses|systems):/m.test(text) && /(count_item|has_item)\(/.test(text));
+    const srcs = GAMES[name as keyof typeof GAMES].map(readPack);
+    const uses = srcs.flatMap((src) => Object.values(src.files)).some((text) => /^(statuses|systems):/m.test(text) && /(count_item|has_item)\(/.test(text));
     assert.ok(uses, `${name}: count_item/has_item in a status or system`);
     const w = World.create(def, 1);
     assert.ok(w.containers.size > 0);

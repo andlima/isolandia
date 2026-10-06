@@ -734,14 +734,14 @@ const ESTATE = loadPacksOrThrow(GAMES.vampire.map((d) => readPack(d)));
 
 test('genre maps: the zombie city and the vampire estate are composites of their old maps and parts', () => {
   const city = CITY.maps[CITY.start.map]!;
-  assert.equal(city.id, 'zmb:city');
+  assert.equal(city.id, 'town:city');
   assert.ok(city.composite && city.width >= 240 && city.height >= 240, `${city.width}×${city.height}`);
   const estate = ESTATE.maps[ESTATE.start.map]!;
   assert.equal(estate.id, 'vamp:estate');
   assert.ok(estate.composite && estate.width >= 96 && estate.height >= 96);
   // GENRE_AT is where the old maps sit: their cells match, floor by floor.
   for (const [def, map, part, at] of [
-    [CITY, city, 'zmb:town_center', GENRE_AT.zombie],
+    [CITY, city, 'town:town_center', GENRE_AT.zombie],
     [ESTATE, estate, 'vamp:mansion', GENRE_AT.vampire],
   ] as const) {
     const p = def.maps[def.ids.maps[part]!]!;
@@ -789,7 +789,7 @@ test('genre maps: every walkable cell and container is reachable from the player
     // Every door joins the start region (in the city: the roads too).
     for (let i = 0; i < g.cells.length; i++) {
       const id = def.tiles[g.cells[i]!]?.id;
-      if (id === 'std:door' || id === 'zmb:road') assert.equal(labels[i], home, `${name}: ${id} at ${JSON.stringify(g.cellOf(i))}`);
+      if (id === 'std:door' || id === 'town:road') assert.equal(labels[i], home, `${name}: ${id} at ${JSON.stringify(g.cellOf(i))}`);
     }
   }
 });

@@ -87,7 +87,7 @@ items:
       interrupt: "heard(self, 0.2)"
       effects:
         - { type: apply, measurement: hp, delta: 20 }
-  # Rings loud enough to draw every shambler in the block.
+  # Rings loud enough to be heard across the block.
   - id: alarm_clock
     label: Alarm clock
     glyph: "o"

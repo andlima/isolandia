@@ -2,7 +2,7 @@
 # cancels one in progress; nothing is used up until it completes.
 actions:
   # Board up a window from a cell next to it. The hammering is heard when
-  # the last nail goes in: the dead come to see what the noise was.
+  # the last nail goes in.
   - id: barricade
     label: Barricade
     progress: Barricading

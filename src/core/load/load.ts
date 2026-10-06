@@ -71,7 +71,7 @@ const ASSET_EXT_RE = /\.(svg|png)$/;
 const ASCII_MAP_FIELDS = ['legend', 'rows', 'floors', 'rooms'] as const;
 /** Fields only a composite map takes (`rooms` and `populate` are shared). */
 const COMPOSITE_MAP_FIELDS = ['size', 'fill', 'parts', 'player'] as const;
-const MAP_FIELDS = ['id', 'tiled', ...ASCII_MAP_FIELDS, ...COMPOSITE_MAP_FIELDS, 'populate'];
+const MAP_FIELDS = ['id', 'tiled', ...ASCII_MAP_FIELDS, ...COMPOSITE_MAP_FIELDS, 'populate', 'spawns'];
 const isComposite = (v: { [k: string]: unknown }): boolean => COMPOSITE_MAP_FIELDS.some((k) => v[k] !== undefined);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
@@ -684,7 +684,7 @@ class Loader {
       const { width, height, floors, cells, facings, spawns, playerStart } = tiled;
       this.checkLinks(cells, width, height, floors, () => f.at('tiled'));
       const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: false };
-      return this.withPopulate(map, f, d.scopeOf('populate'));
+      return this.withPopulate(this.withSpawns(map, f, d.scopeOf('spawns')), f, d.scopeOf('populate'));
     }
     const before = this.sink.count;
     const f = this.fields(d, MAP_FIELDS, 'map');
@@ -806,11 +806,53 @@ class Loader {
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, (i) => layers[Math.floor(i / (width * height))]!.at(Math.floor(i / width) % height));
     const rooms = this.roomSets(this.roomRects(f, width, height, floors), width, height, floors);
     const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms, populate: [], composite: false };
-    return this.sink.count === before ? this.withPopulate(map, f, d.scopeOf('populate')) : map;
+    return this.sink.count === before ? this.withPopulate(this.withSpawns(map, f, d.scopeOf('spawns')), f, d.scopeOf('populate')) : map;
   }
 
   private emptyMap(d: Defined, composite = false): MapDef {
     return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), populate: [], composite };
+  }
+
+  /**
+   * `map` with its YAML `spawns` entries added to the spawns of its cells or
+   * Tiled objects, all ordered by floor, then row-major (stable: a cell's
+   * map spawn comes before a YAML one).
+   */
+  private withSpawns(map: MapDef, f: Fields, scope: Scope): MapDef {
+    const list = f.list('spawns');
+    if (!list) return map;
+    const extra: SpawnDef[] = [];
+    list.forEach((raw, k) => {
+      const src = f.at('spawns', k);
+      if (!isObject(raw)) {
+        this.sink.add(src, `spawns entries must be mappings like { archetype: guard, at: [x, y] }`);
+        return;
+      }
+      const sf = new Fields(this.sink, src, raw, ['archetype', 'at'], 'spawn');
+      const arch = sf.has('archetype') ? this.symbols.ref('archetype', sf.raw('archetype'), scope, sf.at('archetype'), this.sink) : sf.string('archetype');
+      const pos = sf.raw('at');
+      if (pos === undefined || pos === null) {
+        sf.present('at');
+        return;
+      }
+      if (!Array.isArray(pos) || ![2, 3].includes(pos.length) || !pos.every((v) => typeof v === 'number' && Number.isInteger(v))) {
+        this.sink.add(sf.at('at'), `field 'at' must be [x, y] or [x, y, z], integers, got ${JSON.stringify(pos)}`);
+        return;
+      }
+      const [x, y, z = 0] = pos as number[];
+      if (x! < 0 || y! < 0 || z < 0 || x! >= map.width || y! >= map.height || z >= map.floors) {
+        this.sink.add(sf.at('at'), `spawn ${JSON.stringify(pos)} is outside the map (${map.width}×${map.height}, ${map.floors} floor${map.floors === 1 ? '' : 's'})`);
+        return;
+      }
+      if (map.cells[(z * map.height + y!) * map.width + x!] === EMPTY_TILE) {
+        this.sink.add(sf.at('at'), `spawn ${JSON.stringify(pos)} is on an empty cell`);
+        return;
+      }
+      if (arch && typeof arch === 'object') extra.push({ x: x!, y: y!, z, archetype: arch.index });
+    });
+    if (!extra.length) return map;
+    const spawns = [...map.spawns, ...extra].sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
+    return { ...map, spawns };
   }
 
   /** `map` with its own `populate` entries read and checked against its cells. */
@@ -832,6 +874,7 @@ class Loader {
     const before = this.sink.count;
     const f = this.fields(d, MAP_FIELDS, 'map');
     const mixed = ['tiled', 'legend', 'rows', 'floors'].filter((k) => f.has(k));
+    if (f.has('spawns')) this.sink.add(f.at('spawns'), `a composite map cannot take 'spawns': add them to a part map, or use 'populate' with a one-cell rect`);
     if (mixed.length) {
       this.sink.add(f.at(mixed[0]!), `a composite map (${COMPOSITE_MAP_FIELDS.join(', ')}) cannot also take ASCII or Tiled fields (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
       return this.emptyMap(d, true);
@@ -957,6 +1000,8 @@ class Loader {
     const own = this.populateEntries(f, d.scopeOf('populate'), width, height, floors);
     const out = { ...map, populate: [...populate, ...own.map((o) => o.def)] };
     if (this.sink.count !== before) return this.emptyMap(d, true); // reported; keeps `start` quiet
+    // A part with an unresolved tile was reported where it is defined; its cells cannot be checked.
+    if (cells.some((t) => t !== EMPTY_TILE && !this.tileDefs[t])) return out;
     this.checkPopulate(out, [...popSrc, ...own.map((o) => o.src)]);
     return out;
   }

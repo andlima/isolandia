@@ -14,7 +14,8 @@ export interface WorldSummary {
   map: { width: number; height: number; floors: number; cells: string[] };
   player: { archetype: string; x: number; y: number; z: number };
   entities: { counts: Record<string, number>; digest: string };
-  containers: { count: number; items: Record<string, number>; digest: string };
+  /** Tile containers per tile local id: how many, their total items and a digest of their cells and contents. */
+  containers: Record<string, { count: number; items: Record<string, number>; digest: string }>;
   clock: { dayLength: number; start: number; dawn: number; dusk: number };
   lighting: { at: number; color: number }[] | null;
 }
@@ -47,19 +48,23 @@ export function summarize(def: Definition, seed: number, rename: Rename = {}): W
   }
   const entities = w.entities.map((e) => `${local(e.archetype.id, rename)}@${e.x},${e.y},${e.z}`).join(';');
 
-  const items = new Map<string, number>();
-  const rows: string[] = [];
-  let count = 0;
+  const byTile = new Map<string, { count: number; items: Map<string, number>; rows: string[] }>();
   for (const c of w.containers.values()) {
     if (c.kind !== 'tile') continue;
-    count++;
+    const tile = tileId(c.tile);
+    let t = byTile.get(tile);
+    if (!t) byTile.set(tile, (t = { count: 0, items: new Map(), rows: [] }));
+    t.count++;
     const stacks = c.stacks.map((s) => {
       const id = local(def.items[s.item]!.id, rename);
-      items.set(id, (items.get(id) ?? 0) + s.count);
+      t.items.set(id, (t.items.get(id) ?? 0) + s.count);
       return `${id}x${s.count}`;
     });
-    rows.push(`${tileId(c.tile)}@${c.x},${c.y},${c.z}:${stacks.join(',')}`);
+    t.rows.push(`${c.x},${c.y},${c.z}:${stacks.join(',')}`);
   }
+  const containers = Object.fromEntries(
+    [...byTile].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([tile, t]) => [tile, { count: t.count, items: sorted(t.items), digest: sha(t.rows.join(';')) }]),
+  );
 
   const { dayLength, start, dawn, dusk } = def.clock;
   return {
@@ -67,7 +72,7 @@ export function summarize(def: Definition, seed: number, rename: Rename = {}): W
     map: { width: map.width, height: map.height, floors: map.floors, cells },
     player: { archetype: local(w.player.archetype.id, rename), x: w.player.x, y: w.player.y, z: w.player.z },
     entities: { counts: sorted(counts), digest: sha(entities) },
-    containers: { count, items: sorted(items), digest: sha(rows.join(';')) },
+    containers,
     clock: { dayLength, start, dawn, dusk },
     lighting: def.lighting ? def.lighting.tint.map((k) => ({ at: k.at, color: k.color })) : null,
   };

@@ -6,6 +6,7 @@ import { fixture, MANIFEST_T, pack, TILES_T } from './helpers.ts';
 
 const STD = readPack('packs/std');
 const NEEDS = readPack('packs/std-needs');
+const TOWN = readPack('packs/town');
 const ZOMBIE = readPack('packs/zombie');
 const VAMPIRE = readPack('packs/vampire');
 const GARDEN = readPack('packs/garden');
@@ -34,20 +35,20 @@ function expectError(errors: readonly LoadError[], exp: Expected): void {
 
 // ── Happy paths ─────────────────────────────────────────────────────────────
 
-test('loads std + std-needs + zombie', () => {
-  const r = loadPacks([STD, NEEDS, ZOMBIE]);
+test('loads std + std-needs + town + zombie', () => {
+  const r = loadPacks([STD, NEEDS, TOWN, ZOMBIE]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const def = r.definition;
   assert.deepEqual(
     def.packs.map((p) => p.namespace),
-    ['std', 'std_needs', 'zmb'],
+    ['std', 'std_needs', 'town', 'zmb'],
   );
   assert.deepEqual(
     def.measurements.map((m) => m.id),
     ['std:hp', 'std_needs:hunger', 'std_needs:thirst', 'std_needs:fatigue'],
   );
-  assert.equal(def.archetypes[def.start.player]!.id, 'zmb:survivor');
-  assert.equal(def.maps[def.start.map]!.id, 'zmb:city');
+  assert.equal(def.archetypes[def.start.player]!.id, 'town:resident');
+  assert.equal(def.maps[def.start.map]!.id, 'town:city');
   // Short reference `hp` in zmb resolved through depends to std:hp.
   const shambler = def.archetypes[def.ids.archetypes['zmb:shambler']!]!;
   assert.deepEqual(shambler.measurements, [def.ids.measurements['std:hp']]);
@@ -60,8 +61,8 @@ test('loads std + std-needs + zombie', () => {
   assert.ok(def.maps[def.start.map]!.spawns.length >= 3);
 });
 
-test('loads std + vampire (no std-needs), with an expression max tied to std:hp', () => {
-  const r = loadPacks([STD, VAMPIRE]);
+test('loads std + std-needs + town + vampire, with an expression max tied to std:hp', () => {
+  const r = loadPacks([STD, NEEDS, TOWN, VAMPIRE]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   const blood = r.definition.measurements[r.definition.ids.measurements['vamp:blood']!]!;
   assert.equal(typeof blood.maxFn, 'function');
@@ -94,7 +95,7 @@ test('loads std + garden, with a start.victory and no defeat', () => {
 });
 
 test('the loaded definition is deeply frozen', () => {
-  const r = loadPacks([STD, NEEDS, ZOMBIE]);
+  const r = loadPacks([STD, NEEDS, TOWN, ZOMBIE]);
   assert.ok(r.ok);
   const def = r.definition;
   assert.ok(Object.isFrozen(def));
@@ -106,18 +107,12 @@ test('the loaded definition is deeply frozen', () => {
   }, TypeError);
 });
 
-test('zombie and vampire cannot load together without an explicit start choice', () => {
-  // Both define `start`, `clock` and `lighting`: at most one of each is allowed.
-  const errors = errorsOf([STD, NEEDS, ZOMBIE, VAMPIRE]);
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'clock', line: 128, message: /duplicate 'clock': already defined in pack 'zmb' \(clock\.yaml\)/ });
-  expectError(errors, { pack: 'vamp', file: 'content.yaml', path: 'start', line: 131, message: /duplicate 'start': already defined in pack 'zmb'/ });
-  expectError(errors, {
-    pack: 'vamp',
-    file: 'survival.yaml',
-    path: 'lighting',
-    line: 69,
-    message: /duplicate 'lighting': already defined in pack 'zmb' \(lighting\.yaml\)/,
-  });
+test('two games cannot load together: town and garden both define start, clock and lighting', () => {
+  // At most one base definition of each singleton is allowed; mods override them instead.
+  const errors = errorsOf([STD, NEEDS, TOWN, GARDEN]);
+  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'clock', line: 119, message: /duplicate 'clock': already defined in pack 'town' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'start', line: 122, message: /duplicate 'start': already defined in pack 'town'/ });
+  expectError(errors, { pack: 'gdn', file: 'rules.yaml', path: 'lighting', line: 58, message: /duplicate 'lighting': already defined in pack 'town' \(lighting\.yaml\)/ });
 });
 
 // ── One failing fixture per validation rule ────────────────────────────────
@@ -415,9 +410,9 @@ test('clock: fields parse to seconds and minutes since midnight', () => {
   assert.deepEqual(r.definition.clock, { dayLength: 600, start: 21 * 60 + 30, dawn: 5 * 60 + 15, dusk: 19 * 60 });
 });
 
-test('clock: the genre packs define different calendars; the stdpack does not', () => {
-  const zombie = loadPacks([STD, NEEDS, ZOMBIE]);
-  const vampire = loadPacks([STD, VAMPIRE]);
+test('clock: the town defines the calendar, the vampire mod overrides it; the stdpack does not', () => {
+  const zombie = loadPacks([STD, NEEDS, TOWN, ZOMBIE]);
+  const vampire = loadPacks([STD, NEEDS, TOWN, VAMPIRE]);
   assert.ok(zombie.ok && vampire.ok);
   assert.equal(zombie.definition.clock.start, 8 * 60);
   assert.equal(vampire.definition.clock.start, 20 * 60);
@@ -540,7 +535,7 @@ test('assets: a sprite can reference an asset of a dependency by short id', () =
 });
 
 test('assets: the real genre packs load with their assets', () => {
-  for (const packs of [[STD, NEEDS, ZOMBIE], [STD, VAMPIRE]]) {
+  for (const packs of [[STD, NEEDS, TOWN], [STD, NEEDS, TOWN, ZOMBIE], [STD, NEEDS, TOWN, VAMPIRE]]) {
     const r = loadPacks(packs);
     assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
     const def = r.definition;

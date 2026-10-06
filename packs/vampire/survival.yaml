@@ -66,6 +66,7 @@ systems:
 
 # Day/night tint of the iso view (visual only): cold nights, harsh days.
 lighting:
+  override: true
   tint:
     - { at: "05:00", color: "#2a3060" }
     - { at: "07:00", color: "#fff4e0" }
@@ -106,7 +107,7 @@ actions:
   - id: shutter
     label: Close shutters
     progress: Closing the shutters
-    target: { tiles: [window] }
+    target: { tiles: [town:window] }
     duration: 2
     effects:
       - { type: set_tile, tile: shuttered_window }

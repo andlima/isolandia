@@ -58,101 +58,6 @@
               "y": 336
             },
             {
-              "height": 0,
-              "id": 2,
-              "name": "shambler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "shambler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 656,
-              "y": 112
-            },
-            {
-              "height": 0,
-              "id": 3,
-              "name": "crawler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "crawler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 144,
-              "y": 208
-            },
-            {
-              "height": 0,
-              "id": 4,
-              "name": "shambler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "shambler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 528,
-              "y": 336
-            },
-            {
-              "height": 0,
-              "id": 5,
-              "name": "crawler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "crawler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 1136,
-              "y": 464
-            },
-            {
-              "height": 0,
-              "id": 6,
-              "name": "shambler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "shambler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 720,
-              "y": 528
-            },
-            {
               "height": 96,
               "id": 8,
               "name": "kitchen",
@@ -504,25 +409,6 @@
           "id": 6,
           "name": "objects",
           "objects": [
-            {
-              "height": 0,
-              "id": 7,
-              "name": "shambler",
-              "point": true,
-              "properties": [
-                {
-                  "name": "archetype",
-                  "type": "string",
-                  "value": "shambler"
-                }
-              ],
-              "rotation": 0,
-              "type": "spawn",
-              "visible": true,
-              "width": 0,
-              "x": 1232,
-              "y": 144
-            },
             {
               "height": 160,
               "id": 24,

@@ -7,8 +7,10 @@ import { readPack } from '../src/node/read-pack.ts';
 // Pixel-art conventions for the shipped packs (docs/art.md).
 
 const STACKS = [
-  ['std', 'std-needs', 'zombie'],
-  ['std', 'vampire'],
+  ['std', 'std-needs', 'town'],
+  ['std', 'std-needs', 'town', 'zombie'],
+  ['std', 'std-needs', 'town', 'vampire'],
+  ['std', 'std-needs', 'town', 'hardship'],
   ['std', 'garden'],
 ];
 const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow', 'stairs', 'ladder'];

@@ -207,8 +207,10 @@ function runWithNpcs(dirs: readonly string[], seed: number, ticks: number): Worl
   return w;
 }
 
-test('determinism: player and NPC intents ⇒ same hash (1200 ticks, both genres)', () => {
-  for (const dirs of Object.values(GAMES)) {
+test('determinism: player and NPC intents ⇒ same hash (1200 ticks, every game with NPCs)', () => {
+  // The base town has no NPCs; its mods do.
+  for (const [name, dirs] of Object.entries(GAMES)) {
+    if (name === 'town') continue;
     const a = runWithNpcs(dirs, 4321, 1200);
     const b = runWithNpcs(dirs, 4321, 1200);
     assert.equal(a.tick, 1200);

@@ -1,5 +1,5 @@
 # In-game calendar: one day lasts 24 real minutes (1 s = 1 game minute).
-# The outbreak starts in the morning.
+# The day starts in the morning.
 clock:
   day_length: 1440
   start: "08:00"

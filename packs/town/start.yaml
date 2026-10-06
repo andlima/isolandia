@@ -1,0 +1,14 @@
+# The base game: a quiet sandbox with no one else in town. Mods add
+# inhabitants (map `populate`/`spawns` overrides) and goals (`victory`).
+start:
+  map: city
+  player: resident
+  defeat:
+    when: "self.hp <= 0"
+    message: "You did not make it."
+  # Scale (docs/packs.md#simulation): NPCs further than 64 tiles from the
+  # player rest until they come near; A* gives up early for them.
+  simulation:
+    active_radius: 64
+    npc_path_budget: 4000
+    player_path_budget: 60000

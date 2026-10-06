@@ -601,53 +601,53 @@ test('zombie: loot canned beans, walk to a stove via the menu, cook and eat them
   const T = (x: number, y: number) => genreCell('zombie', x, y);
   // The north-east kitchen's cupboard holds a can (seed 2; the city rolls loot for many more containers first).
   const cupboard = w.containersAt(...T(30, 2))[0]!;
-  assert.ok(countOf(cupboard, id('zmb:canned_beans')) >= 1);
+  assert.ok(countOf(cupboard, id('town:canned_beans')) >= 1);
   walk(w, ...T(30, 2), true);
-  w.queueAction({ kind: 'take', container: cupboard.id, item: 'zmb:canned_beans' });
+  w.queueAction({ kind: 'take', container: cupboard.id, item: 'town:canned_beans' });
   w.step();
-  assert.ok(have('zmb:canned_beans') >= 1);
-  const cans = have('zmb:canned_beans');
+  assert.ok(have('town:canned_beans') >= 1);
+  const cans = have('town:canned_beans');
 
   // The south-east kitchen's stove, from afar.
   const [sx, sy] = T(31, 18);
-  assert.equal(w.grid.tileAt(sx, sy)!.id, 'zmb:stove');
+  assert.equal(w.grid.tileAt(sx, sy)!.id, 'town:stove');
   assert.ok(Math.max(Math.abs(w.player.x - sx), Math.abs(w.player.y - sy)) > 1);
   const item = contextMenu(w, sx, sy).find((i) => i.label === 'Cook: Hot beans')!;
   assert.equal(item.disabled, false);
   assert.ok(item.run.intent?.then, 'walks there first');
   runMenuItem(w, item);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();
-  assert.equal(w.player.activity?.source.recipe, w.def.ids.recipes['zmb:cook_beans'], JSON.stringify(w.lastAction));
+  assert.equal(w.player.activity?.source.recipe, w.def.ids.recipes['town:cook_beans'], JSON.stringify(w.lastAction));
   assert.equal(hudModel(w).activity!.label, 'Cook: Hot beans');
   const start = w.lastAction!.tick;
   for (let i = 0; i < 100 && w.player.activity; i++) w.step();
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
   assert.equal(w.lastAction!.tick, start + 50);
   assert.equal(hudModel(w).lastAction, 'You make 1× Hot beans.');
-  assert.equal(have('zmb:canned_beans'), cans - 1);
-  assert.equal(have('zmb:hot_beans'), 1);
+  assert.equal(have('town:canned_beans'), cans - 1);
+  assert.equal(have('town:hot_beans'), 1);
   assert.ok(w.noises.some((n) => n.x === w.player.x && n.y === w.player.y), 'the sizzle is heard');
 
   // Eat them: more filling than cold beans.
   const hunger = () => w.value(w.player, 'std_needs:hunger')!;
   w.player.m[w.def.ids.measurements['std_needs:hunger']!] = 80;
-  w.queueAction({ kind: 'use', item: 'zmb:hot_beans' });
+  w.queueAction({ kind: 'use', item: 'town:hot_beans' });
   w.step();
   assert.ok(hunger() < 40, `${hunger()}`);
-  assert.equal(have('zmb:hot_beans'), 0);
+  assert.equal(have('town:hot_beans'), 0);
 
   // Rags into a bandage, anywhere (no station): it is in the crafting panel only.
-  w.player.inv!.stacks.push({ item: id('zmb:rag'), count: 2 });
-  w.player.inv!.load += 2 * w.def.items[id('zmb:rag')]!.weight;
+  w.player.inv!.stacks.push({ item: id('town:rag'), count: 2 });
+  w.player.inv!.load += 2 * w.def.items[id('town:rag')]!.weight;
   const row = craftingView(w, false).groups.find((g) => g.category === 'Medical')!.rows[0]!;
   assert.equal(row.craft.disabled, false);
   for (const a of row.craft.actions) w.queueAction(a);
   w.step();
   steps(w, 30);
-  assert.equal(w.lastAction!.recipe, 'zmb:tear_bandage');
+  assert.equal(w.lastAction!.recipe, 'town:tear_bandage');
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
-  assert.equal(have('zmb:rag'), 0);
-  assert.ok(have('zmb:bandage') >= 1);
+  assert.equal(have('town:rag'), 0);
+  assert.ok(have('town:bandage') >= 1);
 });
 
 test('zombie: the stoves keep the kitchens walkable and every container reachable', () => {
@@ -656,7 +656,7 @@ test('zombie: the stoves keep the kitchens walkable and every container reachabl
   const { x: ox, y: oy } = GENRE_AT.zombie;
   const inTown = (x: number, y: number) => x >= ox && y >= oy && x < ox + 44 && y < oy + 21;
   const stoves: [number, number][] = [];
-  for (let y = oy; y < oy + 21; y++) for (let x = ox; x < ox + 44; x++) if (w.grid.tileAt(x, y)!.id === 'zmb:stove') stoves.push([x, y]);
+  for (let y = oy; y < oy + 21; y++) for (let x = ox; x < ox + 44; x++) if (w.grid.tileAt(x, y)!.id === 'town:stove') stoves.push([x, y]);
   assert.equal(stoves.length, 4);
   for (const c of w.containers.values()) {
     if (c.kind !== 'tile' || !inTown(c.x, c.y)) continue;

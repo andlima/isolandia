@@ -25,16 +25,36 @@
       "digest": "ede1072b56131568"
     },
     "containers": {
-      "count": 39,
-      "items": {
-        "blood_vial": 22,
-        "candle": 14,
-        "cloak": 4,
-        "empty_vial": 6,
-        "tome": 3,
-        "wine": 23
+      "bookshelf": {
+        "count": 19,
+        "items": {
+          "blood_vial": 1,
+          "candle": 4,
+          "empty_vial": 1,
+          "tome": 1
+        },
+        "digest": "bff8e27ed4b6fc8f"
       },
-      "digest": "6a8a6bd696b928fd"
+      "chest": {
+        "count": 8,
+        "items": {
+          "candle": 3,
+          "cloak": 4,
+          "tome": 2,
+          "wine": 11
+        },
+        "digest": "29271ce889b16318"
+      },
+      "wine_rack": {
+        "count": 12,
+        "items": {
+          "blood_vial": 21,
+          "candle": 7,
+          "empty_vial": 5,
+          "wine": 12
+        },
+        "digest": "38ac3c78910e33db"
+      }
     },
     "clock": {
       "dayLength": 1440,
@@ -87,16 +107,33 @@
       "digest": "90c9341ee1b235df"
     },
     "containers": {
-      "count": 39,
-      "items": {
-        "blood_vial": 21,
-        "candle": 1,
-        "cloak": 6,
-        "empty_vial": 7,
-        "tome": 2,
-        "wine": 13
+      "bookshelf": {
+        "count": 19,
+        "items": {
+          "empty_vial": 1,
+          "tome": 2
+        },
+        "digest": "e82bc902832d8e6c"
       },
-      "digest": "fc221ccd1f19b5a3"
+      "chest": {
+        "count": 8,
+        "items": {
+          "blood_vial": 4,
+          "candle": 1,
+          "cloak": 6,
+          "wine": 10
+        },
+        "digest": "d960ad27bce89537"
+      },
+      "wine_rack": {
+        "count": 12,
+        "items": {
+          "blood_vial": 17,
+          "empty_vial": 6,
+          "wine": 3
+        },
+        "digest": "62cfd57815b907ab"
+      }
     },
     "clock": {
       "dayLength": 1440,

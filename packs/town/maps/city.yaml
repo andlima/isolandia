@@ -1,4 +1,4 @@
-# The zombie city: a 256×256 composite of the part maps in maps/parts/
+# The town: a 256×256 composite of the part maps in maps/parts/
 # (edit those in Tiled; see README.md). Generated layout: a 5×5 grid of
 # 44×44 blocks between 3-wide roads, the old four-house town block in the
 # middle, stores and garages downtown, parks in the corners.
@@ -23,9 +23,6 @@ maps:
     tiled: maps/parts/crossing.tmj
   - id: house_c
     tiled: maps/parts/house_c.tmj
-    # Something still lies upstairs in every one of these.
-    populate:
-      - { archetype: crawler, count: 1, floor: 1, room: bedroom }
   - id: city
     size: [256, 256]
     fill: grass
@@ -488,43 +485,3 @@ maps:
       - { map: house_c, at: [211, 233] }
       - { map: house_a, at: [222, 233] }
       - { map: house_b, at: [233, 233] }
-    # Denser downtown (the 8 blocks around town_center), sparser further
-    # out; town_center's own block is left to its handful of spawns.
-    populate:
-      - { archetype: shambler, count: 22, rect: [9, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [56, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [103, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [150, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [103, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [103, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 56, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 56, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 103, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 103, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 103, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 103, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 103, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 103, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [103, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [103, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 150, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 150, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [56, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [103, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [150, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 197, 50, 50] }
-      # The fields around the town.
-      - { archetype: shambler, count: 12, rect: [0, 0, 256, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 247, 256, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 9, 9, 238] }
-      - { archetype: shambler, count: 12, rect: [247, 9, 9, 238] }

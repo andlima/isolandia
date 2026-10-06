@@ -160,10 +160,10 @@ test('zombie: an undead NPC in sight gets alert, and loses it behind a wall or f
 test('vampire: the window is see-through, and a bat spots the vampire through it', () => {
   const w = game('vampire');
   const M = (x: number, y: number) => genreCell('vampire', x, y);
-  const window = w.def.tiles.find((t) => t.id === 'vamp:window')!;
+  const window = w.def.tiles.find((t) => t.id === 'town:window')!;
   assert.equal(window.walkable, false);
   assert.equal(window.opaque, false);
-  assert.equal(w.grid.tileAt(...M(3, 8))!.id, 'vamp:window');
+  assert.equal(w.grid.tileAt(...M(3, 8))!.id, 'town:window');
   const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(3, 6)[0] && e.y === M(3, 6)[1])!;
   assert.ok(bat);
   assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
