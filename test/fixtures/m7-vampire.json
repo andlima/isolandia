@@ -1,0 +1,126 @@
+[
+  {
+    "seed": 1,
+    "map": {
+      "width": 96,
+      "height": 96,
+      "floors": 2,
+      "cells": [
+        "6e4e91069e67ec2b",
+        "45f473eba6de72ef"
+      ]
+    },
+    "player": {
+      "archetype": "vampire",
+      "x": 48,
+      "y": 45,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "bat": 151,
+        "humanoid": 2,
+        "vampire": 1
+      },
+      "digest": "ede1072b56131568"
+    },
+    "containers": {
+      "count": 39,
+      "items": {
+        "blood_vial": 22,
+        "candle": 14,
+        "cloak": 4,
+        "empty_vial": 6,
+        "tome": 3,
+        "wine": 23
+      },
+      "digest": "6a8a6bd696b928fd"
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 1200,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 2764896
+      },
+      {
+        "at": 420,
+        "color": 16774368
+      },
+      {
+        "at": 1140,
+        "color": 16763040
+      },
+      {
+        "at": 1260,
+        "color": 2764896
+      }
+    ]
+  },
+  {
+    "seed": 7,
+    "map": {
+      "width": 96,
+      "height": 96,
+      "floors": 2,
+      "cells": [
+        "6e4e91069e67ec2b",
+        "45f473eba6de72ef"
+      ]
+    },
+    "player": {
+      "archetype": "vampire",
+      "x": 48,
+      "y": 45,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "bat": 151,
+        "humanoid": 2,
+        "vampire": 1
+      },
+      "digest": "90c9341ee1b235df"
+    },
+    "containers": {
+      "count": 39,
+      "items": {
+        "blood_vial": 21,
+        "candle": 1,
+        "cloak": 6,
+        "empty_vial": 7,
+        "tome": 2,
+        "wine": 13
+      },
+      "digest": "fc221ccd1f19b5a3"
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 1200,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 2764896
+      },
+      {
+        "at": 420,
+        "color": 16774368
+      },
+      {
+        "at": 1140,
+        "color": 16763040
+      },
+      {
+        "at": 1260,
+        "color": 2764896
+      }
+    ]
+  }
+]

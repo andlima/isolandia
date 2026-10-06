@@ -1,0 +1,144 @@
+[
+  {
+    "seed": 1,
+    "map": {
+      "width": 256,
+      "height": 256,
+      "floors": 2,
+      "cells": [
+        "741ab30b7a278e8e",
+        "ddf7e10f57a98f2d"
+      ]
+    },
+    "player": {
+      "archetype": "survivor",
+      "x": 132,
+      "y": 127,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "crawler": 156,
+        "shambler": 804,
+        "survivor": 1
+      },
+      "digest": "b840512e7bf5f182"
+    },
+    "containers": {
+      "count": 1882,
+      "items": {
+        "alarm_clock": 50,
+        "bandage": 373,
+        "canned_beans": 889,
+        "car_battery": 37,
+        "coffee": 332,
+        "crackers": 261,
+        "hammer": 123,
+        "lamp": 103,
+        "magazine": 403,
+        "nails": 752,
+        "plank": 366,
+        "rag": 314,
+        "soda": 613,
+        "toaster": 123,
+        "water_bottle": 1473
+      },
+      "digest": "bdf009b6582b11d5"
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 480,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 3820160
+      },
+      {
+        "at": 420,
+        "color": 16777215
+      },
+      {
+        "at": 1140,
+        "color": 16767408
+      },
+      {
+        "at": 1260,
+        "color": 3820160
+      }
+    ]
+  },
+  {
+    "seed": 7,
+    "map": {
+      "width": 256,
+      "height": 256,
+      "floors": 2,
+      "cells": [
+        "741ab30b7a278e8e",
+        "ddf7e10f57a98f2d"
+      ]
+    },
+    "player": {
+      "archetype": "survivor",
+      "x": 132,
+      "y": 127,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "crawler": 156,
+        "shambler": 804,
+        "survivor": 1
+      },
+      "digest": "3bdde0afe7cb5780"
+    },
+    "containers": {
+      "count": 1882,
+      "items": {
+        "alarm_clock": 55,
+        "bandage": 361,
+        "canned_beans": 932,
+        "car_battery": 36,
+        "coffee": 317,
+        "crackers": 272,
+        "hammer": 133,
+        "lamp": 101,
+        "magazine": 315,
+        "nails": 667,
+        "plank": 348,
+        "rag": 315,
+        "soda": 667,
+        "toaster": 111,
+        "water_bottle": 1331
+      },
+      "digest": "25d0b721e2b25b86"
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 480,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 3820160
+      },
+      {
+        "at": 420,
+        "color": 16777215
+      },
+      {
+        "at": 1140,
+        "color": 16767408
+      },
+      {
+        "at": 1260,
+        "color": 3820160
+      }
+    ]
+  }
+]
