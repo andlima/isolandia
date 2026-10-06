@@ -311,6 +311,21 @@ test('round trip: mid-path with a goto.then pending, then the action and set_til
   assertRoundTrip(w, undefined, 30);
 });
 
+test('round trip: a pending turn-in-place step keeps its flag', () => {
+  const w = world();
+  w.player.facing = 'n';
+  w.queueIntent({ kind: 'step', dx: 0, dy: 1, turnInPlace: true });
+  w.step();
+  assert.deepEqual(w.player.intent, { kind: 'step', dx: 0, dy: 1, turnInPlace: true }, 'still turning');
+  const copy = assertRoundTrip(w, undefined, 0);
+  assert.deepEqual(copy.player.intent, { kind: 'step', dx: 0, dy: 1, turnInPlace: true });
+  assertRoundTrip(w, undefined, 10);
+  const bad = json(w.save());
+  (bad.state.entities.find((e) => e.intent)!.intent as unknown as Record<string, unknown>)['turnInPlace'] = 'yes';
+  const r = World.restore(DEF, bad);
+  assert.ok(!r.ok && r.errors.some((m) => m.includes('turnInPlace')), JSON.stringify(r));
+});
+
 test('round trip: mid-activity — a timed item use, a recipe and a self action', () => {
   const use = world();
   use.player.m[HP] = 5;

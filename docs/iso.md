@@ -217,6 +217,11 @@ down-right, `se` = toward the camera…; the full table is in
   turns the entity to face it; `ticks_per_turn: 0` turns and steps in the
   same tick. Each turning beat is a discrete sprite switch (no turn
   interpolation); an entity that stops keeps its last facing.
+- **Browser keys: tap turns, hold walks.** A fresh movement key press
+  queues a step with `turnInPlace: true`: the player turns toward it and
+  stays put (or steps at once if already facing that way). Holding the key
+  past `HOLD_MS` (200 ms, `src/web/keys.ts`) then walks as usual. Paths,
+  click-to-move, NPCs and the terminal still turn and then walk.
 - **Tiles** face their map cell's legend `facing` (default `s`); **ground
   piles** always face `s`.
 - **Mirroring.** A directional asset's missing facing uses its mirror

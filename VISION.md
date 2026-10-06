@@ -388,7 +388,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   Characters face their movement direction. Facing is **simulation
   state** (in snapshots and hashes): an entity turns 45° per
   `ticks_per_turn` beat toward a new direction before it steps (spec
-  `turn-before-move`). Map tiles get a static 4-way `facing` from the
+  `turn-before-move`). In the browser a key tap only turns in place and
+  a hold walks (spec `turn-in-place`). Map tiles get a static 4-way `facing` from the
   legend. Facing-aware actions (vision cones, interact with the faced
   tile) may come in M5.
   Animation frames are a later step. See `docs/iso.md`.

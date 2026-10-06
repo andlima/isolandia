@@ -99,11 +99,22 @@ export type DefeatRecord = OutcomeRecord;
 /** Recorded when the pack's `start.victory` condition becomes true. */
 export type VictoryRecord = OutcomeRecord;
 
-/** One-tile move in a direction on the entity's floor (keyboard; never takes a link); cancels any active path. */
+/**
+ * One-tile move in a direction on the entity's floor (keyboard; never takes a
+ * link); cancels any active path. The entity first turns toward the step (one
+ * compass point per `ticks_per_turn` beat), with the intent pending meanwhile.
+ */
 export interface StepIntent {
   readonly kind: 'step';
   readonly dx: -1 | 0 | 1;
   readonly dy: -1 | 0 | 1;
+  /**
+   * Turn only (default false): when not already facing the step, the entity
+   * turns toward it and the intent is consumed once it faces that way,
+   * without stepping. When already facing it, it steps as usual. Used by the
+   * browser keyboard so a tap in a new direction only turns.
+   */
+  readonly turnInPlace?: boolean;
 }
 
 /** Walk to a tile along an A* path computed at the start of the next tick. */
@@ -1314,14 +1325,21 @@ export class World {
     } else return;
 
     // Turn toward the step first; the intent and path stay pending meanwhile.
+    // A turn-in-place intent is consumed, without a step, on the beat it faces `want`.
     const want = facingOfStep(dx, dy);
     if (want && p.facing !== want) {
+      const turnOnly = p.intent?.kind === 'step' && p.intent.turnInPlace === true;
       if (p.archetype.ticksPerTurn > 0) {
         p.facing = turnToward(p.facing, want);
         p.moveCooldown = p.archetype.ticksPerTurn;
+        if (turnOnly && p.facing === want) p.intent = null;
         return;
       }
       p.facing = want;
+      if (turnOnly) {
+        p.intent = null;
+        return;
+      }
     }
 
     if (p.intent?.kind === 'step') {
