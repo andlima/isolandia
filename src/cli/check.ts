@@ -1,8 +1,14 @@
 import type { LoadError } from '../core/index.ts';
 import { fail, loadOrExitIf, parseArgs } from './common.ts';
+import { formatOverrides, patchSummary } from './overrides.ts';
 import { readSaveFile } from './saves.ts';
 
-const { dirs, save } = parseArgs(process.argv.slice(2), 'usage: npm run check -- <pack-dir> [<pack-dir>…] [--save <file>]', ['--seed', '--save']);
+const { dirs, save, overrides } = parseArgs(
+  process.argv.slice(2),
+  'usage: npm run check -- <pack-dir> [<pack-dir>…] [--save <file>] [--overrides]',
+  ['--seed', '--save'],
+  ['--overrides'],
+);
 
 /**
  * A stack whose only error is the missing `start` is a valid *library* stack
@@ -25,6 +31,7 @@ if (!r.ok) {
       `${def.items.length} items, ${def.loot.length} loot tables, ${def.distributions.length} distributions, ` +
       `${def.behaviors.length} behaviors, ${def.actions.length} actions, ${def.recipes.length} recipes`,
   );
+  for (const line of overrides ? formatOverrides(def) : patchSummary(def)) console.log(line);
   if (save !== null) {
     const s = readSaveFile(def, save);
     if (!s.ok) {

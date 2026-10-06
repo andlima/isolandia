@@ -47,9 +47,26 @@ export class SymbolTable {
     recipe: new Map(),
   };
 
+  /** Qualified id → namespace of the pack that removed it, per kind. */
+  private readonly removed: Record<Kind, Map<string, string>> = {
+    measurement: new Map(),
+    asset: new Map(),
+    tile: new Map(),
+    archetype: new Map(),
+    map: new Map(),
+    system: new Map(),
+    status: new Map(),
+    item: new Map(),
+    loot: new Map(),
+    behavior: new Map(),
+    action: new Map(),
+    recipe: new Map(),
+  };
+
   /**
    * Qualify and register a definition's id. Returns the qualified id and its
-   * index, or null after reporting an error.
+   * provisional index (final after {@link reindex}), or null after reporting
+   * an error.
    */
   define(kind: Kind, raw: unknown, scope: Scope, entry: Src, sink: ErrorSink): { id: string; index: number } | null {
     const src = at(entry, 'id');
@@ -86,6 +103,30 @@ export class SymbolTable {
     return this.tables[kind].has(id);
   }
 
+  /** Qualified ids of `kind`, in definition order. */
+  ids(kind: Kind): string[] {
+    return [...this.tables[kind].keys()];
+  }
+
+  /** Drop a registered id; later references to it report `by` as the remover. */
+  remove(kind: Kind, id: string, by: string): void {
+    this.tables[kind].delete(id);
+    this.removed[kind].set(id, by);
+  }
+
+  /** The namespace of the pack that removed `id`, if it was removed. */
+  removedBy(kind: Kind, id: string): string | undefined {
+    return this.removed[kind].get(id);
+  }
+
+  /** Assign dense indices (definition order) to the surviving ids. */
+  reindex(): void {
+    for (const table of Object.values(this.tables)) {
+      let index = 0;
+      for (const [id, sym] of table) table.set(id, { index: index++, src: sym.src });
+    }
+  }
+
   /** Resolve a short or qualified reference as seen from `scope`. */
   resolve(kind: Kind, ref: string, scope: Scope): Resolved {
     const table = this.tables[kind];
@@ -95,12 +136,15 @@ export class SymbolTable {
       return { error: `invalid ${kind} reference '${ref}'` };
     }
     const found = (id: string): Resolved => ({ id, index: table.get(id)!.index });
+    const removed = this.removed[kind];
+    const gone = (id: string): Resolved => ({ error: `unknown ${kind} '${id}' (removed by pack '${removed.get(id)}')` });
 
     if (ns !== null) {
       if (!visible.includes(ns)) {
         return { error: `${kind} '${ref}' is in namespace '${ns}', which pack '${scope.namespace}' does not depend on` };
       }
       if (table.has(ref)) return found(ref);
+      if (removed.has(ref)) return gone(ref);
       const s = nearMiss(ref, [...table.keys()].filter((k) => visible.includes(splitId(k)[0]!)));
       return { error: `unknown ${kind} '${ref}'${s ? ` (did you mean '${s}'?)` : ''}` };
     }
@@ -112,6 +156,8 @@ export class SymbolTable {
     if (matches.length > 1) {
       return { error: `ambiguous ${kind} reference '${ref}': matches ${matches.join(', ')}; qualify it` };
     }
+    const removedMatch = [own, ...scope.depends.map((d) => `${d}:${local}`)].find((id) => removed.has(id));
+    if (removedMatch) return gone(removedMatch);
     const locals = [...table.keys()].filter((k) => visible.includes(splitId(k)[0]!)).map((k) => splitId(k)[1]);
     const s = nearMiss(local, locals);
     return { error: `unknown ${kind} '${ref}'${s ? ` (did you mean '${s}'?)` : ''}` };

@@ -17,23 +17,28 @@ function typeName(v: Json | undefined): string {
 }
 
 export class Fields {
+  /**
+   * `srcOf(key)` locates the entry that wrote a top-level field (an override
+   * can write fields of an entry defined elsewhere); `src` by default.
+   */
   constructor(
     private readonly sink: ErrorSink,
     readonly src: Src,
     readonly obj: JsonObject,
     allowed: readonly string[],
     what: string,
+    private readonly srcOf: (key: string) => Src = () => src,
   ) {
     for (const k of Object.keys(obj)) {
       if (!allowed.includes(k)) {
         const s = nearMiss(k, allowed);
-        sink.add(at(src, k), `unknown ${what} field '${k}'${s ? ` (did you mean '${s}'?)` : ''}`);
+        sink.add(this.at(k), `unknown ${what} field '${k}'${s ? ` (did you mean '${s}'?)` : ''}`);
       }
     }
   }
 
   at(key: string, ...more: (string | number)[]): Src {
-    return at(this.src, key, ...more);
+    return at(this.srcOf(key), key, ...more);
   }
 
   has(key: string): boolean {
@@ -52,7 +57,7 @@ export class Fields {
   }
 
   private missing(key: string): undefined {
-    this.sink.add(this.src, `missing required field '${key}'`);
+    this.sink.add(this.srcOf(key), `missing required field '${key}'`);
     return undefined;
   }
 
