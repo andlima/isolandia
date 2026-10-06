@@ -67,3 +67,53 @@ export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F3
 export function suppressesDefault(code: string): boolean {
   return SUPPRESSED_KEYS.has(code);
 }
+
+/** How long a movement key must be held before the player walks; a shorter tap only turns. */
+export const HOLD_MS = 200;
+
+/** A browser movement step: `turnInPlace` on a fresh press, plain while held. */
+export interface MoveStep {
+  readonly kind: 'step';
+  readonly dx: D;
+  readonly dy: D;
+  readonly turnInPlace?: true;
+}
+
+/**
+ * Held movement keys and hold-to-walk timing (pure; time is passed in, in
+ * ms). A fresh press gives a turn-in-place step and restarts the hold clock;
+ * once the latest press is `HOLD_MS` old, `repeat` gives plain steps on the
+ * ticks where the player can step again.
+ */
+export class MoveKeys {
+  private readonly held = new Set<string>();
+  /** Time of the latest fresh press, or -1 when no direction is held. */
+  private pressedAt = -1;
+
+  /** A movement keydown; returns the step to queue now, if any. */
+  down(code: string, repeat: boolean, now: number): MoveStep | null {
+    this.held.add(code);
+    if (repeat) return null;
+    const d = heldDirection(this.held);
+    if (!d) return null;
+    this.pressedAt = now;
+    return { kind: 'step', ...d, turnInPlace: true };
+  }
+
+  up(code: string): void {
+    this.held.delete(code);
+    if (!heldDirection(this.held)) this.pressedAt = -1;
+  }
+
+  clear(): void {
+    this.held.clear();
+    this.pressedAt = -1;
+  }
+
+  /** Right before a sim tick: the plain step to re-queue, if any. */
+  repeat(now: number, moveCooldown: number): MoveStep | null {
+    if (this.pressedAt < 0 || now - this.pressedAt < HOLD_MS || moveCooldown > 1) return null;
+    const d = heldDirection(this.held);
+    return d ? { kind: 'step', ...d } : null;
+  }
+}

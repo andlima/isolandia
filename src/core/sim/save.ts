@@ -255,6 +255,7 @@ class Checker {
     if (o['kind'] === 'step') {
       this.int(o['dx'], `${path}.dx`, -1, 1);
       this.int(o['dy'], `${path}.dy`, -1, 1);
+      this.opt(o, 'turnInPlace', path, (c, q) => this.bool(c, q));
     } else if (o['kind'] === 'goto') {
       this.int(o['x'], `${path}.x`);
       this.int(o['y'], `${path}.y`);

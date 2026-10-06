@@ -148,3 +148,78 @@ test('the snapshot and hash change when only facing differs', () => {
   assert.notEqual(a.hash(), b.hash());
   assert.equal(b.snapshot().entities[0]!.facing, 'e');
 });
+
+// ── turnInPlace step intents ────────────────────────────────────────────────
+
+test('turnInPlace example: facing n, turn 1, east turns ne, e and clears the intent without stepping', () => {
+  const w = worldOf(OPEN, 1, 2);
+  w.player.facing = 'n';
+  const intent = { kind: 'step', dx: 1, dy: 0, turnInPlace: true } as const;
+  w.queueIntent(intent);
+  w.step();
+  assert.deepEqual([w.player.facing, w.player.x, w.player.y], ['ne', 3, 3]);
+  assert.deepEqual(w.player.intent, intent, 'pending while more rotation is needed');
+  w.step();
+  assert.deepEqual([w.player.facing, w.player.x, w.player.y], ['e', 3, 3]);
+  assert.equal(w.player.intent, null);
+  w.step();
+  assert.deepEqual([w.player.facing, w.player.x, w.player.y], ['e', 3, 3]);
+  assert.deepEqual([w.player.fromX, w.player.fromY, w.player.stepTick], [3, 3, 0], 'step state untouched');
+});
+
+test('turnInPlace: already facing the step moves at once', () => {
+  const w = worldOf(OPEN, 1, 2);
+  w.player.facing = 'e';
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0, turnInPlace: true });
+  assert.deepEqual(trace(w, w.player, 2), ['e 4,3', 'e 4,3']);
+  assert.equal(w.player.intent, null);
+});
+
+test('turnInPlace: ticks_per_turn 0 snaps without stepping or cooldown', () => {
+  const w = worldOf(OPEN, 0, 2);
+  w.player.facing = 'n';
+  w.queueIntent({ kind: 'step', dx: 0, dy: 1, turnInPlace: true });
+  assert.deepEqual(trace(w, w.player, 1), ['s 3,3']);
+  assert.equal(w.player.intent, null);
+  assert.equal(w.player.moveCooldown, 0);
+});
+
+test('turnInPlace: a 180° reversal takes 4 beats, then nothing moves', () => {
+  const w = worldOf(OPEN, 1, 1);
+  w.player.facing = 'e';
+  w.queueIntent({ kind: 'step', dx: -1, dy: 0, turnInPlace: true });
+  assert.deepEqual(trace(w, w.player, 3), ['se 3,3', 's 3,3', 'sw 3,3']);
+  assert.notEqual(w.player.intent, null);
+  assert.deepEqual(trace(w, w.player, 3), ['w 3,3', 'w 3,3', 'w 3,3']);
+  assert.equal(w.player.intent, null);
+});
+
+test('turnInPlace: faces a wall like any step', () => {
+  const w = worldOf(['#####', '#.@.#', '#...#', '#####'], 1, 1);
+  w.queueIntent({ kind: 'step', dx: 0, dy: -1, turnInPlace: true });
+  assert.deepEqual(trace(w, w.player, 5), ['sw 2,1', 'w 2,1', 'nw 2,1', 'n 2,1', 'n 2,1']);
+  assert.equal(w.player.intent, null);
+});
+
+test('turnInPlace: cancels an active path', () => {
+  const w = worldOf(OPEN, 1, 1);
+  w.player.facing = 's';
+  w.queueIntent({ kind: 'goto', x: 3, y: 5, z: 0 });
+  w.step();
+  assert.ok(w.player.path, 'walking');
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0, turnInPlace: true });
+  trace(w, w.player, 4);
+  assert.equal(w.player.path, null);
+  assert.equal(w.player.intent, null);
+  assert.equal(w.player.facing, 'e');
+  assert.deepEqual([w.player.x, w.player.y], [3, 4], 'only the first path step was taken');
+});
+
+test('turnInPlace: a plain step afterwards moves at once', () => {
+  const w = worldOf(OPEN, 1, 1);
+  w.player.facing = 'n';
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0, turnInPlace: true });
+  assert.deepEqual(trace(w, w.player, 2), ['ne 3,3', 'e 3,3']);
+  w.queueIntent({ kind: 'step', dx: 1, dy: 0 });
+  assert.deepEqual(trace(w, w.player, 1), ['e 4,3']);
+});
