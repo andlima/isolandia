@@ -428,8 +428,8 @@ maps:
   - id: town:town_center
     override: true
     spawns:
-      - { archetype: shambler, at: [16, 10] }
-      - { archetype: shambler, at: [38, 4, 1] }   # [x, y, z]: upstairs
+      - { archetype: shambler, at: [20, 13] }
+      - { archetype: shambler, at: [52, 5, 1] }   # [x, y, z]: upstairs
 ```
 
 They are merged with the map's own spawns and ordered by floor, then
@@ -601,17 +601,17 @@ maps:
   - id: house_a
     tiled: maps/parts/house_a.tmj
   - id: city
-    size: [256, 256]       # [w, h], each ≥ 1
+    size: [343, 343]       # [w, h], each ≥ 1
     fill: grass            # floor-0 cells no part covers
-    player: [132, 127]     # [x, y] or [x, y, z]; required on a start map
+    player: [171, 171]     # [x, y] or [x, y, z]; required on a start map
     parts:
-      - { map: town_center, at: [106, 117] }
-      - { map: house_a, at: [12, 12] }
-      - { map: house_a, at: [23, 12] }   # a part may appear many times
+      - { map: town_center, at: [142, 157] }
+      - { map: house_a, at: [56, 16] }
+      - { map: house_a, at: [36, 56] }   # a part may appear many times
     rooms:                 # extra rooms, in composite coordinates (as ASCII `rooms`)
-      - { rect: [0, 0, 256, 9], tags: [fields] }
+      - { rect: [0, 0, 343, 9], tags: [fields] }
     populate:              # see below
-      - { archetype: guard, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: guard, count: 50, rect: [73, 73, 69, 69] }
 ```
 
 | Field | Notes |
@@ -651,7 +651,7 @@ map; on a part map it is applied **once per placement**, offset by `at`.
 
 ```yaml
 populate:
-  - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+  - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
   - { archetype: crawler, count: 1, floor: 1, room: bedroom }
 ```
 
@@ -1580,7 +1580,7 @@ are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
 |---|---|---|---|---|
 | `std` | `std` | library | — | see [Standard packs](#standard-packs) |
 | `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
-| `town` | `town` | game | `std`, `std_needs` | the 256×256 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
+| `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
 | `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`, status `alert`); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
 | `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
 | `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
@@ -1760,7 +1760,7 @@ maps:
   - id: town:town_center         # a part of the city: exact cells (see Spawns)
     override: true
     spawns:
-      - { archetype: shambler, at: [16, 10] }
+      - { archetype: shambler, at: [20, 13] }
       # …
   - id: town:house_c             # a part: applied once per placement
     override: true
@@ -1769,7 +1769,7 @@ maps:
   - id: town:city
     override: true
     populate:
-      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
       # …
 archetypes:
   - { id: town:resident, override: true, label: Survivor }

@@ -6,12 +6,12 @@ maps:
   - id: town:town_center
     override: true
     spawns:
-      - { archetype: shambler, at: [20, 3] }
-      - { archetype: crawler, at: [4, 6] }
-      - { archetype: shambler, at: [16, 10] }
-      - { archetype: crawler, at: [35, 14] }
-      - { archetype: shambler, at: [22, 16] }
-      - { archetype: shambler, at: [38, 4, 1] }    # upstairs, north-east house
+      - { archetype: shambler, at: [29, 4] }
+      - { archetype: crawler, at: [4, 8] }
+      - { archetype: shambler, at: [20, 13] }
+      - { archetype: crawler, at: [48, 20] }
+      - { archetype: shambler, at: [31, 23] }
+      - { archetype: shambler, at: [52, 5, 1] }    # upstairs, north-east house
   # Something still lies upstairs in every one of these.
   - id: town:house_c
     override: true
@@ -19,46 +19,47 @@ maps:
       - { archetype: crawler, count: 1, floor: 1, room: bedroom }
   - id: town:city
     override: true
-    # Denser downtown (the 8 blocks around town_center), sparser further
-    # out; town_center's own block is left to its handful of spawns.
+    # One rect per 59×59 block and the roads around it: denser downtown (the 8
+    # blocks around town_center), sparser further out; town_center's own
+    # block is left to its handful of spawns.
     populate:
-      - { archetype: shambler, count: 22, rect: [9, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [56, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [103, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [150, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 9, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [103, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [103, 56, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 56, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 56, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 56, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 103, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 103, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 103, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 103, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 103, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 103, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [56, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [56, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [103, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [103, 150, 50, 50] }
-      - { archetype: shambler, count: 50, rect: [150, 150, 50, 50] }
-      - { archetype: crawler, count: 6, rect: [150, 150, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 150, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [9, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [56, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [103, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [150, 197, 50, 50] }
-      - { archetype: shambler, count: 22, rect: [197, 197, 50, 50] }
+      - { archetype: shambler, count: 25, rect: [9, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [73, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [137, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [201, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [137, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [137, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 73, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 73, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 137, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 137, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 137, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 137, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 137, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 137, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [137, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [137, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 201, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 201, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [73, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [137, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [201, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 265, 69, 69] }
       # The fields around the town.
-      - { archetype: shambler, count: 12, rect: [0, 0, 256, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 247, 256, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 9, 9, 238] }
-      - { archetype: shambler, count: 12, rect: [247, 9, 9, 238] }
+      - { archetype: shambler, count: 12, rect: [0, 0, 343, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 334, 343, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 9, 9, 325] }
+      - { archetype: shambler, count: 12, rect: [334, 9, 9, 325] }
 
 archetypes:
   - id: town:resident

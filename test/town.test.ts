@@ -5,7 +5,6 @@ import { test } from 'node:test';
 import { add, buildCatalog, formatError, loadPacks, resolveStack, World, type Action, type Catalog, type Definition, type LoadError } from '../src/core/index.ts';
 import { formatOverrides } from '../src/cli/overrides.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { summarize, type WorldSummary } from './equivalence.ts';
 
 // M7: one genre-free base game (`town`), zombie and vampire as mods of it,
 // and a balance mod that works with either (specs/m7-town-base.md).
@@ -223,39 +222,6 @@ test('check --overrides: the zombie and vampire mods patch the town by overrides
   assert.equal(z.start.defeat!.message, 'You did not survive the outbreak.');
   assert.equal(z.start.victory!.message, 'You got the car running!');
 });
-
-// ── Equivalence with the games before the move ─────────────────────────────
-
-const fixture = (name: string): WorldSummary[] => JSON.parse(readFileSync(`test/fixtures/m7-${name}.json`, 'utf8')) as WorldSummary[];
-
-/**
- * Containers whose contents may differ, with the reason: `town:car` holds 40
- * (was 6) so the garage loot table fits without a load warning. Loot draws do
- * not depend on what fits, so only cars change; their number does not.
- */
-const CHANGED_CONTAINERS: Record<string, readonly string[]> = { zombie: ['car'], vampire: [] };
-/** Items of the vampire renamed to base items (AC 7): none, only the `window` tile, which keeps its local id. */
-const RENAMED_ITEMS: Record<string, string> = {};
-
-for (const name of ['zombie', 'vampire'] as const) {
-  test(`equivalence (${name}): the mod starts the same world as the ${name} game before the move`, () => {
-    const { def } = load(name);
-    const rename = name === 'zombie' ? { resident: 'survivor' } : RENAMED_ITEMS;
-    for (const before of fixture(name)) {
-      const now = summarize(def, before.seed, rename);
-      assert.deepEqual(now.map, before.map, `seed ${before.seed}: map size and cells`);
-      assert.deepEqual(now.player, before.player, `seed ${before.seed}: player start`);
-      assert.deepEqual(now.entities, before.entities, `seed ${before.seed}: entities per archetype, and their cells`);
-      assert.deepEqual(now.clock, before.clock, `seed ${before.seed}: clock`);
-      assert.deepEqual(now.lighting, before.lighting, `seed ${before.seed}: lighting`);
-      assert.deepEqual(Object.keys(now.containers), Object.keys(before.containers), `seed ${before.seed}: container tiles`);
-      for (const [tile, c] of Object.entries(before.containers)) {
-        if (CHANGED_CONTAINERS[name]!.includes(tile)) assert.equal(now.containers[tile]!.count, c.count, `seed ${before.seed}: ${tile} count`);
-        else assert.deepEqual(now.containers[tile], c, `seed ${before.seed}: ${tile} containers`);
-      }
-    }
-  });
-}
 
 // ── Joint validation ───────────────────────────────────────────────────────
 

@@ -214,10 +214,10 @@ test('pick: floors above the view floor are ignored; the ground falls through em
   }
 });
 
-test('pick: on the 256×256 zombie city a pick takes well under 1 ms (synthetic masks)', () => {
+test('pick: on the 343×343 zombie city a pick takes well under 1 ms (synthetic masks)', () => {
   const w = World.create(loadPacksOrThrow(GAMES.zombie.map((d) => readPack(d))), 1);
   const g = w.grid;
-  assert.ok(g.width >= 256 && g.height >= 256);
+  assert.ok(g.width >= 280 && g.height >= 280);
   const objects = w.entities.map((e) => entityAt(e));
   const src = source(g, { objects });
   const p = groundCentreIso(w.player.x, w.player.y);

@@ -132,27 +132,27 @@ function place(e: { x: number; y: number; fromX: number; fromY: number }, x: num
 test('zombie: an undead NPC in sight gets alert, and loses it behind a wall or far away', () => {
   const w = game('zombie');
   const T = (x: number, y: number) => genreCell('zombie', x, y);
-  const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === T(16, 10)[0] && e.y === T(16, 10)[1])!;
+  const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === T(20, 13)[0] && e.y === T(20, 13)[1])!;
   assert.ok(z);
   assert.equal(w.hasStatus(z, 'zmb:alert'), false);
   // Clear road, 6 tiles away.
-  place(w.player, ...T(22, 10));
+  place(w.player, ...T(26, 13));
   w.step();
   assert.equal(w.hasStatus(z, 'zmb:alert'), true);
   assert.equal(w.hasStatus(w.player, 'zmb:alert'), false);
   // 10 tiles away: out of `when` range but within `until` range, so it stays alert.
-  place(w.player, ...T(26, 10));
+  place(w.player, ...T(30, 13));
   w.step();
   assert.equal(w.hasStatus(z, 'zmb:alert'), true);
   // Past 12 tiles: cleared.
-  place(w.player, ...T(29, 10));
+  place(w.player, ...T(33, 13));
   w.step();
   assert.equal(w.hasStatus(z, 'zmb:alert'), false);
   // Close again, then behind the house wall: cleared although only ~6 tiles away.
-  place(w.player, ...T(22, 10));
+  place(w.player, ...T(26, 13));
   w.step();
   assert.equal(w.hasStatus(z, 'zmb:alert'), true);
-  place(w.player, ...T(12, 6));
+  place(w.player, ...T(16, 8));
   w.step();
   assert.equal(w.hasStatus(z, 'zmb:alert'), false);
 });
@@ -163,19 +163,19 @@ test('vampire: the window is see-through, and a bat spots the vampire through it
   const window = w.def.tiles.find((t) => t.id === 'town:window')!;
   assert.equal(window.walkable, false);
   assert.equal(window.opaque, false);
-  assert.equal(w.grid.tileAt(...M(3, 8))!.id, 'town:window');
-  const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(3, 6)[0] && e.y === M(3, 6)[1])!;
+  assert.equal(w.grid.tileAt(...M(4, 12))!.id, 'town:window');
+  const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(4, 9)[0] && e.y === M(4, 9)[1])!;
   assert.ok(bat);
   assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
-  // The only cell between (3,7) and (3,9) is the window.
-  place(bat, ...M(3, 7));
-  place(w.player, ...M(3, 9));
+  // The only cell between (4,11) and (4,13) is the window.
+  place(bat, ...M(4, 11));
+  place(w.player, ...M(4, 13));
   w.step();
   assert.equal(w.hasStatus(bat, 'vamp:alert'), true);
   assert.equal(w.hasStatus(w.player, 'vamp:alert'), false);
   // The same shape through a wall is blocked.
-  assert.equal(w.grid.tileAt(...M(1, 8))!.id, 'std:wall');
-  assert.equal(lineOfSight(w.grid, ...M(1, 7), ...M(1, 9)), false);
+  assert.equal(w.grid.tileAt(...M(2, 12))!.id, 'std:wall');
+  assert.equal(lineOfSight(w.grid, ...M(2, 11), ...M(2, 13)), false);
 });
 
 test('garden: the cat gets curious about a bunny in the open, and loses interest once it hides in a bush', () => {

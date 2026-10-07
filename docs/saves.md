@@ -162,10 +162,12 @@ and in a seeded fuzz over 600 ticks on every genre.
 
 ## Size
 
-Saves are plain JSON, without compression. A 256×256 town with 1025
-entities (each with an inventory) and about 2100 filled tile containers
-saves to about **0.6 M characters**, so the quicksave and three slots
-together stay well under the usual ~5 M-character `localStorage` quota.
+Saves are plain JSON, without compression. The 343×343 zombie city at
+creation (961 entities, about 1100 filled tile containers) saves to about
+**0.43 M characters**; the older 256×256 city with 1025 entities, each
+with an inventory, and about 2100 filled containers saved to about 0.6 M.
+Either way the quicksave and three slots together stay well under the
+usual ~5 M-character `localStorage` quota.
 The map itself is not saved, only the cells that changed.
 
 ## Shells

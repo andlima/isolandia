@@ -74,12 +74,12 @@
     },
     {
       "id": 5,
-      "image": "../../assets/cupboard_s.svg",
+      "image": "../../assets/cupboard_w.svg",
       "properties": [
         {
           "name": "facing",
           "type": "string",
-          "value": "s"
+          "value": "n"
         },
         {
           "name": "tile",
@@ -106,12 +106,12 @@
     },
     {
       "id": 7,
-      "image": "../../assets/fridge_s.svg",
+      "image": "../../assets/fridge_w.svg",
       "properties": [
         {
           "name": "facing",
           "type": "string",
-          "value": "s"
+          "value": "n"
         },
         {
           "name": "tile",

@@ -2,8 +2,8 @@
 
 Spec: `specs/m6-chunked-world.md`. The target is the zombie **city** (the
 `town` base's city, populated by the `zombie` mod since M7): a
-256×256 composite map, two floors in places, ~960 entities, at the 10 Hz
-tick. Recorded target (not a test gate): **steady p95 ≤ 10 ms per tick in
+343×343 composite map (roomier since `roomier-maps`; 256×256 before),
+two floors in places, ~960 entities, at the 10 Hz tick. Recorded target (not a test gate): **steady p95 ≤ 10 ms per tick in
 Node** on the dev machine.
 
 ## How to run
@@ -27,23 +27,27 @@ comparison.
 
 Dev machine: WSL2 Linux, 8 cores, Node v24.14.1. 3000 ticks (5 sim
 minutes), seed 1. The max is the first ticks (JIT warm-up and the first
-region labelling, ~5 ms on the city).
+region labelling of the city's 235 298 cells).
 
 | Game | Map | Entities | Active radius | Tick avg | Tick p95 | Tick max | Active avg (min–max) | Dormant avg | A* expanded/tick avg | max | Searches | Region rejects | Budget hits |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| zombie | city 256×256×2 | 961 | 64 | 0.22 ms | 0.38 ms | 12.6 ms | 252 (91–401) | 709 | 7.8 | 4922 | 1504 | 0 | 0 |
-| zombie | city 256×256×2 | 961 | none | 0.35 ms | 0.59 ms | 15.1 ms | 961 | 0 | 7.3 | 4911 | 1341 | 0 | 0 |
-| vampire | estate 96×96×2 | 154 | 64 | 0.07 ms | 0.16 ms | 6.6 ms | 147 (69–154) | 7 | 13.5 | 2463 | 303 | 0 | 0 |
-| vampire | estate 96×96×2 | 154 | none | 0.07 ms | 0.16 ms | 7.3 ms | 154 | 0 | 12.8 | 2982 | 539 | 0 | 0 |
+| zombie | city 343×343×2 | 961 | 64 | 0.26 ms | 0.46 ms | 36.3 ms | 144 (73–250) | 817 | 17.5 | 3912 | 5038 | 0 | 0 |
+| zombie | city 343×343×2 | 961 | none | 0.44 ms | 0.72 ms | 32.0 ms | 961 | 0 | 17.8 | 3912 | 5160 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | 64 | 0.09 ms | 0.16 ms | 6.2 ms | 138 (41–154) | 16 | 5.6 | 4253 | 140 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | none | 0.10 ms | 0.19 ms | 6.4 ms | 154 | 0 | 4.7 | 4233 | 142 | 0 | 0 |
 | garden | garden 24×16 | 6 | 64 | 0.01 ms | 0.02 ms | 1.4 ms | 6 | 0 | 0.3 | 140 | 97 | 0 | 0 |
 
-The steady p95 on the city is **0.38 ms**, ~26× under the 10 ms target.
-Load (parse, compose, validate) takes ~170 ms and `World.create` ~45 ms.
+The steady p95 on the city is **0.46 ms**, ~22× under the 10 ms target
+(0.38 ms on the old 256×256 city: the bigger map spreads the same NPCs
+thinner, so fewer are active, but the walk is longer and NPC searches
+cross wider rooms and yards). The max rose with the map: the first region
+labelling covers 1.8× the cells. Load (parse, compose, validate) takes
+~220–260 ms and `World.create` ~80–100 ms.
 
 ## Steps
 
-The spec's order, with what each step did to the numbers (city, 961
-entities; the "before" figures are the same build with the step's feature
+The spec's order, with what each step did to the numbers (the 256×256
+city of the time, 961 entities; the "before" figures are the same build with the step's feature
 switched off or measured right before it landed):
 
 1. **Composite maps and populate**: the city itself; 0.28 ms avg per tick

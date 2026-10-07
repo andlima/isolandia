@@ -837,8 +837,8 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
 
   // The bedroom window of the north-west house, from inside.
   const T = (x: number, y: number) => genreCell('zombie', x, y);
-  const [wx, wy] = T(16, 3);
-  const [ix, iy] = T(15, 3);
+  const [wx, wy] = T(22, 3);
+  const [ix, iy] = T(21, 3);
   assert.equal(cell(w, wx, wy), 'town:window');
   walk(w, ix, iy);
   const offered = w.availableActions().find((a) => a.action === 'town:barricade' && a.x === wx && a.y === wy);
@@ -863,7 +863,7 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   assert.equal(have('town:hammer'), 1);
   assert.ok(w.noises.some((n) => n.x === ix && n.y === iy && n.radius >= 12), 'the hammering is heard at completion');
   if (shambler) assert.equal(shambler.heardTick, start.tick + 60);
-  assert.ok(!lineOfSight(w.grid, ...T(19, 3), ...T(14, 3)), 'the barricade blocks the view in');
+  assert.ok(!lineOfSight(w.grid, ...T(25, 3), ...T(20, 3)), 'the barricade blocks the view in');
   assert.ok(!w.availableActions().some((a) => a.action === 'town:barricade' && a.x === wx));
 });
 
@@ -894,18 +894,18 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   const hp = () => w.value(w.player, 'std:hp')!;
   const M = (x: number, y: number) => genreCell('vampire', x, y);
   // Shutters on the west room's north window.
-  walk(w, ...M(3, 1));
-  assert.equal(cell(w, ...M(3, 0)), 'town:window');
-  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(3, 0)[0], y: M(3, 0)[1], z: 0 });
+  walk(w, ...M(4, 1));
+  assert.equal(cell(w, ...M(4, 0)), 'town:window');
+  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(4, 0)[0], y: M(4, 0)[1], z: 0 });
   steps(w, 21);
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
-  assert.equal(cell(w, ...M(3, 0)), 'vamp:shuttered_window');
-  assert.equal(w.grid.opaque[w.grid.index(...M(3, 0))], 1);
+  assert.equal(cell(w, ...M(4, 0)), 'vamp:shuttered_window');
+  assert.equal(w.grid.opaque[w.grid.index(...M(4, 0))], 1);
 
   // Rest is only offered on the crypt floor.
   assert.equal(w.availableActions().find((a) => a.action === 'vamp:rest')!.reason, 'cannot_act');
-  walk(w, ...M(10, 2));
-  assert.equal(w.grid.tileAt(...M(10, 2))!.id, 'vamp:crypt');
+  walk(w, ...M(11, 5));
+  assert.equal(w.grid.tileAt(...M(11, 5))!.id, 'vamp:crypt');
   assert.equal(w.availableActions().find((a) => a.action === 'vamp:rest')!.ok, true);
 
   // By the coffin, the hall's bat spots the vampire and screeches: the rest is
@@ -921,8 +921,8 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   assert.ok(hp() < 45, `${hp()}`);
 
   // Down in the wine cellar's crypt floor, out of the bats' sight, a rest completes.
-  walk(w, ...M(20, 11));
-  assert.equal(w.grid.tileAt(...M(20, 11))!.id, 'vamp:crypt');
+  walk(w, ...M(27, 16));
+  assert.equal(w.grid.tileAt(...M(27, 16))!.id, 'vamp:crypt');
   const before = hp();
   let rested = false;
   for (let attempt = 0; attempt < 10 && !rested; attempt++) {

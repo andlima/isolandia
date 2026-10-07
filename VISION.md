@@ -180,8 +180,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   until ~M4.
 - **Performance:** compile expressions to closures at load; per-chunk
   depth sorting; NPCs beyond an active radius go dormant (M6). Measured on
-  the 256×256 zombie city with 961 entities (`docs/perf.md`): **0.22 ms avg,
-  0.38 ms p95 per tick** in Node (0.35 / 0.59 ms without dormancy), far
+  the 343×343 zombie city with 961 entities (`docs/perf.md`): **0.26 ms avg,
+  0.46 ms p95 per tick** in Node (0.44 / 0.72 ms without dormancy), far
   under the 10 ms target. Browser fps on the city is still a manual
   follow-up (as in S0). LOD for drift and systems is not needed yet.
 - **Scope:** Zomboid has more than a decade of development. The target is
@@ -513,7 +513,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 M7 is delivered: **overrides and removals** by qualified id (spec
 `m7-overrides`), **stacks** with a pack catalog, a resolver and a title
 screen (spec `m7-stacks`), and **one town, two mods** (spec
-`m7-town-base`). The genre-free `town` base game holds the 256×256 city,
+`m7-town-base`). The genre-free `town` base game holds the city (343×343 since the roomier
+maps of `roomier-maps`),
 its furniture, food, loot, cooking, bandages, barricading and a
 needs-driven `resident`; alone it is a quiet sandbox with no NPCs.
 `zombie` is a mod that fills the town with the dead (map `populate` and
@@ -529,11 +530,13 @@ mystery or a wild-west duel.
 
 M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
 `m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked
-world** (spec `m6-chunked-world`). The zombie game is a 256×256 city built
+world** (spec `m6-chunked-world`). The zombie game is a city built
 from house, store, garage, park and road parts around the old town block,
 with ~960 dead (dense downtown, sparse at the edges) that rest while far
-away; the vampire's mansion stands in a 96×96 estate of graveyards and
-village cottages with ~150 bats.
+away; the vampire's mansion stands in an estate of graveyards and
+village cottages with ~150 bats. Task `roomier-maps` made both roomier:
+3-wide rooms, 2-wide halls, 5-wide roads and yards between buildings, on a
+343×343 city and a 128×128 estate (256×256 and 96×96 before).
 
 M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
 **context menu** (spec `m5-context-menu`) and **recipes** (spec
