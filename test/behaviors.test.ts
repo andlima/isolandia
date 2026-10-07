@@ -522,11 +522,11 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 test('zombie: a shambler spots the survivor, chases them down, then searches and wanders again', () => {
   const w = game('zombie');
   const T = (x: number, y: number) => genreCell('zombie', x, y);
-  const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === T(16, 10)[0] && e.y === T(16, 10)[1])!;
+  const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === T(20, 13)[0] && e.y === T(20, 13)[1])!;
   assert.ok(z);
   assert.equal(stateOf(z), 'wander');
   assert.ok(w.entities.filter((e) => e.archetype.id === 'zmb:crawler').every((e) => e.behavior?.id === 'zmb:shambler'));
-  place(w.player, ...T(22, 10));
+  place(w.player, ...T(26, 13));
   let adjacent = -1;
   for (let t = 0; t < 100 && adjacent < 0; t++) {
     w.step();
@@ -537,7 +537,7 @@ test('zombie: a shambler spots the survivor, chases them down, then searches and
   assert.equal(w.value(w.player, 'std:hp'), 100, 'zombies do no damage yet');
 
   // Out of sight in a far house: chase → search → (5 s) → wander.
-  place(w.player, ...T(2, 18));
+  place(w.player, ...T(3, 24));
   const states: string[] = [];
   for (let t = 0; t < 80; t++) {
     w.step();
@@ -551,11 +551,11 @@ test('vampire: a bat flees the vampire, then flies home and roosts', () => {
   // Seed 2: with the estate's bats drawing from the world RNG, seed 1 lets another mansion bat wander into view.
   const w = game('vampire', 2);
   const M = (x: number, y: number) => genreCell('vampire', x, y);
-  const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(3, 6)[0] && e.y === M(3, 6)[1])!;
+  const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(4, 9)[0] && e.y === M(4, 9)[1])!;
   assert.ok(bat);
   assert.equal(stateOf(bat), 'roost');
   assert.ok(w.entities.filter((e) => e.archetype.id === 'std:humanoid').every((e) => e.state === -1));
-  place(w.player, ...M(1, 6));
+  place(w.player, ...M(2, 9));
   const dist = () => Math.hypot(bat.x - w.player.x, bat.y - w.player.y);
   for (let t = 0; t < 5 && stateOf(bat) !== 'flee'; t++) w.step();
   assert.equal(stateOf(bat), 'flee');
@@ -565,14 +565,14 @@ test('vampire: a bat flees the vampire, then flies home and roosts', () => {
   assert.ok(dist() > start, `distance ${dist()} did not grow from ${start}`);
 
   // The vampire leaves for the cellar, out of range.
-  place(w.player, ...M(18, 11));
+  place(w.player, ...M(25, 16));
   const states: string[] = [];
   for (let t = 0; t < 150; t++) {
     w.step();
     if (states[states.length - 1] !== stateOf(bat)) states.push(stateOf(bat));
   }
   assert.deepEqual(states, ['flee', 'return', 'roost']);
-  assert.ok(cheb(bat.x, bat.y, ...M(3, 6)) <= 3);
+  assert.ok(cheb(bat.x, bat.y, ...M(4, 9)) <= 3);
 });
 
 test('garden: the cat chases a visible bunny and startles it, then gives up when it hides in a bush', () => {
@@ -647,9 +647,9 @@ test('garden: a butterfly flits away from the bunny, then drifts home to its flo
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; visited: Set<string> } {
   const w = game(name, seed);
   // Start next to the NPCs so chases and flights happen.
-  if (name === 'zombie') place(w.player, ...genreCell(name, 22, 10));
+  if (name === 'zombie') place(w.player, ...genreCell(name, 26, 13));
   else if (name === 'garden') place(w.player, 11, 5);
-  else place(w.player, ...genreCell(name, 4, 6));
+  else place(w.player, ...genreCell(name, 5, 9));
   const input = new Rng(seed ^ 0xbe4a);
   const visited = new Set<string>();
   for (let t = 0; t < ticks; t++) {

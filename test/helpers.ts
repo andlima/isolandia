@@ -21,9 +21,9 @@ export const GAMES = {
  * garden is not a composite).
  */
 export const GENRE_AT = {
-  town: { x: 106, y: 117 },
-  zombie: { x: 106, y: 117 },
-  vampire: { x: 37, y: 41 },
+  town: { x: 142, y: 157 },
+  zombie: { x: 142, y: 157 },
+  vampire: { x: 49, y: 54 },
   garden: { x: 0, y: 0 },
 } as const;
 

@@ -2,8 +2,9 @@
 # of the mansion (Tiled) and two ASCII part maps, each placed several times.
 # Outside, the sun falls on open ground (`sunbeam`); only the buildings shade.
 maps:
-  # A walled plot of crypt floor and coffins, with a gate on the south side.
-  # Bats roost among the graves (8 per plot).
+  # A walled plot of crypt floor and three rows of coffins with 2-wide aisles
+  # between them, and a gate on the south side. Bats roost among the graves
+  # (8 per plot).
   - id: graveyard
     legend:
       "#": { tile: wall }
@@ -12,20 +13,25 @@ maps:
       "=": { tile: coffin, facing: s }
       "'": { tile: sunbeam }
     rows:
-      - "##############"
-      - "#____________#"
-      - "#_=_=_=_=_=__#"
-      - "#____________#"
-      - "#_=_=_=_=_=__#"
-      - "#____________#"
-      - "#_=_=_=_=_=__#"
-      - "#____________#"
-      - "######+#######"
-      - "''''''''''''''"
+      - "#################"
+      - "#_______________#"
+      - "#_______________#"
+      - "#_=__=__=__=__=_#"
+      - "#_______________#"
+      - "#_______________#"
+      - "#_=__=__=__=__=_#"
+      - "#_______________#"
+      - "#_______________#"
+      - "#_=__=__=__=__=_#"
+      - "#_______________#"
+      - "#_______________#"
+      - "########+########"
+      - "'''''''''''''''''"
     populate:
       - { archetype: bat, count: 8 }
   # A village cottage: carpet and creaky boards, a chest of heirlooms and
-  # bookshelves (empty: only the mansion's library is stocked).
+  # bookshelves (empty: only the mansion's library is stocked) against the
+  # north wall, and a clear way in from the door.
   - id: cottage
     legend:
       "#": { tile: wall }
@@ -37,37 +43,39 @@ maps:
       "L": { tile: bookshelf, facing: s }
       "'": { tile: sunbeam }
     rows:
-      - '###"##"###'
-      - "#X.,...LL#"
-      - "#........#"
-      - '"........"'
-      - "#...,....#"
-      - "#........#"
-      - "####+#####"
-      - "''''''''''"
+      - '####"####"####'
+      - "#X...,.....LL#"
+      - "#............#"
+      - "#............#"
+      - '"............"'
+      - "#....,.......#"
+      - "#............#"
+      - "#............#"
+      - "######+#######"
+      - "''''''''''''''"
     rooms:
-      - { rect: [1, 1, 8, 5], tags: [cottage] }
+      - { rect: [1, 1, 12, 7], tags: [cottage] }
     populate:
       - { archetype: bat, count: 1, room: cottage }
   - id: estate
-    size: [96, 96]
+    size: [128, 128]
     fill: sunbeam
-    player: [48, 45]                 # in the great hall (the mansion is at [37, 41])
+    player: [63, 60]                 # in the great hall (the mansion is at [49, 54])
     parts:
-      - { map: mansion, at: [37, 41] }
-      - { map: graveyard, at: [6, 6] }
-      - { map: graveyard, at: [76, 6] }
-      - { map: graveyard, at: [6, 30] }
-      - { map: graveyard, at: [76, 30] }
-      - { map: cottage, at: [6, 80] }
-      - { map: cottage, at: [20, 80] }
-      - { map: cottage, at: [34, 80] }
-      - { map: cottage, at: [52, 80] }
-      - { map: cottage, at: [66, 80] }
-      - { map: cottage, at: [80, 80] }
+      - { map: mansion, at: [49, 54] }
+      - { map: graveyard, at: [8, 8] }
+      - { map: graveyard, at: [103, 8] }
+      - { map: graveyard, at: [8, 34] }
+      - { map: graveyard, at: [103, 34] }
+      - { map: cottage, at: [8, 106] }
+      - { map: cottage, at: [27, 106] }
+      - { map: cottage, at: [46, 106] }
+      - { map: cottage, at: [68, 106] }
+      - { map: cottage, at: [87, 106] }
+      - { map: cottage, at: [106, 106] }
     # Bats over the grounds; the mansion's surroundings start clear.
     populate:
-      - { archetype: bat, count: 40, rect: [0, 0, 96, 28] }
-      - { archetype: bat, count: 30, rect: [0, 60, 96, 36] }
-      - { archetype: bat, count: 20, rect: [0, 28, 30, 32] }
-      - { archetype: bat, count: 20, rect: [66, 28, 30, 32] }
+      - { archetype: bat, count: 40, rect: [0, 0, 128, 40] }
+      - { archetype: bat, count: 30, rect: [0, 82, 128, 46] }
+      - { archetype: bat, count: 20, rect: [0, 40, 40, 42] }
+      - { archetype: bat, count: 20, rect: [90, 40, 38, 42] }

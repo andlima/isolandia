@@ -564,8 +564,13 @@ function fuzz(seed: number): Script {
 }
 
 const FUZZ_TICKS = 600;
-/** Script seeds that differ from the name length (the default): the town's own (4) acts too rarely. */
-const FUZZ_SEED: Record<string, number> = { town: 3 };
+/**
+ * Script seeds that differ from the name length (the default), chosen so the
+ * script acts often enough: in the roomier city the start road is further
+ * from any container, and the town's and the zombie's own seeds (4, 6) act
+ * too rarely. Seed 9 plays 18 actions on both.
+ */
+const FUZZ_SEED: Record<string, number> = { town: 9, zombie: 9 };
 
 for (const [name, def] of [...Object.entries(GENRES), ['fixture', DEF] as const]) {
   test(`fuzz (${name}): saves at three random ticks restore exactly to tick ${FUZZ_TICKS}`, () => {
