@@ -224,6 +224,22 @@ export class ActivityRunner {
   }
 
   /**
+   * Ticks `s` would take if `e` started it on (x, y, z) now (the duration as
+   * `start` evaluates it), or null when the expression throws or gives no number.
+   */
+  durationTicks(s: ActivitySource, e: Entity, x: number, y: number, z: number): number | null {
+    if (!s.duration.fn) return s.duration.ticks;
+    try {
+      const v = Number(s.duration.fn(this.bind(s, e, x, y, z)));
+      return Number.isFinite(v) ? secondsToTicks(v, this.host.ticksPerSecond) : null;
+    } catch {
+      return null;
+    } finally {
+      this.unbind();
+    }
+  }
+
+  /**
    * Start `s` for `e` on (x, y, z) at `tick`: check, evaluate the duration once,
    * then complete at once (0 ticks) or begin an activity, which clears the
    * entity's path (and its pending `then`) and pending intent. Records the outcome.

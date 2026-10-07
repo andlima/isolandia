@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { add, hudModel, loadPacksOrThrow, reasonText, World, type Action, type ActionFailure, type Definition, type Entity } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
-import { clampMenu, contextMenu, menuTitle, moveSelection, runMenuItem } from '../src/web/menu.ts';
+import { clampMenu, clickPlan, contextMenu, formatDuration, hoverInfo, menuItems, menuRows, menuTitle, moveSelection, runMenuItem, shortcutOf } from '../src/web/menu.ts';
 import { clickIntent } from '../src/web/panels.ts';
 import { fixture, GAMES, genreCell } from './helpers.ts';
 
@@ -293,6 +293,8 @@ test('interactionsAt: tile actions with missing items, ignoring reach; pure', ()
       missing: [{ item: 't:board', label: 'Board', count: 1 }],
       action: BOARD,
       inReach: false,
+      duration: 6,
+      uses: [{ item: 't:board', label: 'Board', count: 2 }],
     },
   ]);
   assert.equal(reasonText(list[0]!), 'Needs: Board');
@@ -415,22 +417,26 @@ test('menu: fixture mappings for tile actions, open, take all and walk', () => {
   give(w, 't:board', 2);
   const bin = w.containersAt(1, 3)[0]!;
   bin.stacks.push({ item: w.def.ids.items['t:salve']!, count: 2 });
-  assert.deepEqual(contextMenu(w, 7, 1), [{ label: 'Board up', disabled: false, run: { intent: { kind: 'goto', x: 7, y: 1, z: 0, adjacent: true, then: BOARD } } }]);
-  const far = contextMenu(w, 1, 3);
-  assert.deepEqual(far[0], { label: 'Open Bin', disabled: false, run: { intent: clickIntent(w, 1, 3), openLoot: true, container: bin.id } });
+  assert.deepEqual(contextMenu(w, 7, 1), {
+    items: [{ label: 'Board up', disabled: false, detail: '6s · uses 2× Board', run: { intent: { kind: 'goto', x: 7, y: 1, z: 0, adjacent: true, then: BOARD } } }],
+    disabled: [],
+    expanded: false,
+  });
+  const far = contextMenu(w, 1, 3).items;
+  assert.deepEqual(far[0], { label: 'Open Bin', disabled: false, default: true, run: { intent: clickIntent(w, 1, 3), openLoot: true, container: bin.id } });
   assert.deepEqual(far[1]!.run, {
     intent: { kind: 'goto', x: 1, y: 3, z: 0, adjacent: true, then: { kind: 'take', container: bin.id, item: 't:salve' } },
     openLoot: true,
     container: bin.id,
   });
-  assert.deepEqual(contextMenu(w, 5, 2)[1], { label: 'Walk here', disabled: false, run: { intent: { kind: 'goto', x: 5, y: 2, z: 0 } } });
+  assert.deepEqual(contextMenu(w, 5, 2).items[1], { label: 'Walk here', disabled: false, run: { intent: { kind: 'goto', x: 5, y: 2, z: 0 } } });
   moveTo(w.player, 2, 2);
-  const near = contextMenu(w, 1, 3);
+  const near = contextMenu(w, 1, 3).items;
   assert.deepEqual(near[0]!.run, { openLoot: true, container: bin.id });
   assert.deepEqual(near[1]!.run, { actions: [{ kind: 'take', container: bin.id, item: 't:salve' }] });
   // Running: intents and actions are queued; disabled items do nothing.
   const own = contextMenu(w, 2, 2);
-  const wait = own.find((i) => i.label === 'Wait')!;
+  const wait = own.disabled.find((i) => i.label === 'Wait')!;
   assert.deepEqual([wait.disabled, wait.hint], [true, 'Only on mud']);
   assert.equal(runMenuItem(w, wait), false);
   assert.equal(w.snapshot().actions.length, 0);
@@ -456,13 +462,13 @@ test('menu: zombie window from afar, without and with materials', () => {
     const k = inv.stacks.findIndex((s) => s.item === ids[id]);
     if (k >= 0) inv.stacks.splice(k, 1);
   }
-  const without = contextMenu(w, wx, wy).find((i) => i.label === 'Barricade')!;
+  const without = contextMenu(w, wx, wy).disabled.find((i) => i.label === 'Barricade')!;
   assert.equal(without.disabled, true);
   assert.equal(without.hint, 'Needs: Hammer, 2× Plank, 4× Nails');
   inv.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
-  const item = contextMenu(w, wx, wy).find((i) => i.label === 'Barricade')!;
+  const item = contextMenu(w, wx, wy).items.find((i) => i.label === 'Barricade')!;
   const act: Action = { kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0 };
-  assert.deepEqual(item, { label: 'Barricade', disabled: false, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, adjacent: true, then: act } } });
+  assert.deepEqual(item, { label: 'Barricade', disabled: false, detail: item.detail, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, adjacent: true, then: act } } });
   // The survivor walks up and starts hammering.
   runMenuItem(w, item);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();
@@ -473,19 +479,19 @@ test('menu: zombie window from afar, without and with materials', () => {
 test('menu: vampire shutters from afar, and rest on your own cell', () => {
   const w = game('vampire');
   const [sx, sy] = genreCell('vampire', 3, 0);
-  const shutter = contextMenu(w, sx, sy).find((i) => i.label === 'Close shutters')!;
+  const shutter = contextMenu(w, sx, sy).items.find((i) => i.label === 'Close shutters')!;
   assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: sx, y: sy, z: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: sx, y: sy, z: 0 } } });
   assert.equal(shutter.disabled, false);
   const { x, y } = w.player;
-  const rest = contextMenu(w, x, y).find((i) => i.label === 'Rest')!;
+  const rest = contextMenu(w, x, y).disabled.find((i) => i.label === 'Rest')!;
   assert.deepEqual([rest.disabled, rest.hint], [true, 'Only in the crypt']);
-  assert.ok(!contextMenu(w, x, y).some((i) => i.label === 'Walk here'));
+  assert.ok(!menuItems(contextMenu(w, x, y)).some((i) => i.label === 'Walk here'));
   // Over in the crypt.
   const [cx, cy] = genreCell('vampire', 10, 2);
   w.queueIntent({ kind: 'goto', x: cx, y: cy, z: 0 });
   for (let i = 0; i < 200 && (w.player.x !== cx || w.player.y !== cy); i++) w.step();
-  const ok = contextMenu(w, cx, cy).find((i) => i.label === 'Rest')!;
-  assert.deepEqual(ok, { label: 'Rest', disabled: false, run: { actions: [{ kind: 'act', action: 'vamp:rest' }] } });
+  const ok = contextMenu(w, cx, cy).items.find((i) => i.label === 'Rest')!;
+  assert.deepEqual(ok, { label: 'Rest', disabled: false, detail: '10s', run: { actions: [{ kind: 'act', action: 'vamp:rest' }] } });
   assert.equal(menuTitle(w, cx, cy), `${w.grid.tileAt(cx, cy)!.label} · hall`);
   assert.equal(menuTitle(w, sx, sy), w.grid.tileAt(sx, sy)!.label);
   assert.equal(menuTitle(w, -1, 0), '');
@@ -500,4 +506,221 @@ test('menu: clamping inside the viewport and arrow selection', () => {
   assert.equal(moveSelection(3, 2, 1), 0);
   assert.equal(moveSelection(3, 0, -1), 2);
   assert.equal(moveSelection(0, -1, 1), -1);
+});
+
+// ── Smart click, menu layout and hover ──────────────────────────────────────
+
+/** A walkable cell next to (x, y) on the player's floor. */
+function besideOf(w: World, x: number, y: number): [number, number] {
+  for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+    if (w.grid.walkable(x + dx, y + dy, w.player.z)) return [x + dx, y + dy];
+  }
+  throw new Error(`nothing walkable next to (${x}, ${y})`);
+}
+
+test('clickPlan: zombie fridge opens from afar and near; window always menus; wall walks; pile opens; own cell', () => {
+  const w = game('zombie');
+  const fridge = [...w.containers.values()].find((c) => c.kind === 'tile' && w.def.tiles[c.tile]!.id === 'town:fridge')!;
+  const far = clickPlan(w, fridge);
+  assert.equal(far.kind, 'run');
+  assert.ok(far.kind === 'run');
+  assert.equal(far.entry.kind, 'open');
+  assert.deepEqual(far.item.run, { intent: clickIntent(w, fridge.x, fridge.y), openLoot: true, container: fridge.id });
+  const hash = w.hash();
+  const rng = w.rng.state;
+  // The window: Barricade needs a hammer (disabled), nothing safe → menu; with materials too.
+  const [wx, wy] = genreCell('zombie', 16, 3);
+  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0 }).kind, 'menu');
+  const ids = w.def.ids.items;
+  const inv = w.player.inv!;
+  inv.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
+  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0 }).kind, 'menu');
+  inv.stacks.splice(-3, 3);
+  // A plain wall: walk (today's clickIntent).
+  const wall = [126, 93] as const;
+  assert.equal(w.grid.tileAt(wall[0], wall[1])!.id, 'std:wall');
+  assert.deepEqual(clickPlan(w, { x: wall[0], y: wall[1], z: 0 }), { kind: 'walk', intent: clickIntent(w, wall[0], wall[1]) });
+  // The player's own road cell: nothing to do.
+  const { x: px, y: py } = w.player;
+  assert.deepEqual(clickPlan(w, { x: px, y: py, z: 0 }), { kind: 'none' });
+  assert.equal(w.hash(), hash);
+  assert.equal(w.rng.state, rng);
+  // Next to the fridge, the open is immediate.
+  const [bx, by] = besideOf(w, fridge.x, fridge.y);
+  moveTo(w.player, bx, by);
+  const near = clickPlan(w, fridge);
+  assert.ok(near.kind === 'run');
+  assert.deepEqual(near.item.run, { openLoot: true, container: fridge.id });
+  // A pile on the own cell: open it.
+  w.queueAction({ kind: 'drop', item: 'town:crackers' });
+  w.step();
+  const pile = clickPlan(w, { x: bx, y: by, z: 0 });
+  assert.ok(pile.kind === 'run');
+  assert.equal(pile.entry.kind, 'open');
+  assert.deepEqual(pile.item.run, { openLoot: true, container: w.containersAt(bx, by)[0]!.id });
+});
+
+test('clickPlan: vampire shutters menu; own cell with only Rest menus', () => {
+  const w = game('vampire');
+  const [sx, sy] = genreCell('vampire', 3, 0);
+  assert.equal(clickPlan(w, { x: sx, y: sy, z: 0 }).kind, 'menu');
+  const { x, y } = w.player;
+  assert.equal(clickPlan(w, { x, y, z: 0 }).kind, 'menu');
+  const own = contextMenu(w, x, y, 0, 'click');
+  assert.deepEqual(own.items, []);
+  assert.ok(own.disabled.some((i) => i.label === 'Rest'));
+  assert.equal(own.expanded, true);
+});
+
+test('contextMenu: default first, enabled next, Walk here only on right-click, disabled folded', () => {
+  const w = world();
+  give(w, 't:board', 2);
+  w.queueAction({ kind: 'drop', item: 't:board' });
+  w.step();
+  // Own cell: Sweep, Open Ground (default), Take all, Nap, Wait (disabled), Try luck.
+  const own = contextMenu(w, 1, 1);
+  assert.equal(own.items[0]!.label, 'Open Ground');
+  assert.equal(own.items[0]!.default, true);
+  assert.deepEqual(
+    own.items.slice(1, 4).map((i) => i.label),
+    ['Sweep', 'Take all from Ground', 'Nap'],
+  );
+  assert.ok(own.items.every((i) => !i.disabled && (i === own.items[0] || !i.default)));
+  assert.ok(own.disabled.every((i) => i.disabled));
+  assert.ok(own.disabled.some((i) => i.label === 'Wait'));
+  assert.equal(own.expanded, false);
+  assert.equal(clickPlan(w, { x: 1, y: 1, z: 0 }).kind, 'menu', 'Sweep and Nap are real actions');
+  // Another floor cell: Sweep, then Walk here on right-click only; walk is never the default.
+  const ctx = contextMenu(w, 5, 2);
+  assert.deepEqual(
+    ctx.items.map((i) => [i.label, i.default ?? false]),
+    [
+      ['Sweep', false],
+      ['Walk here', false],
+    ],
+  );
+  assert.deepEqual(
+    contextMenu(w, 5, 2, 0, 'click').items.map((i) => i.label),
+    ['Sweep'],
+  );
+  // The pane with too few boards: only disabled → expanded fold, nothing numbered.
+  w.player.inv!.stacks.length = 0;
+  const pane = contextMenu(w, 7, 1);
+  assert.deepEqual([pane.items.length, pane.disabled.length, pane.expanded], [0, 1, true]);
+  assert.equal(clickPlan(w, { x: 7, y: 1, z: 0 }).kind, 'menu');
+  assert.deepEqual(menuRows(pane, true), [
+    { kind: 'fold', label: "Can't do now (1) ▾", expanded: true },
+    { kind: 'item', item: pane.disabled[0]! },
+  ]);
+});
+
+test('menu rows: enabled entries numbered 1–9, then the fold; disabled never numbered or chosen', () => {
+  const w = world();
+  const own = contextMenu(w, 1, 1);
+  const rows = menuRows(own, false);
+  const keys = rows.flatMap((r) => (r.kind === 'item' ? [r.key ?? 0] : []));
+  assert.deepEqual(
+    keys,
+    own.items.map((_, k) => k + 1),
+  );
+  assert.deepEqual(rows.at(-1), { kind: 'fold', label: `Can't do now (${own.disabled.length}) ▸`, expanded: false });
+  const open = menuRows(own, true);
+  const tail = open.slice(rows.length);
+  assert.deepEqual(
+    tail.map((r) => (r.kind === 'item' ? [r.item.disabled, r.key ?? 0] : null)),
+    own.disabled.map(() => [true, 0]),
+  );
+  assert.equal(runMenuItem(w, own.disabled[0]!), false);
+  // Ten enabled items: only the first nine get a digit.
+  const many = { items: Array.from({ length: 10 }, (_, k) => ({ label: `a${k}`, disabled: false, run: {} })), disabled: [], expanded: false };
+  assert.deepEqual(
+    menuRows(many, false).map((r) => (r.kind === 'item' ? r.key : -1)),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, undefined],
+  );
+  assert.equal(shortcutOf('Digit1'), 1);
+  assert.equal(shortcutOf('Numpad9'), 9);
+  assert.equal(shortcutOf('Digit0'), 0);
+  assert.equal(shortcutOf('KeyE'), 0);
+});
+
+test('menu details: duration and uses on interactionsAt; formatted on enabled actions only', () => {
+  const w = game('zombie');
+  const [wx, wy] = genreCell('zombie', 16, 3);
+  const hash = w.hash();
+  const rng = w.rng.state;
+  const e = w.interactionsAt(wx, wy).find((i) => i.id === 'act:town:barricade')!;
+  assert.equal(w.hash(), hash);
+  assert.equal(w.rng.state, rng);
+  const action = w.def.actions[w.def.ids.actions['town:barricade']!]!;
+  assert.equal(e.duration, action.duration.ticks / w.def.ticksPerSecond);
+  assert.deepEqual(
+    e.uses,
+    action.consume.map((c) => ({ item: w.def.items[c.item]!.id, label: w.def.items[c.item]!.label, count: c.count })),
+  );
+  // Disabled: no detail, only the reason.
+  assert.equal(contextMenu(w, wx, wy).disabled[0]!.detail, undefined);
+  const ids = w.def.ids.items;
+  w.player.inv!.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
+  const item = contextMenu(w, wx, wy, 0, 'click').items[0]!;
+  assert.equal(item.label, 'Barricade');
+  assert.equal(item.detail, `${formatDuration(e.duration!)} · uses 2× Plank, 4× Nails`);
+  // Open and climb entries carry neither.
+  const fridge = [...w.containers.values()].find((c) => c.kind === 'tile' && w.def.tiles[c.tile]!.id === 'town:fridge')!;
+  assert.ok(w.interactionsAt(fridge.x, fridge.y).every((i) => i.duration === undefined && i.uses === undefined));
+  assert.deepEqual([formatDuration(8), formatDuration(80), formatDuration(60), formatDuration(0.3)], ['8s', '1m 20s', '1m', '1s']);
+});
+
+test('interactionsAt: duration of an expression, evaluated purely; uses absent without consume', () => {
+  const def = loadPacksOrThrow([
+    fixture({
+      ...FILES,
+      'actions.yaml': `actions:
+  - id: slow
+    label: Slow
+    target: self
+    duration: 'self.food / 10'
+    effects: [{ type: apply, measurement: food, delta: 1 }]
+  - id: odd
+    label: Odd
+    target: self
+    duration: 'random(1, 3)'
+    effects: [{ type: apply, measurement: food, delta: 1 }]
+`,
+    }),
+  ]);
+  const w = World.create(def, 1);
+  const hash = w.hash();
+  const rng = w.rng.state;
+  const own = w.interactionsAt(w.player.x, w.player.y);
+  assert.equal(own.find((e) => e.id === 'act:t:slow')!.duration, 5);
+  const odd = own.find((e) => e.id === 'act:t:odd')!;
+  assert.ok(odd.duration! >= 1 && odd.duration! <= 3);
+  assert.ok(own.every((e) => e.uses === undefined));
+  assert.equal(w.hash(), hash);
+  assert.equal(w.rng.state, rng);
+});
+
+test('hoverInfo: titles, hints and cursors', () => {
+  const w = game('zombie');
+  const fridge = [...w.containers.values()].find((c) => c.kind === 'tile' && w.def.tiles[c.tile]!.id === 'town:fridge')!;
+  assert.deepEqual(hoverInfo(w, { kind: 'tile', x: fridge.x, y: fridge.y, z: 0 }), { title: 'Fridge · kitchen', hint: 'Click: Open', cursor: 'pointer' });
+  const [wx, wy] = genreCell('zombie', 16, 3);
+  assert.deepEqual(hoverInfo(w, { kind: 'tile', x: wx, y: wy, z: 0 }), { title: 'Window', hint: "Click: Can't do now", cursor: 'pointer' });
+  const ids = w.def.ids.items;
+  w.player.inv!.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
+  assert.equal(hoverInfo(w, { kind: 'tile', x: wx, y: wy, z: 0 }).hint, 'Click: 1 action');
+  assert.deepEqual(hoverInfo(w, { kind: 'ground', x: 126, y: 93, z: 0 }), { title: 'Wall', hint: '', cursor: 'default' });
+  const stairs = w.def.ids.tiles['std:stairs']!;
+  const i = w.grid.cells.findIndex((t, k) => t === stairs && w.grid.link(k, 1) >= 0);
+  const s = w.grid.cellOf(i);
+  assert.deepEqual(hoverInfo(w, { kind: 'tile', ...s }), { title: menuTitle(w, s.x, s.y, s.z), hint: 'Click: Go up', cursor: 'pointer' });
+  const p = w.player;
+  assert.deepEqual(hoverInfo(w, { kind: 'entity', x: p.x, y: p.y, z: p.z, entity: p }), { title: p.archetype.label, hint: '', cursor: 'not-allowed' });
+  // A pile: Ground plus its first items; a floor cell just walks.
+  w.queueAction({ kind: 'drop', item: 'town:crackers' });
+  w.queueAction({ kind: 'drop', item: 'town:water_bottle' });
+  w.step();
+  const pile = w.containersAt(p.x, p.y)[0]!;
+  const labels = pile.stacks.map((st) => w.def.items[st.item]!.label).join(', ');
+  assert.deepEqual(hoverInfo(w, { kind: 'pile', x: p.x, y: p.y, z: p.z, container: pile }), { title: `Ground · ${labels}`, hint: 'Click: Open', cursor: 'pointer' });
 });

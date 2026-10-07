@@ -4,7 +4,7 @@
  *   root (camera transform)
  *     floor z (one per map floor, raised by z × FLOOR_H; hidden above the view floor)
  *       ground   — flat tiles, one container per built 16×16 render chunk
- *       markers  — path target outline, unreachable flash, context-menu target
+ *       markers  — hover outline, path target outline, unreachable flash, context-menu target
  *       objects  — one container per diagonal (x + y); raised tiles, ground
  *                  piles and entities, depth-sorted inside their diagonal only
  *
@@ -54,6 +54,8 @@ const FLASH_MS = 600;
 const TARGET_COLOR = 0xffd23f;
 const INVALID_COLOR = 0xff3355;
 const MENU_COLOR = 0xffffff;
+const HOVER_COLOR = 0x8fd3ff;
+const HOVER_ALPHA = 0.55;
 
 /** A built chunk. */
 interface Chunk {
@@ -165,6 +167,8 @@ export class IsoScene {
   private invalidUntil = 0;
   /** Steady outline on the open context menu's cell. */
   private readonly menuMark: Sprite;
+  /** Faint outline on the hovered target's cell. */
+  private readonly hoverMark: Sprite;
   private tint = 0xffffff;
   /** Tile index per cell as drawn by a built chunk (to find the cells a map edit changed). */
   private readonly drawn: Uint16Array;
@@ -208,8 +212,10 @@ export class IsoScene {
     this.target = sprite(textures.outline(TARGET_COLOR));
     this.invalid = sprite(textures.outline(INVALID_COLOR));
     this.menuMark = sprite(textures.outline(MENU_COLOR));
-    this.target.visible = this.invalid.visible = this.menuMark.visible = false;
-    this.floors[0]!.markers.addChild(this.target, this.invalid, this.menuMark);
+    this.hoverMark = sprite(textures.outline(HOVER_COLOR));
+    this.hoverMark.alpha = HOVER_ALPHA;
+    this.target.visible = this.invalid.visible = this.menuMark.visible = this.hoverMark.visible = false;
+    this.floors[0]!.markers.addChild(this.hoverMark, this.target, this.invalid, this.menuMark);
   }
 
   /** Create a chunk's tile sprites: flat tiles in its ground container, raised ones in the object buckets. Empty cells draw nothing. */
@@ -352,6 +358,12 @@ export class IsoScene {
     this.place(this.invalid, x, y, z);
     this.invalid.visible = true;
     this.invalidUntil = now + FLASH_MS;
+  }
+
+  /** Outline the hovered target's cell (null hides it). */
+  markHover(cell: { x: number; y: number; z: number } | null): void {
+    this.hoverMark.visible = cell !== null;
+    if (cell) this.place(this.hoverMark, cell.x, cell.y, cell.z);
   }
 
   /** Outline a cell while the context menu is open for it (null hides it). */

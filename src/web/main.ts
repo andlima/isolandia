@@ -14,9 +14,11 @@ import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
 import { Hud } from './hud.ts';
+import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
+import { clickPlan } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
 import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
@@ -127,10 +129,12 @@ async function main(): Promise<void> {
    * Only its cell is used; the player's own sprite gives the player's cell.
    */
   const targetAt = (sx: number, sy: number) => session.scene.pickTarget(sx, sy);
+  /** Right-click, long-press: the menu with `Walk here`. */
   const openMenu = (sx: number, sy: number) => {
     const t = targetAt(sx, sy);
     session.menu.open(t.x, t.y, t.z, sx, sy);
   };
+  const hover = new Hover(document.body, app.canvas);
 
   const perf = new PerfMeter();
   const loop = new FixedTickLoop(
@@ -203,7 +207,7 @@ async function main(): Promise<void> {
       session.menu.close();
       rig.zoom(sx, sy, f, playerIso(loop.alpha), app.screen.width, app.screen.height);
     },
-    click: (sx, sy) => {
+    click: (sx, sy, shift) => {
       // A press outside an open menu only closes it.
       const { menu, world } = session;
       if (menu.dismissed) {
@@ -211,8 +215,14 @@ async function main(): Promise<void> {
         return;
       }
       const t = targetAt(sx, sy);
-      world.queueIntent(clickIntent(world, t.x, t.y, t.z));
+      // Shift-click always walks; otherwise the click plan runs the safe default or opens the menu.
+      if (shift) return world.queueIntent(clickIntent(world, t.x, t.y, t.z));
+      const plan = clickPlan(world, t);
+      if (plan.kind === 'run') menu.run(plan.item);
+      else if (plan.kind === 'menu') menu.open(t.x, t.y, t.z, sx, sy, 'click');
+      else if (plan.kind === 'walk') world.queueIntent(plan.intent);
     },
+    hover: (p) => hover.move(p),
     longPress: openMenu,
     menu: openMenu,
     captureKey: (code) => session.menu.key(code),
@@ -259,6 +269,8 @@ async function main(): Promise<void> {
     const cam = rig.update(playerIso(loop.alpha), width, height);
     scene.markMenuTarget(s.menu.target);
     const stats = scene.update(cam, width, height, loop.alpha, now);
+    // Hover picks against the camera just applied; its outline shows from this frame on.
+    scene.markHover(hover.update(world, targetAt, now, !s.menu.isOpen && !world.ended, s.hud.visible));
     s.hud.update(world);
     perf.frame(now);
     if (s.hud.perfVisible) {
