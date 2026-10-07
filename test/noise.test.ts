@@ -526,6 +526,32 @@ test('garden: hopping on the gravel path draws a napping cat over to investigate
   }
 });
 
+test('garden: at night, hopping on the gravel path draws a prowling fox over to investigate', () => {
+  const def = loadPacksOrThrow(GAMES.garden.map((d) => readPack(d)));
+  const w = World.create({ ...def, clock: { ...def.clock, start: 21 * 60 } }, 1);
+  const fox = w.entities.find((e) => e.archetype.id === 'gdn:fox')!;
+  place(w.player, 3, 13); // out of the way
+  // Wait until the prowling fox is within earshot (7) of a gravel cell it is too far to see (6).
+  let spot: [number, number] | null = null;
+  for (let t = 0; t < 600 && !spot; t++) {
+    w.step();
+    if (stateOf(fox) !== 'prowl') continue;
+    for (let x = 2; x <= 21 && !spot; x++) {
+      const d = Math.hypot(x - fox.x, 7 - fox.y);
+      if (d > 6.3 && d < 6.9) spot = [x, 7];
+    }
+  }
+  assert.ok(spot, 'the fox never prowled near the gravel path');
+  assert.equal(w.grid.tileAt(...spot)!.id, 'gdn:gravel');
+  place(w.player, ...spot);
+  const seen: string[] = [];
+  for (let t = 0; t < 30 && !seen.includes('investigate'); t++) {
+    w.step();
+    if (seen[seen.length - 1] !== stateOf(fox)) seen.push(stateOf(fox));
+  }
+  assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
+});
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; noisy: number } {

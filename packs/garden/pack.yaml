@@ -3,4 +3,4 @@ name: Bunny Garden
 version: 0.1.0
 depends: [std]
 kind: game
-description: Hop around a garden as a bunny and gather ten carrots.
+description: Hop around a garden as a bunny and gather ten carrots. Mind the fox at night!

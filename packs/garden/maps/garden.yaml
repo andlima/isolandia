@@ -18,6 +18,7 @@ maps:
       "@": { tile: grass, player: true }
       "C": { tile: grass, spawn: cat }
       "b": { tile: flowers, spawn: butterfly }
+      "D": { tile: den, spawn: fox }
     rows:
       - "FFFFFFFFFFFFFFFFFFFFFFFF"
       - "F&O...*b*....B....#####F"
@@ -33,9 +34,10 @@ maps:
       - "F.:v..v..v..&.....~~~..F"
       - "F.:...........C........F"
       - "FB.........&.....v...B.F"
-      - "F...*b*..B..........&&.F"
+      - "F...*b*..B..........&&DF"
       - "FFFFFFFFFFFFFFFFFFFFFFFF"
-    # The vegetable garden in the middle, the shed in the north-east corner.
+    # The vegetable garden in the middle, the shed in the north-east corner,
+    # the fox's den behind the bushes in the south-east corner.
     rooms:
       - { rect: [3, 9, 9, 3], tags: [veggies] }
       - { rect: [18, 1, 5, 5], tags: [shed] }
