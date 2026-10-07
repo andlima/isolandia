@@ -494,6 +494,19 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     first time it is near the view, keeps at most 160 in an LRU and
     destroys the rest; entity and pile sprites exist only in built, visible
     chunks. F3 shows a perf line.
+- ~~How many clicks does a common interaction take?~~ **Decided (spec
+  `ux-smart-click`):** **left click runs a safe default (open, climb,
+  walk), or opens the menu when the object has actions that cost
+  something; disabled entries fold under *Can't do now*.**
+  - The default is the first enabled `open`, else the cell's only
+    `climb`, else `walk`; costly actions (`act`, `craft`) never run on a
+    plain click. Shift-click always walks; right-click, long-press and
+    `E` always open the menu, which alone offers *Walk here*.
+  - The menu puts the default first, numbers enabled entries `1`–`9` and
+    shows each action's duration and the items it uses up
+    (`Interaction.duration` / `uses`, filled purely by the core).
+  - Hover (mouse and pen) outlines the target and shows a tooltip with
+    what a click will do; touch has no hover.
 
 ## 8. Next step
 

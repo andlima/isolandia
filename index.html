@@ -90,6 +90,17 @@
       #menu .menu-item.selected { background: #333a44; border-color: #556; }
       #menu .menu-item.disabled { color: #8a8f99; cursor: default; }
       #menu .menu-hint { display: block; font-size: 11px; color: #c9a25a; }
+      #menu .menu-key { display: inline-block; width: 1.4em; color: #8a8f99; }
+      #menu .menu-click { margin-left: 6px; font-size: 11px; color: #8fd3ff; }
+      #menu .menu-detail { font-size: 11px; color: #a8adb7; }
+      #menu .menu-fold { color: #a8adb7; }
+      #tooltip {
+        position: fixed; z-index: 9; pointer-events: none; padding: 3px 6px; max-width: 260px;
+        font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: rgba(15, 17, 22, 0.88); border: 1px solid #556; border-radius: 3px;
+      }
+      #tooltip[hidden] { display: none; }
+      #tooltip .tooltip-hint { color: #8fd3ff; }
       #errors {
         margin: 0; padding: 16px; height: 100%; box-sizing: border-box; overflow: auto;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; white-space: pre-wrap;

@@ -324,6 +324,10 @@ export interface Interaction {
   readonly intent?: GotoIntent;
   /** Whether the player can do it without walking. */
   readonly inReach: boolean;
+  /** Sim seconds the `act` or `craft` would take if started now; absent when its duration expression fails. */
+  readonly duration?: number;
+  /** Items its completion consumes (`act`, `craft`; absent when none). Tools are not listed. */
+  readonly uses?: readonly MissingItem[];
 }
 
 /** `world.activityProgress()`: what is being done and how far along it is. */
@@ -1663,6 +1667,18 @@ export class World {
     return unavailable ? { ok: false, reason, unavailable } : { ok: false, reason };
   }
 
+  /** `duration` and `uses` of a source for the player on (x, y, z) (inside `pure`). */
+  private details(s: ActivitySource, x: number, y: number, z: number): Pick<Interaction, 'duration' | 'uses'> {
+    const out: { duration?: number; uses?: MissingItem[] } = {};
+    const ticks = this.runner.durationTicks(s, this.player, x, y, z);
+    if (ticks !== null) out.duration = ticks / this.def.ticksPerSecond;
+    if (s.consume.length > 0) {
+      const items = this.def.items;
+      out.uses = s.consume.map((c) => ({ item: items[c.item]!.id, label: items[c.item]!.label, count: c.count }));
+    }
+    return out;
+  }
+
   /**
    * Everything the player could start now: every `self` action, every tile
    * action on each matching cell in reach (on the player's floor, row-major), then each inventory
@@ -1744,7 +1760,8 @@ export class World {
    * order), `open` and (when not empty) `take_all` per container on the
    * cell, `Go up` / `Go down` when the cell has an open link that way, the
    * `self` actions on the player's own cell, then `walk` on any other
-   * walkable cell. `[]` out of bounds or once the game has ended. Pure, like
+   * walkable cell. `[]` out of bounds or once the game has ended. `act` and
+   * `craft` entries carry their `duration` and `uses`. Pure, like
    * `availableActions`.
    */
   interactionsAt(x: number, y: number, z: number = this.player.z): Interaction[] {
@@ -1759,12 +1776,12 @@ export class World {
         for (const s of this.actionSources) {
           if (!s.filter || s.filter[tile] !== 1) continue;
           const id = this.def.actions[s.action]!.id;
-          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id, x, y, z }, inReach });
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id, x, y, z }, inReach, ...this.details(s, x, y, z) });
         }
         for (const s of this.recipeSources) {
           if (!s.filter || s.filter[tile] !== 1) continue;
           const id = this.def.recipes[s.recipe]!.id;
-          out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, z, true), action: { kind: 'craft', recipe: id, x, y, z }, inReach });
+          out.push({ id: `craft:${id}`, label: s.label, kind: 'craft', ...this.verdict(s, x, y, z, true), action: { kind: 'craft', recipe: id, x, y, z }, inReach, ...this.details(s, x, y, z) });
         }
       }
       for (const c of this.containersAt(x, y, z)) {
@@ -1787,7 +1804,7 @@ export class World {
         for (const s of this.actionSources) {
           if (s.filter) continue;
           const id = this.def.actions[s.action]!.id;
-          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id }, inReach: true });
+          out.push({ id: `act:${id}`, label: s.label, kind: 'act', ...this.verdict(s, x, y, z, true), action: { kind: 'act', action: id }, inReach: true, ...this.details(s, x, y, z) });
         }
       } else if (grid.walkable(x, y, z)) {
         out.push({ id: 'walk', label: 'Walk here', kind: 'walk', ok: true, inReach: false });

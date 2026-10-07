@@ -1,6 +1,6 @@
 /**
- * DOM input wiring: pointer gestures, right-click and wheel on the canvas,
- * keyboard on the window. Movement keys are tracked while held. A fresh press
+ * DOM input wiring: pointer gestures (with Shift on clicks), mouse and pen
+ * hover, right-click and wheel on the canvas, keyboard on the window. Movement keys are tracked while held. A fresh press
  * queues a turn-in-place step: a tap in a new direction only turns the player,
  * a tap in the faced direction steps. Once the latest press is `HOLD_MS` old,
  * `beforeTick` re-queues the held direction as plain steps so the player
@@ -11,7 +11,11 @@ import type { World } from '../core/index.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
 import { climbKey, MOVE_KEYS, MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
 
-export interface InputHandlers extends GestureHandlers {
+export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
+  /** A click or tap; `shift` when Shift was held on release. */
+  click(sx: number, sy: number, shift: boolean): void;
+  /** A mouse or pen pointer resting over the canvas with no button down, or null when it leaves, drags or presses. */
+  hover?(p: { sx: number; sy: number } | null): void;
   /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
   key(code: string): void;
   /** A climb key (PageUp/PageDown, `<`/`>`): one floor up (1) or down (-1), without auto-repeat. */
@@ -33,7 +37,12 @@ export class Input {
     on: InputHandlers,
     private readonly now: () => number = () => performance.now(),
   ) {
-    const gestures = (this.gestures = new Gestures(on));
+    let shift = false;
+    const gestures = (this.gestures = new Gestures({ ...on, click: (sx, sy) => on.click(sx, sy, shift) }));
+    const hover = (ev: PointerEvent) => {
+      if (ev.pointerType === 'touch') return;
+      on.hover?.(ev.buttons === 0 ? { sx: ev.clientX, sy: ev.clientY } : null);
+    };
     el.style.touchAction = 'none';
     el.addEventListener('contextmenu', (ev) => {
       ev.preventDefault();
@@ -45,10 +54,18 @@ export class Input {
       // Only the primary mouse button pans/clicks; touch and pen always count.
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       el.setPointerCapture(ev.pointerId);
+      on.hover?.(null);
       gestures.down(ev.pointerId, ev.clientX, ev.clientY, ev.pointerType !== 'mouse');
     });
-    el.addEventListener('pointermove', (ev) => gestures.move(ev.pointerId, ev.clientX, ev.clientY));
-    el.addEventListener('pointerup', (ev) => gestures.up(ev.pointerId, ev.clientX, ev.clientY));
+    el.addEventListener('pointermove', (ev) => {
+      gestures.move(ev.pointerId, ev.clientX, ev.clientY);
+      hover(ev);
+    });
+    el.addEventListener('pointerleave', () => on.hover?.(null));
+    el.addEventListener('pointerup', (ev) => {
+      shift = ev.shiftKey;
+      gestures.up(ev.pointerId, ev.clientX, ev.clientY);
+    });
     el.addEventListener('pointercancel', (ev) => gestures.up(ev.pointerId, ev.clientX, ev.clientY, false));
     el.addEventListener(
       'wheel',

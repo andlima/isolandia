@@ -536,16 +536,16 @@ test('crafting panel: grouped by category, inputs, tools, station and hints', ()
 
 test('context menu: station recipes from afar walk there; in reach they start at once', () => {
   const w = world();
-  const far = contextMenu(w, 1, 1);
+  const far = contextMenu(w, 1, 1).items;
   const act: Action = { kind: 'craft', recipe: 't:stew', x: 1, y: 1, z: 0 };
-  assert.deepEqual(far[0], { label: 'Cook: Stew', disabled: false, run: { intent: { kind: 'goto', x: 1, y: 1, z: 0, adjacent: true, then: act } } });
+  assert.deepEqual(far[0], { label: 'Cook: Stew', disabled: false, ...(far[0]!.detail ? { detail: far[0]!.detail } : {}), run: { intent: { kind: 'goto', x: 1, y: 1, z: 0, adjacent: true, then: act } } });
   runMenuItem(w, far[0]!);
   for (let i = 0; i < 200 && !w.player.activity; i++) w.step();
   assert.equal(w.player.activity?.source.recipe, w.def.ids.recipes['t:stew']);
-  const near = contextMenu(w, 1, 1);
+  const near = contextMenu(w, 1, 1).items;
   assert.deepEqual(near[0]!.run, { actions: [act] });
   w.player.inv!.stacks.splice(0, 1);
-  const without = contextMenu(w, 1, 1)[0]!;
+  const without = contextMenu(w, 1, 1).disabled[0]!;
   assert.deepEqual([without.disabled, without.hint], [true, 'Needs: Knife']);
 });
 
@@ -612,7 +612,7 @@ test('zombie: loot canned beans, walk to a stove via the menu, cook and eat them
   const [sx, sy] = T(31, 18);
   assert.equal(w.grid.tileAt(sx, sy)!.id, 'town:stove');
   assert.ok(Math.max(Math.abs(w.player.x - sx), Math.abs(w.player.y - sy)) > 1);
-  const item = contextMenu(w, sx, sy).find((i) => i.label === 'Cook: Hot beans')!;
+  const item = contextMenu(w, sx, sy).items.find((i) => i.label.startsWith('Cook: Hot beans'))!;
   assert.equal(item.disabled, false);
   assert.ok(item.run.intent?.then, 'walks there first');
   runMenuItem(w, item);
@@ -694,7 +694,7 @@ test('vampire: fill an empty vial at the font, then mix blood wine anywhere', ()
   // At the font: the menu offers Fill; it walks up and fills the vial.
   const [fx, fy] = genreCell('vampire', 13, 3);
   assert.equal(w.grid.tileAt(fx, fy)!.id, 'vamp:font');
-  const fill = contextMenu(w, fx, fy).find((i) => i.label === 'Fill: Blood vial')!;
+  const fill = contextMenu(w, fx, fy).items.find((i) => i.label === 'Fill: Blood vial')!;
   assert.equal(fill.disabled, false);
   runMenuItem(w, fill);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();

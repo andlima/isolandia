@@ -1095,13 +1095,20 @@ ground pile) an `open` entry, plus `take_all` when it is not empty;
 [link](#floors) that way (with `intent`, the goto to the link's far end);
 every `self` action when the cell is the player's own; and `walk` when the
 cell is walkable and not the player's. Each entry is
-`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, intent?, inReach }`:
+`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, intent?, inReach, duration?, uses? }`:
 `ok`/`reason` use the same checks as `act` with reach left out (`take_all`
 fails with `no_inventory`, or `too_heavy` when no stack fits at all),
 `action` is the action to queue (the first `take` of a `take_all`, whose
 `actions` lists them all), and `inReach` says whether the player can do it
-without walking. It returns `[]` out of bounds or once the game has ended,
-and is pure like `availableActions()`.
+without walking. `act` and `craft` entries also carry `duration`, the
+sim seconds the action or recipe would take if started now (its
+`duration` evaluated as the start would, rounded to whole ticks; left out
+when the expression throws or gives no number), and `uses`, the items
+completion consumes as `{ item, label, count }` (left out when nothing is
+consumed; tools are not listed, since they are not spent). The browser
+menu shows them as `8s · uses 2× Plank`. It returns `[]` out of bounds or
+once the game has ended, and is pure like `availableActions()` (`random()`
+in a duration draws from the throwaway RNG too).
 
 `reasonText(entry)` (in `src/core/hud.ts`) turns an entry's reason into
 short UI text: `Needs: Hammer, 2× Plank` for `missing`, the

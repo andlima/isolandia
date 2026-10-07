@@ -5,11 +5,13 @@
  */
 
 import type { World } from '../core/index.ts';
-import { clampMenu, contextMenu, menuTitle, moveSelection, runMenuItem, type MenuItem } from './menu.ts';
+import { clampMenu, contextMenu, menuRows, menuTitle, moveSelection, runMenuItem, shortcutOf, type Menu, type MenuItem, type MenuOpening, type MenuRow } from './menu.ts';
 
 export class ContextMenu {
   private readonly el: HTMLDivElement;
-  private items: MenuItem[] = [];
+  private menu: Menu | null = null;
+  private expanded = false;
+  private rows: MenuRow[] = [];
   private buttons: HTMLButtonElement[] = [];
   private selected = -1;
   /** Target cell while open, or null. */
@@ -36,7 +38,7 @@ export class ContextMenu {
     this.el.addEventListener('click', (ev) => {
       const b = (ev.target as HTMLElement).closest('button');
       const k = b ? this.buttons.indexOf(b) : -1;
-      if (k >= 0) this.choose(k);
+      if (k >= 0) this.activate(k);
     });
     this.el.addEventListener('contextmenu', (ev) => ev.preventDefault());
     document.addEventListener('pointerdown', this.onPointerDown, true);
@@ -53,23 +55,71 @@ export class ContextMenu {
     return this.target !== null;
   }
 
-  /** Open the menu for cell (x, y) on floor z at screen point (sx, sy); replaces any open menu. */
-  open(x: number, y: number, z: number, sx: number, sy: number): void {
+  /**
+   * Open the menu for cell (x, y) on floor z at screen point (sx, sy);
+   * replaces any open menu. A left click's menu (`click`) has no `Walk here`.
+   */
+  open(x: number, y: number, z: number, sx: number, sy: number, opening: MenuOpening = 'context'): void {
     this.close();
     if (this.world.ended) return;
-    this.items = contextMenu(this.world, x, y, z);
-    if (this.items.length === 0) return;
+    const menu = contextMenu(this.world, x, y, z, opening);
+    if (menu.items.length === 0 && menu.disabled.length === 0) return;
+    this.menu = menu;
+    this.expanded = menu.expanded;
     this.target = { x, y, z };
+    this.render();
+    const r = this.el.getBoundingClientRect();
+    const p = clampMenu(sx, sy, r.width, r.height, window.innerWidth, window.innerHeight);
+    this.el.style.left = `${p.x}px`;
+    this.el.style.top = `${p.y}px`;
+    this.select(0);
+  }
+
+  /** Run an item (a menu choice or a left click's default): queue it and open the loot panel when it says so. */
+  run(item: MenuItem): void {
+    const open = runMenuItem(this.world, item);
+    if (open && item.run.container !== undefined) this.openLoot(item.run.container);
+  }
+
+  /** (Re)build the rows, keeping the menu's position. */
+  private render(): void {
+    const { x, y, z } = this.target!;
     const title = document.createElement('div');
     title.className = 'panel-title';
     title.textContent = menuTitle(this.world, x, y, z);
-    this.buttons = this.items.map((it) => {
+    this.rows = menuRows(this.menu!, this.expanded);
+    this.buttons = this.rows.map((row) => {
       const b = document.createElement('button');
-      b.className = 'menu-item';
       b.setAttribute('role', 'menuitem');
+      if (row.kind === 'fold') {
+        b.className = 'menu-item menu-fold';
+        b.setAttribute('aria-expanded', String(row.expanded));
+        b.textContent = row.label;
+        return b;
+      }
+      const it = row.item;
+      b.className = 'menu-item';
       b.setAttribute('aria-disabled', String(it.disabled));
       if (it.disabled) b.classList.add('disabled');
-      b.textContent = it.label;
+      if (row.key) {
+        const k = document.createElement('span');
+        k.className = 'menu-key';
+        k.textContent = String(row.key);
+        b.append(k);
+      }
+      b.append(it.label);
+      if (it.default) {
+        const c = document.createElement('span');
+        c.className = 'menu-click';
+        c.textContent = 'click';
+        b.append(c);
+      }
+      if (it.detail) {
+        const d = document.createElement('span');
+        d.className = 'menu-detail';
+        d.textContent = ` · ${it.detail}`;
+        b.append(d);
+      }
       if (it.hint) {
         const h = document.createElement('span');
         h.className = 'menu-hint';
@@ -80,38 +130,57 @@ export class ContextMenu {
     });
     this.el.replaceChildren(title, ...this.buttons);
     this.el.hidden = false;
-    const r = this.el.getBoundingClientRect();
-    const p = clampMenu(sx, sy, r.width, r.height, window.innerWidth, window.innerHeight);
-    this.el.style.left = `${p.x}px`;
-    this.el.style.top = `${p.y}px`;
-    this.select(this.items.findIndex((it) => !it.disabled));
   }
 
   close(): void {
     if (!this.target) return;
     this.target = null;
-    this.items = [];
+    this.menu = null;
+    this.rows = [];
     this.buttons = [];
     this.selected = -1;
     this.el.hidden = true;
     this.el.replaceChildren();
   }
 
-  /** Keyboard while open: arrows move, Enter selects, Escape closes. Returns whether the key was used. */
+  /**
+   * Keyboard while open: `1`–`9` choose an enabled item, arrows move, `Enter`
+   * (or `→` on the fold row) chooses or toggles the fold, `Escape` closes.
+   * Returns whether the key was used.
+   */
   key(code: string): boolean {
     if (!this.isOpen) return false;
+    const n = shortcutOf(code);
+    if (n > 0) {
+      const k = this.rows.findIndex((r) => r.kind === 'item' && r.key === n);
+      if (k >= 0) this.activate(k);
+      return true;
+    }
+    const fold = this.rows[this.selected]?.kind === 'fold';
     switch (code) {
-      case 'ArrowDown':
       case 'ArrowRight':
-        this.select(moveSelection(this.items.length, this.selected, 1));
+        if (fold) {
+          if (!this.expanded) this.activate(this.selected);
+          return true;
+        }
+        this.select(moveSelection(this.rows.length, this.selected, 1));
+        return true;
+      case 'ArrowLeft':
+        if (fold) {
+          if (this.expanded) this.activate(this.selected);
+          return true;
+        }
+        this.select(moveSelection(this.rows.length, this.selected, -1));
+        return true;
+      case 'ArrowDown':
+        this.select(moveSelection(this.rows.length, this.selected, 1));
         return true;
       case 'ArrowUp':
-      case 'ArrowLeft':
-        this.select(moveSelection(this.items.length, this.selected, -1));
+        this.select(moveSelection(this.rows.length, this.selected, -1));
         return true;
       case 'Enter':
       case 'NumpadEnter':
-        if (this.selected >= 0) this.choose(this.selected);
+        if (this.selected >= 0) this.activate(this.selected);
         return true;
       case 'Escape':
         this.close();
@@ -131,12 +200,22 @@ export class ContextMenu {
     }
   }
 
-  /** Disabled items only show their hint (always visible) and keep the menu open. */
-  private choose(k: number): void {
-    const it = this.items[k];
-    if (!it || it.disabled) return;
-    const open = runMenuItem(this.world, it);
+  /** Choose row `k`: the fold row toggles; disabled items only show their hint (always visible) and keep the menu open. */
+  private activate(k: number): void {
+    const row = this.rows[k];
+    if (!row) return;
+    if (row.kind === 'fold') {
+      this.expanded = !this.expanded;
+      this.render();
+      const r = this.el.getBoundingClientRect();
+      const p = clampMenu(r.left, r.top, r.width, r.height, window.innerWidth, window.innerHeight);
+      this.el.style.left = `${p.x}px`;
+      this.el.style.top = `${p.y}px`;
+      this.select(k);
+      return;
+    }
+    if (row.item.disabled) return;
     this.close();
-    if (open && it.run.container !== undefined) this.openLoot(it.run.container);
+    this.run(row.item);
   }
 }
