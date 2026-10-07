@@ -5,7 +5,7 @@
  * functions turn them into loader `PackSource`s and asset URLs.
  */
 
-import { nearMiss, TEXT_FILE_RE, type AssetDef, type LoadError, type PackSource } from '../core/index.ts';
+import { buildCatalog, MANIFEST, nearMiss, TEXT_FILE_RE, type AssetDef, type Catalog, type LoadError, type PackSource } from '../core/index.ts';
 
 /** Glob results keyed by project path, e.g. `/packs/std/tiles.yaml`. */
 export type GlobMap = Readonly<Record<string, string>>;
@@ -26,17 +26,35 @@ function split(path: string): [string, string] | null {
   return m ? [m[1]!, m[2]!] : null;
 }
 
-/** Pack directory names present in the glob results (those with a YAML file), sorted. */
-export function availablePacks(text: GlobMap): string[] {
-  const names = new Set<string>();
-  for (const path of Object.keys(text)) {
+/** `pack.yaml` text of each pack directory in the glob results (`packs/<dir>/pack.yaml`), by directory. */
+function manifests(text: GlobMap): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [path, value] of Object.entries(text)) {
     const s = split(path);
-    if (s && /\.ya?ml$/.test(s[1])) names.add(s[0]);
+    if (s && s[1] === MANIFEST) out.set(s[0], value);
   }
-  return [...names].sort();
+  return out;
 }
 
-/** `text`: YAML and Tiled files as raw text; `files`: every pack file as a URL (text files are skipped). */
+/** Pack directory names present in the glob results (those with a `pack.yaml`), sorted. */
+export function availablePacks(text: GlobMap): string[] {
+  return [...manifests(text).keys()].sort();
+}
+
+/** The catalog of the bundled packs; each pack's `dir` is its directory name under `packs/`. */
+export function webCatalog(text: GlobMap): Catalog {
+  return buildCatalog(
+    [...manifests(text)]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([dir, manifest]) => ({ dir, manifest })),
+  );
+}
+
+/**
+ * `text`: YAML and Tiled files as raw text; `files`: every pack file as a URL
+ * (text files are skipped). `names` are pack directories, in load order (a
+ * resolved stack).
+ */
 export function buildPackSources(text: GlobMap, files: GlobMap, names: readonly string[]): WebPacks {
   const available = availablePacks(text);
   const sources: PackSource[] = [];

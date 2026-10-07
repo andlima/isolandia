@@ -1,6 +1,7 @@
 # Performance (M6 chunked world)
 
-Spec: `specs/m6-chunked-world.md`. The target is the zombie **city**: a
+Spec: `specs/m6-chunked-world.md`. The target is the zombie **city** (the
+`town` base's city, populated by the `zombie` mod since M7): a
 256×256 composite map, two floors in places, ~960 entities, at the 10 Hz
 tick. Recorded target (not a test gate): **steady p95 ≤ 10 ms per tick in
 Node** on the dev machine.
@@ -8,8 +9,8 @@ Node** on the dev machine.
 ## How to run
 
 ```bash
-npm run bench:sim -- --packs std,std-needs,zombie [--ticks 3000] [--seed 1] [--active-radius 64|none]
-npm run bench:sim -- --packs std,vampire
+npm run bench:sim -- --packs std,std-needs,town,zombie [--ticks 3000] [--seed 1] [--active-radius 64|none]
+npm run bench:sim -- --packs std,std-needs,town,vampire
 npm run bench:sim                     # the S0 spike and stress worlds, unchanged
 ```
 

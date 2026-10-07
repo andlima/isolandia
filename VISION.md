@@ -92,7 +92,9 @@ code.
      any piece.
    - **Genre packs:** zombie, vampire, wild west… they only compose and
      tune the engine and the stdpack; this is where zombies, coffins and
-     shuriken live.
+     shuriken live. Since M7 a genre is usually a **mod of a genre-free
+     base game** (`zombie` and `vampire` stack on `town`), so switching
+     genre is switching mod.
 
    Working rules:
    - When two genre packs repeat the same YAML pattern, it moves up into
@@ -157,7 +159,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M4 | Perception (sight/noise) + `behaviors` | A horde that hears the window breaking | ✅ done |
 | M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town | ✅ done |
-| M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base |  |
+| M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base | ✅ done |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
 | M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
 
@@ -213,8 +215,24 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   runs stay deterministic. **Utility AI is deferred**; it could come later
   as another activity or state selector. No nested states or enter/exit
   effects yet. See `docs/packs.md`.
-- Override semantics between packs: full replacement by ID, deep merge,
-  or explicit patch operations?
+- ~~Override semantics between packs: full replacement by ID, deep merge,
+  or explicit patch operations?~~ **Decided (spec `m7-overrides`, M7):**
+  **patch by qualified id.** A pack restates a **direct dependency's** id
+  with `override: true` and only the fields it changes (a **shallow**
+  merge: each listed top-level field replaces the old one whole, lists and
+  mappings included; `field: null` clears it), or deletes the entry with
+  `remove: true`. `start`, `clock` and `lighting` take `override: true`
+  too. Each field keeps the **scope and files of the pack that wrote it**;
+  entries keep their position and indices stay dense; references to a
+  removed id are load errors naming the remover. Unrelated packs writing
+  the same field **warn, later wins**. No list operators or deep merge;
+  `distributions` cannot be patched. `check --overrides` lists every
+  patch. See `docs/packs.md` (Mods and overrides).
+- Stdpack candidates left after M7 (`m7-town-base`): patterns the
+  `zombie` and `vampire` mods still both define, such as an `alert` status
+  (`can_see` the player, lose track further out) driving a behavior, and a
+  sight-and-sound NPC state machine. Not moved yet; a third genre that
+  repeats them should promote them to a stdpack.
 - Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
   (wasmoon/fengari)?
 - Combat: real time over ticks, or something more tactical?
@@ -249,8 +267,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   **derived from the tick** — it adds no state, so determinism, snapshots
   and hashes do not change. Expressions read `world.day`, `world.hour`,
   `world.minute`, `world.time_of_day` and `world.is_day`; `rate` stays per
-  simulation second. **At most one pack** defines `clock` until override
-  semantics exist (M7). See `docs/packs.md`.
+  simulation second. **One pack** defines `clock`; since M7 later packs
+  may patch it with `override: true`. See `docs/packs.md`.
 - ~~How do `systems` schedule work, how do `statuses` enter and exit, how
   is day/night configured, and how does the game end?~~ **Decided in M2:**
   - **`systems`** use **simulation seconds** (`every: 1`, default one
@@ -479,6 +497,23 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 
 ## 8. Next step
 
+M7 is delivered: **overrides and removals** by qualified id (spec
+`m7-overrides`), **stacks** with a pack catalog, a resolver and a title
+screen (spec `m7-stacks`), and **one town, two mods** (spec
+`m7-town-base`). The genre-free `town` base game holds the 256×256 city,
+its furniture, food, loot, cooking, bandages, barricading and a
+needs-driven `resident`; alone it is a quiet sandbox with no NPCs.
+`zombie` is a mod that fills the town with the dead (map `populate` and
+`spawns` overrides) and adds a way out; `vampire` is a mod that reuses the
+town's generic content (its windows, needs systems that skip non-`living`
+entities) but plays on its own estate by overriding `start`, `clock` and
+`lighting`; `hardship` is a balance mod that works with either. Mixed
+stacks load with warnings only for the fields both mods write.
+
+The next step is to author, via `spec-orchestrator`, the **M8 spec**: the
+social layer (factions, dialogues, quests, journal), for a short noir
+mystery or a wild-west duel.
+
 M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
 `m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked
 world** (spec `m6-chunked-world`). The zombie game is a 256×256 city built
@@ -486,10 +521,6 @@ from house, store, garage, park and road parts around the old town block,
 with ~960 dead (dense downtown, sparse at the edges) that rest while far
 away; the vampire's mansion stands in a 96×96 estate of graveyards and
 village cottages with ~150 bats.
-
-The next step is to author, via `spec-orchestrator`, the **M7 spec**:
-packs as mods (stacking, overrides, joint validation), with zombie and
-vampire as mods of the same base.
 
 M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
 **context menu** (spec `m5-context-menu`) and **recipes** (spec

@@ -36,7 +36,7 @@ floor, row-major). Every cell carries its floor `z`: entity `z` and
 `fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
 `[x, y, z, tick]`, `heard` and the activity target with `z`, `lastGoto.z`,
 and container cells as `[x, y, z]` (see [floors](packs.md#floors)). Every reference
-is a qualified id (`zmb:hammer`), never an index, so a save does not depend
+is a qualified id (`town:hammer`), never an index, so a save does not depend
 on load order details.
 
 `save()` is pure: it does not change `hash()`, draw RNG or record
@@ -48,7 +48,7 @@ Shells store and export a wrapper with metadata next to the save, never
 inside `state`:
 
 ```json
-{ "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "zmb"] },
+{ "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "town", "zmb"] },
   "save": { "format": "isolandia-save", "version": 2, "...": "..." } }
 ```
 
@@ -120,6 +120,10 @@ mean 'zmb:shambler'?)`).
 Changes to rules inside a pack (new effects, different durations, item
 weights) are not detected: a save stores state, not rules.
 
+Saves made before M7's `town` base (zombie and vampire as games) do not load
+in the new stacks: their pack list lacks `town`, so restore stops at the
+namespace mismatch.
+
 ## Restore
 
 A restored world is built through an internal constructor path that skips
@@ -170,8 +174,9 @@ The map itself is not saved, only the cells that changed.
 quickloads, `O` opens the Game panel with the quicksave, three slots, and
 Export / Import. Slots live in `localStorage` under
 `isolandia:save:<packs>:<slot>` (e.g.
-`isolandia:save:std,std-needs,zombie:slot1`, with the `?packs=` list), so
-each game has its own slots.
+`isolandia:save:std,std-needs,town,zombie:slot1`, with the resolved
+[stack](packs.md#stacks) of `?packs=`), so each game has its own slots and
+`?packs=zombie` shares them with `?packs=std,std-needs,town,zombie`.
 
 **Terminal**:
 

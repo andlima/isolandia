@@ -8,6 +8,8 @@
   Below the great hall: a library to the west, the wine cellar to the east.
 - **Rooms:** `room` objects tag the `hall`, `library` and `cellar`.
 - **Bookshelves** face `s`, against the north wall.
+- **Windows** are the town's `town:window` (the vampire mod depends on
+  `town` and recolours it); `shutter` turns them into `shuttered_window`.
 - **Sunbeams** fall through the windows; the player starts in the great
   hall.
 - **Floors:** two `floor N` groups. A ladder in the library's south-east

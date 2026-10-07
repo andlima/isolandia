@@ -30,7 +30,7 @@ maps:
     legend:
       "#": { tile: wall }
       "+": { tile: door }
-      '"': { tile: window }
+      '"': { tile: town:window }
       ".": { tile: carpet }
       ",": { tile: creaky }
       "X": { tile: chest, facing: s }

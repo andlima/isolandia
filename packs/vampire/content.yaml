@@ -9,6 +9,11 @@ measurements:
     rate: "-0.05 - 0.05 * world.is_day"
 
 tiles:
+  # The windows are the town's (`town:window`), in the mansion's colours.
+  - id: town:window
+    override: true
+    color: "#6fa8dc"
+    sprite: window_img
   - id: carpet
     label: Carpet
     glyph: "."
@@ -53,14 +58,7 @@ tiles:
     walkable: false
     opaque: false                   # low: blocks the way, not the view
     sprite: coffin_img
-  - id: window
-    label: Window
-    glyph: "\""
-    color: "#6fa8dc"
-    sprite: window_img
-    walkable: false
-    opaque: false                   # you can see through it, not walk through it
-  # A window after the `shutter` action (survival.yaml): no light, no view.
+  # The town's window after the `shutter` action (survival.yaml): no light, no view.
   - id: shuttered_window
     label: Shuttered window
     glyph: "|"
@@ -125,9 +123,13 @@ archetypes:
 
 # The night begins as the game does: it starts at dusk.
 clock:
+  override: true
   start: "20:00"
 
+# The town's start, moved to the estate: the vampire plays there, under the
+# town's day and simulation settings.
 start:
+  override: true
   map: estate
   player: vampire
   defeat:

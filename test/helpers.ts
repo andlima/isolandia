@@ -6,20 +6,22 @@ export function pack(label: string, files: Record<string, string>): PackSource {
   return { label, files };
 }
 
-/** Ordered pack directories for each real genre game. */
+/** Ordered pack directories for each shipped playable stack (the base `town`, its genre mods, the garden). */
 export const GAMES = {
-  zombie: ['packs/std', 'packs/std-needs', 'packs/zombie'],
-  vampire: ['packs/std', 'packs/vampire'],
+  town: ['packs/std', 'packs/std-needs', 'packs/town'],
+  zombie: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/zombie'],
+  vampire: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/vampire'],
   garden: ['packs/std', 'packs/garden'],
 } as const;
 
 /**
  * Where each genre's original map sits in its composite start map: genre
  * scenarios written for the old single maps add these to their coordinates
- * (`zmb:town_center` in `zmb:city`, `vamp:mansion` in `vamp:estate`; the
+ * (`town:town_center` in `town:city`, `vamp:mansion` in `vamp:estate`; the
  * garden is not a composite).
  */
 export const GENRE_AT = {
+  town: { x: 106, y: 117 },
   zombie: { x: 106, y: 117 },
   vampire: { x: 37, y: 41 },
   garden: { x: 0, y: 0 },

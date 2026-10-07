@@ -225,7 +225,7 @@
         {
           "name": "tile",
           "type": "string",
-          "value": "window"
+          "value": "town:window"
         }
       ]
     },

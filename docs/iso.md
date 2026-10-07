@@ -10,7 +10,7 @@ change.
 npm run dev          # http://localhost:5173/  (the S0 spike is at /spike.html)
 npm run build        # dist/index.html + dist/spike.html
 npm run preview      # serve the build
-npm run smoke        # Playwright: both genres, screenshots in docs/screens/
+npm run smoke        # Playwright: each game and the title screen, screenshots in docs/screens/
 ```
 
 `npm run smoke` needs Chromium (set `BENCH_CHROMIUM` to a Chrome/Chromium
@@ -22,13 +22,43 @@ screen.
 
 | Param            | Default       | Meaning |
 |------------------|---------------|---------|
-| `?packs=a,b,…`   | `std,std-needs,zombie` | Ordered pack directory names under `packs/` (same order rule as the CLI) |
+| `?packs=a,b,…`   | none: the title screen | Packs to play: directory names under `packs/` or namespaces. Dependencies are added and ordered by the [stack resolver](packs.md#stacks), as on the command line |
 | `?seed=N`        | `1`           | Integer world seed |
 
-For example `?packs=std,vampire&seed=7`. When loading fails — including an
-unknown pack name — the page shows the complete error list, formatted like
-`npm run check`, instead of the game. The default list lives in
-`index.html` (`data-default-packs`) so that `src/` stays genre-agnostic.
+For example `?packs=town`, `?packs=vampire&seed=7`, or
+`?packs=zombie,hardship` for the town with two mods
+(`?packs=std,std-needs,town,zombie,hardship` still works and loads the
+same stack). When loading fails — including an unknown pack name or a
+resolver error — the page shows the complete error list, formatted like
+`npm run check`, instead of the game, with a **Back to the title screen**
+link.
+
+Saves, exports and imports are keyed on the **resolved** pack directory
+list, so `?packs=zombie` and `?packs=std,std-needs,town,zombie` share the same
+slots (and slots saved under the full list before stacks existed stay
+reachable).
+
+### Title screen
+
+Without a `packs` parameter, the page shows a **title screen** instead of
+a game. It is built from the bundled catalog (every `packs/<dir>/pack.yaml`
+in the Vite glob), so `src/` stays genre-agnostic.
+
+- It lists every pack of [kind](packs.md#manifest-packyaml) `game`, then
+  every `mod`, with its `name`, `description` and resolved stack. A pack
+  whose stack does not resolve is disabled with the reason.
+- Choosing one shows **checkboxes for the other mods**. A mod can be
+  checked only if the chosen pack plus the checked mods plus it still
+  resolve; otherwise it is disabled with the reason (a mod already in the
+  stack is disabled too). Checked mods are appended in click order, which
+  decides the load order between unrelated mods.
+- **Play** navigates to `?packs=<chosen>,<checked…>&seed=<seed>`; the seed
+  field defaults to 1.
+
+The screen is a thin DOM layer (`src/web/picker-dom.ts`) over the pure
+`pickerModel(catalog, chosen, checked, seed)` in `src/web/picker.ts`.
+The in-game Game panel's **Title screen** button returns here (plain
+navigation: unsaved progress is lost, as on reload).
 
 ## Controls
 

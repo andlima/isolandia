@@ -1,0 +1,12 @@
+archetypes:
+  - id: resident
+    label: Resident
+    glyph: "@"
+    color: bright_yellow
+    sprite: resident_img
+    tags: [humanoid, living]
+    measurements: [hp, hunger, thirst, fatigue]
+    initial: { hunger: 20 }
+    inventory:
+      capacity: 15
+      items: { water_bottle: 1, crackers: 1 }

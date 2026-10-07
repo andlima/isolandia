@@ -23,12 +23,15 @@ npm install
 npm run dev          # browser game (Vite) at http://localhost:5173
 ```
 
-The browser loads `std,std-needs,zombie` by default. Pick packs and a seed with
-query parameters:
+The page opens on a title screen: pick a game (and optional mods) and a
+seed. Or go straight to a game with query parameters; dependencies are
+added for you:
 
 ```
-http://localhost:5173/?packs=std,vampire&seed=42
-http://localhost:5173/?packs=std,garden
+http://localhost:5173/?packs=town
+http://localhost:5173/?packs=zombie
+http://localhost:5173/?packs=vampire&seed=42
+http://localhost:5173/?packs=zombie,hardship
 ```
 
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
@@ -44,8 +47,10 @@ export/import (see [docs/saves.md](docs/saves.md)).
 The same simulation runs headless, rendered as top-down ASCII:
 
 ```bash
-npm run play -- packs/std packs/std-needs packs/zombie [--seed N]
-npm run play -- packs/std packs/std-needs packs/zombie --load isolandia-save.json
+npm run play -- zombie [--seed N]
+npm run play -- town                      # the base game alone: a quiet sandbox
+npm run play -- vampire hardship          # a genre mod plus a balance mod
+npm run play -- zombie --load isolandia-save.json
 ```
 
 `q` quits, `g` takes everything nearby, `1`–`9` uses an item, `d 1`–`9`
@@ -56,25 +61,35 @@ drops one, `<`/`>` climb stairs. `S` saves to `--save-file` (default
 
 A pack is a directory with a `pack.yaml` manifest and any number of
 `*.yaml` files. Every ID is namespaced (`std_needs:hunger`, `vamp:blood`), and
-packs are loaded in order on top of each other:
+packs are loaded on top of each other, dependencies first. Name the
+packs you want and the engine adds what they `depends` on
+(see [docs/packs.md](docs/packs.md#stacks)):
 
 ```
 packs/
   std/        # stdpack: health, a humanoid archetype, basic tiles
   std-needs/  # stdpack: hunger/thirst/fatigue and their statuses (optional)
-  zombie/     # "Zombie Town": loot, survival systems, a small town map
-              #   (uses std + std-needs)
-  vampire/    # "Vampire Mansion": blood, sunlight, coffins (uses std only)
+  town/       # game "Town": a genre-free 256×256 town with furniture, food,
+              #   loot, cooking, barricading; a quiet sandbox on its own
+  zombie/     # mod "Zombie Town": the dead fill the town; find a car battery
+  vampire/    # mod "Vampire Mansion": blood, sunlight, coffins, on its estate
+              #   (reuses the town's generic content)
+  hardship/   # mod: needs drain faster, food is scarcer (works with either)
   garden/     # "Bunny Garden": a gentle game for kids — gather carrots,
               #   hide from a sleepy cat; won with start.victory (uses std only)
 ```
 
+Switching genre is switching mod: `zombie` and `vampire` both stack on
+`town` (see [docs/packs.md](docs/packs.md#shipped-packs)).
+
 Validate a pack stack without running it:
 
 ```bash
-npm run check -- packs/std packs/vampire
-npm run check -- packs/std packs/garden
-npm run check -- packs/std packs/garden --save my-save.json   # validate a save too
+npm run packs                                  # list the available packs
+npm run check -- vampire
+npm run check -- zombie --overrides            # what the mod changes in the town
+npm run check -- garden
+npm run check -- garden --save my-save.json   # validate a save too
 ```
 
 Every milestone is validated with two games of different genres, so genre
@@ -87,6 +102,7 @@ assumptions stay out of the engine.
 | `npm test` | Run the test suite (`node:test`, headless) |
 | `npm run typecheck` | Type-check with `tsc` |
 | `npm run build` | Production build of the browser game |
+| `npm run packs` | List the pack catalog (`-- --stack <packs…>` for a resolved stack) |
 | `npm run bench:sim` | Headless simulation benchmark |
 | `npm run map:export -- <pack-dir>… --map <id> --out <dir>` | Export a map as an isometric Tiled map + tileset (see `docs/packs.md`) |
 

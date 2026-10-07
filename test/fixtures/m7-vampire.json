@@ -1,0 +1,163 @@
+[
+  {
+    "seed": 1,
+    "map": {
+      "width": 96,
+      "height": 96,
+      "floors": 2,
+      "cells": [
+        "6e4e91069e67ec2b",
+        "45f473eba6de72ef"
+      ]
+    },
+    "player": {
+      "archetype": "vampire",
+      "x": 48,
+      "y": 45,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "bat": 151,
+        "humanoid": 2,
+        "vampire": 1
+      },
+      "digest": "ede1072b56131568"
+    },
+    "containers": {
+      "bookshelf": {
+        "count": 19,
+        "items": {
+          "blood_vial": 1,
+          "candle": 4,
+          "empty_vial": 1,
+          "tome": 1
+        },
+        "digest": "bff8e27ed4b6fc8f"
+      },
+      "chest": {
+        "count": 8,
+        "items": {
+          "candle": 3,
+          "cloak": 4,
+          "tome": 2,
+          "wine": 11
+        },
+        "digest": "29271ce889b16318"
+      },
+      "wine_rack": {
+        "count": 12,
+        "items": {
+          "blood_vial": 21,
+          "candle": 7,
+          "empty_vial": 5,
+          "wine": 12
+        },
+        "digest": "38ac3c78910e33db"
+      }
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 1200,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 2764896
+      },
+      {
+        "at": 420,
+        "color": 16774368
+      },
+      {
+        "at": 1140,
+        "color": 16763040
+      },
+      {
+        "at": 1260,
+        "color": 2764896
+      }
+    ]
+  },
+  {
+    "seed": 7,
+    "map": {
+      "width": 96,
+      "height": 96,
+      "floors": 2,
+      "cells": [
+        "6e4e91069e67ec2b",
+        "45f473eba6de72ef"
+      ]
+    },
+    "player": {
+      "archetype": "vampire",
+      "x": 48,
+      "y": 45,
+      "z": 0
+    },
+    "entities": {
+      "counts": {
+        "bat": 151,
+        "humanoid": 2,
+        "vampire": 1
+      },
+      "digest": "90c9341ee1b235df"
+    },
+    "containers": {
+      "bookshelf": {
+        "count": 19,
+        "items": {
+          "empty_vial": 1,
+          "tome": 2
+        },
+        "digest": "e82bc902832d8e6c"
+      },
+      "chest": {
+        "count": 8,
+        "items": {
+          "blood_vial": 4,
+          "candle": 1,
+          "cloak": 6,
+          "wine": 10
+        },
+        "digest": "d960ad27bce89537"
+      },
+      "wine_rack": {
+        "count": 12,
+        "items": {
+          "blood_vial": 17,
+          "empty_vial": 6,
+          "wine": 3
+        },
+        "digest": "62cfd57815b907ab"
+      }
+    },
+    "clock": {
+      "dayLength": 1440,
+      "start": 1200,
+      "dawn": 360,
+      "dusk": 1200
+    },
+    "lighting": [
+      {
+        "at": 300,
+        "color": 2764896
+      },
+      {
+        "at": 420,
+        "color": 16774368
+      },
+      {
+        "at": 1140,
+        "color": 16763040
+      },
+      {
+        "at": 1260,
+        "color": 2764896
+      }
+    ]
+  }
+]

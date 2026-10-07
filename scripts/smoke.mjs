@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// `npm run smoke`: build, serve the build, and open each genre combo in
+// `npm run smoke`: build, serve the build, and open each shipped stack in
 // Playwright Chromium. Fails on console errors or page errors, on a blank
 // canvas, or when the load-error screen shows up; saves screenshots under
-// docs/screens/. Also checks that an unknown pack shows the error screen.
+// docs/screens/. Also checks that an unknown pack shows the error screen and
+// that the bare URL shows the title screen.
 //
 // Not a verify gate (needs a browser). Env: BENCH_CHROMIUM (path to a
 // Chromium/Chrome binary when Playwright's own download is unavailable),
@@ -15,11 +16,8 @@ import { build, preview } from 'vite';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = resolve(root, 'docs/screens');
-const combos = [
-  ['std', 'std-needs', 'zombie'],
-  ['std', 'vampire'],
-  ['std', 'garden'],
-];
+// Short stacks: the resolver adds each game's dependencies.
+const combos = [['town'], ['zombie'], ['vampire'], ['garden'], ['zombie', 'hardship']];
 
 await build({ root, logLevel: 'warn' });
 const server = await preview({ root, preview: { port: 4175, strictPort: false, open: false }, logLevel: 'warn' });
@@ -79,6 +77,22 @@ try {
   const text = (await page.textContent('#errors').catch(() => null)) ?? '';
   if (!text.includes("unknown pack 'nosuchpack'")) failures.push(`[error screen] expected an unknown-pack error, got ${JSON.stringify(text)}`);
   await page.close();
+
+  // The bare URL shows the title screen with at least one row.
+  const title = await browser.newPage();
+  const titleProblems = [];
+  title.on('console', (m) => {
+    if (m.type() === 'error') titleProblems.push(`console error: ${m.text()}`);
+  });
+  title.on('pageerror', (e) => titleProblems.push(`page error: ${e.message}`));
+  await title.goto(baseUrl);
+  await title.waitForSelector('#picker .picker-row', { timeout: 15_000 }).catch(() => null);
+  const rows = await title.$$eval('#picker .picker-row', (els) => els.length);
+  console.log(`smoke: title screen with ${rows} row(s)`);
+  if (rows < 1) titleProblems.push('no rows on the title screen');
+  await title.screenshot({ path: resolve(outDir, 'title.png') });
+  for (const p of titleProblems) failures.push(`[title screen] ${p}`);
+  await title.close();
 } finally {
   await browser.close();
   await new Promise((r) => server.httpServer.close(r));

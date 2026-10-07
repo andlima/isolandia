@@ -80,7 +80,8 @@ The browser keeps a **quicksave** and **three slots** per pack list in
   tick and when it was saved, and **Save**, **Load** (disabled when empty)
   and **Delete** buttons. **Export** downloads the running game as
   `isolandia-<packs>-day<N>.json`; **Import** loads such a file (or a bare
-  save file).
+  save file). **Title screen** leaves for the [title screen](iso.md#title-screen)
+  (plain navigation: unsaved progress is lost, as on reload).
 - A load replaces the running world: the scene, HUD, panels and context
   menu are rebuilt and the camera recenters on the player. Errors (wrong
   packs, unknown ids…) are listed in the panel and the current game keeps

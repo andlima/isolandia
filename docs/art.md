@@ -1,6 +1,6 @@
 # Pixel art
 
-Every image in the shipped packs (`std`, `zombie`, `vampire`, `garden`) is pixel art,
+Every image in the shipped packs (`std`, `town`, `zombie`, `vampire`, `garden`) is pixel art,
 drawn by a small generator and stored as SVG. This guide gives the
 conventions. Asset fields, anchors and the facing table are documented in
 [packs.md](packs.md#assets); projection and depth sorting are in
@@ -81,7 +81,7 @@ The SVGs are generated. Do not edit them by hand. Instead:
 
 ```sh
 node scripts/pixel-art.mjs                    # regenerate every pack
-node scripts/pixel-art.mjs zombie --preview /tmp/zombie.png              # plus an enlarged contact sheet
+node scripts/pixel-art.mjs town --preview /tmp/town.png                  # plus an enlarged contact sheet
 node scripts/pixel-art.mjs vampire --only 'bat_' --preview /tmp/bats.png  # just some images, larger
 ```
 
@@ -94,7 +94,9 @@ node scripts/pixel-art.mjs vampire --only 'bat_' --preview /tmp/bats.png  # just
 - `art/characters.mjs` holds the shared humanoid body (one text grid per
   drawn facing), the crawler, the bat and the item-pile helper.
 - `art/<pack>.mjs` holds a pack's palette and its drawings. Its `images()`
-  returns the files to write to `packs/<pack>/assets/`.
+  returns the files to write to `packs/<pack>/assets/`. A mod may draw
+  with its base's palette: `art/zombie.mjs` imports the town's and adds
+  two colours.
 
 When you add a drawing, use only names from the pack's palette. Keep each
 pack at **32 colours or fewer** **(tested)**. Then reference the file in
@@ -118,7 +120,7 @@ the pack's `assets.yaml`.
 | `wood_hi` | `#c08a4e` | `pants_lo` | `#3e404e` |
 | `wood` | `#9c6a38` | `shoes` | `#4a3a2e` |
 
-### `zombie` (32 colours)
+### `town` (30 colours), and `zombie` (the town's plus `zskin`, `zskin_lo`: 32)
 
 | Name | Colour | Name | Colour |
 |------|--------|------|--------|

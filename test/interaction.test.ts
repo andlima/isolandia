@@ -448,25 +448,25 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 test('menu: zombie window from afar, without and with materials', () => {
   const w = game('zombie');
   const [wx, wy] = genreCell('zombie', 16, 3);
-  assert.equal(w.grid.tileAt(wx, wy)!.id, 'zmb:window');
+  assert.equal(w.grid.tileAt(wx, wy)!.id, 'town:window');
   assert.ok(Math.max(Math.abs(w.player.x - wx), Math.abs(w.player.y - wy)) > 1);
   const ids = w.def.ids.items;
   const inv = w.player.inv!;
-  for (const id of ['zmb:hammer', 'zmb:plank', 'zmb:nails']) {
+  for (const id of ['town:hammer', 'town:plank', 'town:nails']) {
     const k = inv.stacks.findIndex((s) => s.item === ids[id]);
     if (k >= 0) inv.stacks.splice(k, 1);
   }
   const without = contextMenu(w, wx, wy).find((i) => i.label === 'Barricade')!;
   assert.equal(without.disabled, true);
   assert.equal(without.hint, 'Needs: Hammer, 2× Plank, 4× Nails');
-  inv.stacks.push({ item: ids['zmb:hammer']!, count: 1 }, { item: ids['zmb:plank']!, count: 2 }, { item: ids['zmb:nails']!, count: 4 });
+  inv.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
   const item = contextMenu(w, wx, wy).find((i) => i.label === 'Barricade')!;
-  const act: Action = { kind: 'act', action: 'zmb:barricade', x: wx, y: wy, z: 0 };
+  const act: Action = { kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0 };
   assert.deepEqual(item, { label: 'Barricade', disabled: false, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, adjacent: true, then: act } } });
   // The survivor walks up and starts hammering.
   runMenuItem(w, item);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();
-  assert.equal(w.player.activity?.action, w.def.ids.actions['zmb:barricade'], JSON.stringify(w.lastAction));
+  assert.equal(w.player.activity?.action, w.def.ids.actions['town:barricade'], JSON.stringify(w.lastAction));
   assert.equal(hudModel(w).activity!.label, 'Barricading');
 });
 

@@ -43,12 +43,7 @@ export interface RawEntry {
   readonly value: JsonObject;
 }
 
-export interface RawPack {
-  readonly namespace: string;
-  readonly name: string;
-  readonly version: string;
-  readonly depends: readonly { ns: string; src: Src }[];
-  readonly manifest: SourceFile;
+export interface RawPack extends Manifest {
   /** Non-text files shipped with the pack. */
   readonly otherFiles: ReadonlySet<string>;
   /** Tiled `.tmj`/`.tsj` text files: relative path → text. */
@@ -81,14 +76,34 @@ function parseFile(pack: string, file: string, text: string, sink: ErrorSink): S
   return { pack, file, doc, lines };
 }
 
-function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
-  const text = source.files[MANIFEST];
+export const PACK_KINDS = ['game', 'mod', 'library'] as const;
+export type PackKind = (typeof PACK_KINDS)[number];
+
+const MANIFEST_FIELDS = ['namespace', 'name', 'version', 'kind', 'description', 'depends'];
+
+/** A validated `pack.yaml`: what the loader and the catalog both need. */
+export interface Manifest {
+  readonly namespace: string;
+  readonly name: string;
+  readonly version: string;
+  readonly kind: PackKind;
+  readonly description: string;
+  readonly depends: readonly { ns: string; src: Src }[];
+  readonly manifest: SourceFile;
+}
+
+/**
+ * Parse and validate a pack manifest's text. `label` names the pack in
+ * errors raised before the namespace is known. Returns null when the
+ * manifest is unusable; other problems are reported and defaulted.
+ */
+export function readManifest(label: string, text: string | undefined, sink: ErrorSink): Manifest | null {
   if (text === undefined) {
-    sink.raw({ pack: source.label, file: MANIFEST, path: '', message: `missing pack manifest '${MANIFEST}'` });
+    sink.raw({ pack: label, file: MANIFEST, path: '', message: `missing pack manifest '${MANIFEST}'` });
     return null;
   }
   // Pre-parse with the label; the namespace is not known yet.
-  const pre = parseFile(source.label, MANIFEST, text, sink);
+  const pre = parseFile(label, MANIFEST, text, sink);
   if (!pre) return null;
   const root: Src = { source: pre, path: [] };
   const m = pre.doc.toJS() as unknown;
@@ -107,8 +122,8 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
   const mroot: Src = { source: manifest, path: [] };
 
   for (const k of Object.keys(m)) {
-    if (!['namespace', 'name', 'version', 'depends'].includes(k)) {
-      const s = nearMiss(k, ['namespace', 'name', 'version', 'depends']);
+    if (!MANIFEST_FIELDS.includes(k)) {
+      const s = nearMiss(k, MANIFEST_FIELDS);
       sink.add(at(mroot, k), `unknown manifest field '${k}'${s ? ` (did you mean '${s}'?)` : ''}`);
     }
   }
@@ -119,6 +134,19 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
   if (version === undefined) sink.add(mroot, "missing required field 'version'");
   else if (typeof version !== 'string' && typeof version !== 'number') {
     sink.add(at(mroot, 'version'), `field 'version' must be a string`);
+  }
+  let kind: PackKind = 'library';
+  const k = m['kind'];
+  if (k !== undefined && k !== null) {
+    if (typeof k === 'string' && (PACK_KINDS as readonly string[]).includes(k)) kind = k as PackKind;
+    else {
+      const s = typeof k === 'string' ? nearMiss(k, PACK_KINDS) : null;
+      sink.add(at(mroot, 'kind'), `invalid kind ${JSON.stringify(k)}${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${PACK_KINDS.join(', ')}`);
+    }
+  }
+  const description = m['description'];
+  if (description !== undefined && description !== null && typeof description !== 'string') {
+    sink.add(at(mroot, 'description'), `field 'description' must be a string`);
   }
   const depends: { ns: string; src: Src }[] = [];
   const dep = m['depends'];
@@ -136,8 +164,18 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     namespace: ns as string,
     name: typeof name === 'string' ? name : '',
     version: String(version ?? ''),
+    kind,
+    description: typeof description === 'string' ? description : '',
     depends,
     manifest,
+  };
+}
+
+function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
+  const m = readManifest(source.label, source.files[MANIFEST], sink);
+  if (!m) return null;
+  return {
+    ...m,
     otherFiles: new Set(source.otherFiles ?? []),
     tiledFiles: Object.fromEntries(Object.entries(source.files).filter(([f]) => TILED_FILE_RE.test(f))),
     entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [], recipes: [] },
