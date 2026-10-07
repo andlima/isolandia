@@ -135,8 +135,9 @@ map as the game does, minus the height of raised blocks.
 
 World coordinates are continuous tile units; tile `(i, j)` covers
 `[i, i+1)×[j, j+1)` and its diamond's top vertex is at `iso(i, j)`. Picking
-inverts the projection and floors; a click on a raised block's top face
-(drawn 32 px above its ground) picks the block.
+targets what is drawn under the pointer (see [Picking](#picking)); its
+ground fallback inverts the projection and floors, and a click on a raised
+block's top face (drawn 32 px above its ground) picks the block.
 
 - Flat tiles are drawn in a ground layer of 16×16-tile render chunks;
   chunks outside the viewport are hidden.
@@ -171,12 +172,45 @@ rules in `src/iso/cutaway.ts`):
   in `(px + py, px + py + 3]` and `|(x − y) − (px − py)| ≤ 2`. This also
   applies on one-floor maps; with no raised blocks in front of the player
   the view is unchanged.
-- **Picking.** A click picks on the view floor, with its offset (raised
-  blocks by their top face, as above). When that cell is empty (or outside
-  the map), the floors below are tried in order, so clicking the street
-  from a balcony works. Clicks yield `{ x, y, z }`, and click-to-move
-  issues a goto with that `z`.
+- **Picking.** A click picks what is drawn under it (see
+  [Picking](#picking)); its ground fallback picks on the view floor, with
+  its offset (raised blocks by their top face, as above). When that cell
+  is empty (or outside the map), the floors below are tried in order, so
+  clicking the street from a balcony works. Clicks yield `{ x, y, z }`,
+  and click-to-move issues a goto with that `z`.
 - The HUD shows `Floor N` when the map has more than one floor.
+
+## Picking
+
+Left click, right-click and long-press target the **object drawn under
+the pointer**, not the floor diamond under it (`scene.pickTarget(sx, sy)`;
+the pure logic is `src/iso/hit.ts` and `src/iso/pick.ts`, tested headless).
+
+- **Hit masks.** Every texture drawn for a tile, archetype or item gets a
+  mask of its opaque pixels (alpha ≥ 0.5), read back from the texture's
+  pixels on its art-pixel grid (2×2 iso px for SVG art and placeholders,
+  one pixel for PNGs). Asset masks are built when the `TextureBank` is
+  created (`textures.maskMs` times it); placeholder masks when the
+  placeholder is first baked. Drop shadows and glass are not hits. A
+  mirrored facing reads its partner's mask right to left, around the
+  anchor spot.
+- **Frontmost sprite.** Floors are tried from the view floor down; floors
+  above it are cut away and never hit. On each floor, the raised blocks,
+  ground piles and entities actually drawn (built, visible chunks; piles
+  and entities at their rendered position) are candidates, and the one
+  drawn last (diagonal, then `depthKey`) whose mask contains the point
+  wins. Blocks are searched only in the cells whose sprite can reach the
+  point.
+- **Cutaway click-through.** Blocks faded in front of the player are
+  skipped (top face included), so a click reaches the room behind them.
+- **Ground fallback.** When no sprite on a floor is hit, the floor's
+  ground pick is used if that cell is filled (a floor covers everything
+  below it); otherwise the next floor down is tried, and if every floor
+  misses, the view floor's pick. Without sprite hits this is `pickCell`.
+- A target is `{ kind: 'ground' | 'tile' | 'pile' | 'entity', x, y, z }`
+  (plus the pile's container or the entity). Callers use its cell; an
+  entity's cell is its simulation cell, and the player's own sprite gives
+  the player's cell.
 
 ## Lazy chunks and culling
 

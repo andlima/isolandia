@@ -40,8 +40,8 @@ stale menu is harmless.
 **Controls.**
 
 - **Right-click** on the game canvas (the browser's own menu is
-  suppressed there only, not on the panels). The target is the tile under
-  the pointer, picked like a left click.
+  suppressed there only, not on the panels). The target is the cell of
+  the object drawn under the pointer, picked like a left click.
 - **Long-press:** one finger held within the drag threshold (8 px) for
   500 ms opens the menu. A long-press never also counts as a tap, and a
   drag or a second finger cancels it.
@@ -50,6 +50,14 @@ stale menu is harmless.
   chooses, and `Escape` closes it. A click outside (which does nothing
   else), panning, zooming, opening another menu or the end of the game
   close it too. The target cell is outlined while it is open.
+
+**Clicks target what is drawn under the pointer.** Left click,
+right-click and long-press pick the object whose visible pixels are under
+the pointer: the top half of a fridge is the fridge, a zombie's head in
+front of a wall is the zombie (its cell), your own character is your cell
+(as `E`). Shadows, glass and blocks faded in front of you are clicked
+through; empty spots fall back to the ground cell. See
+[iso.md](iso.md#picking).
 
 Left click still walks to a tile. Pack actions are no longer listed in the
 loot panel; item uses stay in the inventory panel (`I` / `Tab`).
