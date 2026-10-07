@@ -41,6 +41,8 @@ import { facingOf, renderPosition, type Container as Pile, type Entity, type Fac
 import { CHUNK, chunkBounds, chunkCount, chunkLayout, chunkOf, chunksInView, ChunkLru, inShownChunk, MAX_BUILT_CHUNKS, spriteDiff, type ChunkLayout } from './chunks.ts';
 import { FADE_ALPHA, fadeCells, floorVisible, viewFloor } from './cutaway.ts';
 import { depthKey, diagonalOf, Layer } from './depth.ts';
+import { drawOrder, spriteBounds, type HitMask } from './hit.ts';
+import { pickTarget, type Drawn, type PickSource, type PickTarget } from './pick.ts';
 import { FLOOR_H, groundCentreIso, tileAnchorIso, viewIsoBounds, type Bounds, type CameraState } from './projection.ts';
 import type { AnchoredTexture, FacedTexture, TextureBank } from './textures.ts';
 import { sceneTint } from './tint.ts';
@@ -73,8 +75,19 @@ interface FloorView {
   readonly buckets: Container[];
 }
 
+/** A sprite's pick candidate, updated in place as the sprite moves or changes texture. */
+interface Pick {
+  bounds: Bounds;
+  mask: HitMask;
+  mirrored: boolean;
+  order: number;
+  target: PickTarget;
+  floor: number;
+}
+
 interface PileView {
   readonly sprite: Sprite;
+  readonly pick: Pick;
   /** Item index shown (the pile's first stack). */
   item: number;
 }
@@ -82,6 +95,7 @@ interface PileView {
 interface EntityView {
   readonly entity: Entity;
   readonly sprite: Sprite;
+  readonly pick: Pick;
   /** Floor and diagonal of the bucket the sprite is in. */
   floor: number;
   bucket: number;
@@ -115,6 +129,20 @@ function apply(s: Sprite, t: AnchoredTexture): void {
   s.scale.x = t.mirrored ? -1 : 1;
 }
 
+/** Pick candidate of a sprite drawn on floor `floor`, with its current texture and position. */
+function pickOf(s: Sprite, mask: HitMask, floor: number, order: number, target: PickTarget): Pick {
+  const pick: Pick = { bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 }, mask, mirrored: false, order, target, floor };
+  place(pick, s, mask);
+  return pick;
+}
+
+/** Refresh a candidate's bounds, mask and mirroring from its sprite (bounds in scene iso, floor offset included). */
+function place(pick: Pick, s: Sprite, mask: HitMask): void {
+  pick.mask = mask;
+  pick.mirrored = s.scale.x < 0;
+  spriteBounds(s.x, s.y - pick.floor * FLOOR_H, s.texture.width, s.texture.height, s.anchor.x, s.anchor.y, pick.mirrored, pick.bounds);
+}
+
 export class IsoScene {
   readonly root = new Container();
   private readonly floors: FloorView[] = [];
@@ -143,10 +171,14 @@ export class IsoScene {
   private tileVersion: number;
   /** Raised block sprite per cell index (built chunks only). */
   private readonly blockAt = new Map<number, Sprite>();
+  /** Pick candidate per raised block, by cell index (as `blockAt`). */
+  private readonly blockPick = new Map<number, Drawn>();
+  /** The camera of the last update (what picking sees). */
+  private cam: CameraState = { offsetX: 0, offsetY: 0, zoom: 1 };
   /** The view floor (-1 before the first update). */
   private view = -1;
   /** Faded blocks, and the player cell, view floor and tile version they were computed for. */
-  private faded: Sprite[] = [];
+  private faded = new Set<Sprite>();
   private fadeKey = '';
 
   constructor(
@@ -196,7 +228,11 @@ export class IsoScene {
     for (const s of chunk.ground.removeChildren()) s.destroy();
     for (const s of chunk.blocks) s.destroy();
     for (let y = chunk.cy; y < Math.min(chunk.cy + CHUNK, grid.height); y++) {
-      for (let x = chunk.cx; x < Math.min(chunk.cx + CHUNK, grid.width); x++) this.blockAt.delete(grid.index(x, y, chunk.z));
+      for (let x = chunk.cx; x < Math.min(chunk.cx + CHUNK, grid.width); x++) {
+        const i = grid.index(x, y, chunk.z);
+        this.blockAt.delete(i);
+        this.blockPick.delete(i);
+      }
     }
     chunk.blocks = [];
   }
@@ -207,7 +243,11 @@ export class IsoScene {
     this.clearChunk(chunk);
     chunk.ground.destroy();
     this.chunks.delete(key);
-    this.faded = this.faded.filter((s) => !s.destroyed);
+    this.dropDestroyedFades();
+  }
+
+  private dropDestroyedFades(): void {
+    for (const s of this.faded) if (s.destroyed) this.faded.delete(s);
   }
 
   private fillChunk(chunk: Chunk): void {
@@ -221,10 +261,12 @@ export class IsoScene {
         this.drawn[i] = grid.cells[i]!;
         const tile = grid.tileAt(x, y, z);
         if (!tile) continue;
-        const s = sprite(this.textures.tile(tile, facings[i] ?? null));
+        const t = this.textures.tile(tile, facings[i] ?? null);
+        const s = sprite(t);
         const p = tileAnchorIso(x, y);
         s.position.set(p.x, p.y);
         if (tile.raised) {
+          this.blockPick.set(i, pickOf(s, this.textures.mask(t.texture), z, drawOrder(z, x, y, Layer.Block), { kind: 'tile', x, y, z }));
           s.zIndex = depthKey(x, y, Layer.Block);
           s.visible = chunk.visible;
           buckets[diagonalOf(x, y)]!.addChild(s);
@@ -259,7 +301,7 @@ export class IsoScene {
       this.clearChunk(chunk);
       this.fillChunk(chunk);
     }
-    this.faded = this.faded.filter((s) => !s.destroyed);
+    this.dropDestroyedFades();
   }
 
   /** Create, retexture or destroy ground-pile sprites: only non-empty piles in built, visible chunks have one. */
@@ -280,14 +322,18 @@ export class IsoScene {
       const item = c.stacks[0]!.item;
       const v = this.piles.get(c.id);
       if (!v) {
-        const s = sprite(this.textures.item(world.def.items[item]!));
+        const t = this.textures.item(world.def.items[item]!);
+        const s = sprite(t);
         const p = groundCentreIso(c.x, c.y);
         s.position.set(p.x, p.y);
         s.zIndex = depthKey(c.x, c.y, Layer.Pile);
         this.floors[c.z]!.buckets[diagonalOf(c.x, c.y)]!.addChild(s);
-        this.piles.set(c.id, { sprite: s, item });
+        const target: PickTarget = { kind: 'pile', x: c.x, y: c.y, z: c.z, container: c };
+        this.piles.set(c.id, { sprite: s, item, pick: pickOf(s, this.textures.mask(t.texture), c.z, drawOrder(c.z, c.x, c.y, Layer.Pile), target) });
       } else if (v.item !== item) {
-        apply(v.sprite, this.textures.item(world.def.items[item]!));
+        const t = this.textures.item(world.def.items[item]!);
+        apply(v.sprite, t);
+        place(v.pick, v.sprite, this.textures.mask(t.texture));
         v.item = item;
       }
     }
@@ -333,15 +379,51 @@ export class IsoScene {
     if (key === this.fadeKey) return;
     this.fadeKey = key;
     for (const s of this.faded) s.alpha = 1;
-    this.faded = [];
+    this.faded.clear();
     const { grid } = world;
     for (const c of fadeCells(p.x, p.y)) {
       if (!grid.inBounds(c.x, c.y, view)) continue;
       const s = this.blockAt.get(grid.index(c.x, c.y, view));
       if (!s) continue;
       s.alpha = FADE_ALPHA;
-      this.faded.push(s);
+      this.faded.add(s);
     }
+  }
+
+  /** What picking sees of the scene as last updated (built on the first pick). */
+  private pickSource: PickSource | null = null;
+
+  private makePickSource(): PickSource {
+    const { grid } = this.world;
+    return {
+      grid,
+      reach: this.textures.reach,
+      block: (x, y, z) => {
+        const i = grid.index(x, y, z);
+        const s = this.blockAt.get(i);
+        return s && s.visible && !this.faded.has(s) ? (this.blockPick.get(i) ?? null) : null;
+      },
+      faded: (x, y, z) => {
+        const s = this.blockAt.get(grid.index(x, y, z));
+        return s !== undefined && this.faded.has(s);
+      },
+      objects: () => this.drawnObjects(),
+    };
+  }
+
+  private *drawnObjects(): Iterable<Drawn> {
+    for (const v of this.piles.values()) yield v.pick;
+    for (const v of this.entities.values()) yield v.pick;
+  }
+
+  /**
+   * The target drawn under screen point (sx, sy) as of the last update: the
+   * frontmost raised block, ground pile or entity whose opaque pixels
+   * contain it on a visible floor (faded blocks are skipped), else the
+   * ground cell (`pickCell`, falling through empty cells to lower floors).
+   */
+  pickTarget(sx: number, sy: number): PickTarget {
+    return pickTarget(sx, sy, this.cam, Math.max(0, this.view), (this.pickSource ??= this.makePickSource()));
   }
 
   /**
@@ -349,6 +431,7 @@ export class IsoScene {
    * entity and pile sprites, interpolates and re-buckets entities.
    */
   update(cam: CameraState, viewW: number, viewH: number, alpha: number, now: number): SceneStats {
+    this.cam = cam;
     this.root.position.set(cam.offsetX, cam.offsetY);
     this.root.scale.set(cam.zoom);
     const view = viewIsoBounds(cam, viewW, viewH, CULL_MARGIN);
@@ -402,7 +485,9 @@ export class IsoScene {
       const floor = floorOf(r);
       const bucket = diagonalOf(r.x, r.y);
       this.floors[floor]!.buckets[bucket]!.addChild(s);
-      this.entities.set(id, { entity, sprite: s, floor, bucket, facing, shown: t.facing });
+      const target: PickTarget = { kind: 'entity', x: entity.x, y: entity.y, z: entity.z, entity };
+      const pick = pickOf(s, this.textures.mask(t.texture), floor, drawOrder(floor, r.x, r.y, Layer.Entity), target);
+      this.entities.set(id, { entity, sprite: s, pick, floor, bucket, facing, shown: t.facing });
     }
 
     let visibleEntities = 0;
@@ -414,7 +499,13 @@ export class IsoScene {
       const py = p.y - (r.z - floor) * FLOOR_H;
       const s = v.sprite;
       if (floorVisible(floor, this.view)) visibleEntities++;
-      if (s.x !== p.x || s.y !== py) s.position.set(p.x, py);
+      let moved = false;
+      if (s.x !== p.x || s.y !== py || floor !== v.pick.floor) {
+        s.position.set(p.x, py);
+        v.pick.floor = floor;
+        v.pick.order = drawOrder(floor, r.x, r.y, Layer.Entity);
+        moved = true;
+      }
       const facing = facingOf(v.entity);
       if (facing !== v.facing) {
         v.facing = facing;
@@ -422,8 +513,10 @@ export class IsoScene {
         if (t.facing !== v.shown) {
           v.shown = t.facing;
           apply(s, t);
+          moved = true;
         }
       }
+      if (moved) place(v.pick, s, this.textures.mask(s.texture));
       const bucket = diagonalOf(r.x, r.y);
       if (bucket !== v.bucket || floor !== v.floor) {
         this.floors[floor]!.buckets[bucket]!.addChild(s); // reparents

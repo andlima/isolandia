@@ -8,8 +8,7 @@
 import { Application, type Container } from 'pixi.js';
 import { loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
-import { viewFloor } from '../iso/cutaway.ts';
-import { FLOOR_H, groundCentreIso, isoToScreen, pickCell } from '../iso/projection.ts';
+import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
@@ -28,7 +27,7 @@ import { exportFile, gameView, loadResult, restoreText, SaveSlots, storageStore,
 declare global {
   interface Window {
     /** Set once the first frame is drawn; used by `npm run smoke`. */
-    __iso?: { ready: boolean; packs: string[]; distinctColors(): number };
+    __iso?: { ready: boolean; packs: string[]; distinctColors(): number; maskMs: number };
   }
 }
 
@@ -122,21 +121,14 @@ async function main(): Promise<void> {
     const p = groundCentreIso(r.x, r.y);
     return { x: p.x, y: p.y - r.z * FLOOR_H };
   };
-  /** The cell under a screen point: on the view floor, falling through empty cells to the floors below. */
-  const tileAt = (sx: number, sy: number) => {
-    const w = session.world;
-    const view = viewFloor(renderPosition(w.player, w.tick, loop.alpha).z, w.grid.floors);
-    return pickCell(
-      sx,
-      sy,
-      rig.cam,
-      view,
-      (x, y, z) => w.grid.tileAt(x, y, z)?.raised ?? false,
-      (x, y, z) => w.grid.tileAt(x, y, z) !== undefined,
-    );
-  };
+  /**
+   * What is drawn under a screen point: the frontmost block, pile or entity
+   * sprite, else the ground cell (view floor, falling through empty cells).
+   * Only its cell is used; the player's own sprite gives the player's cell.
+   */
+  const targetAt = (sx: number, sy: number) => session.scene.pickTarget(sx, sy);
   const openMenu = (sx: number, sy: number) => {
-    const t = tileAt(sx, sy);
+    const t = targetAt(sx, sy);
     session.menu.open(t.x, t.y, t.z, sx, sy);
   };
 
@@ -218,7 +210,7 @@ async function main(): Promise<void> {
         menu.dismissed = false;
         return;
       }
-      const t = tileAt(sx, sy);
+      const t = targetAt(sx, sy);
       world.queueIntent(clickIntent(world, t.x, t.y, t.z));
     },
     longPress: openMenu,
@@ -294,6 +286,7 @@ async function main(): Promise<void> {
     window.__iso = {
       ready: true,
       packs,
+      maskMs: textures.maskMs,
       distinctColors: () => {
         const { pixels } = app.renderer.extract.pixels({ target: app.stage, frame: app.screen });
         const seen = new Set<number>();

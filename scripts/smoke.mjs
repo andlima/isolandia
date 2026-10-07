@@ -58,7 +58,8 @@ try {
       await page.mouse.click(700, 460);
       await page.waitForTimeout(800);
       const colors = await page.evaluate(() => window.__iso?.distinctColors() ?? 0);
-      console.log(`  ${name}: ${colors} distinct colors sampled`);
+      const maskMs = await page.evaluate(() => window.__iso?.maskMs ?? 0);
+      console.log(`  ${name}: ${colors} distinct colors sampled, hit masks built in ${maskMs.toFixed(1)} ms`);
       if (colors < 6) problems.push(`canvas looks blank (${colors} distinct colors)`);
       const hud = await page.textContent('#hud');
       if (!hud || !/Time: Day \d+ \d\d:\d\d/.test(hud)) problems.push(`HUD missing or malformed: ${JSON.stringify(hud)}`);
