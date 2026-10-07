@@ -162,7 +162,7 @@ the pack's `assets.yaml`.
 | `crypt` | `#3e3650` | `bat_lo` | `#563e66` |
 | `blood` | `#c0182c` | `wax` | `#f0e8c0` |
 
-### `garden` (30 colours)
+### `garden` (32 colours)
 
 A bright pastel palette for a cute look: round shapes, big eyes, a soft
 plum `outline` instead of near-black. The night tint is a light
@@ -185,9 +185,12 @@ blue-violet, so these colours stay readable after dark.
 | `gravel` | `#d8cbb0` | `lilac_lo` | `#9a78d4` |
 | `gravel_lo` | `#b4a68a` | `blue` | `#7ab8f2` |
 | `water_hi` | `#d0f2fc` | `blue_lo` | `#5288c8` |
+| `rust` | `#e0703a` | `rust_lo` | `#b4502e` |
 
-The bunny, the cat and the butterfly are drawn in `art/garden.mjs` as
-their own 16×24 text grids (not the shared humanoid body). The butterfly
+The bunny, the cat, the fox and the butterfly are drawn in `art/garden.mjs`
+as their own 16×24 text grids (not the shared humanoid body). The fox's
+`rust` coat, pointed snout, big ears and white-tipped tail keep it apart
+from the `orange` cat. The butterfly
 hovers above its shadow, like the vampire pack's bat. The fence is a single
 image whose rails run along both map axes, so neighbouring fence tiles join
 up whichever way the fence line runs.

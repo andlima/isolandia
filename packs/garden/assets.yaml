@@ -11,6 +11,7 @@ assets:
   - { id: flowers_img, file: assets/flowers.svg }
   - { id: gravel_img, file: assets/gravel.svg }
   - { id: burrow_img, file: assets/burrow.svg }
+  - { id: den_img, file: assets/den.svg }
   - { id: carrot_patch_img, file: assets/carrot_patch.svg }
   - { id: pond_img, file: assets/pond.svg }
   - { id: bush_img, file: assets/bush.svg }               # block, walkable (raised: true)
@@ -42,6 +43,14 @@ assets:
       ne: assets/butterfly_ne.svg
       w: assets/butterfly_w.svg
       nw: assets/butterfly_nw.svg
+  - id: fox_img           # 8-way: n, e and sw are mirrored
+    anchor: [0.5, 0.92]   # feet at the shadow's centre
+    directions:
+      s: assets/fox_s.svg
+      se: assets/fox_se.svg
+      ne: assets/fox_ne.svg
+      w: assets/fox_w.svg
+      nw: assets/fox_nw.svg
   - { id: carrot_img, file: assets/carrot.svg, anchor: [0.5, 0.5] }
   - { id: clover_img, file: assets/clover.svg, anchor: [0.5, 0.5] }
   - { id: strawberry_img, file: assets/strawberry.svg, anchor: [0.5, 0.5] }

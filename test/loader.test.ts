@@ -110,9 +110,9 @@ test('the loaded definition is deeply frozen', () => {
 test('two games cannot load together: town and garden both define start, clock and lighting', () => {
   // At most one base definition of each singleton is allowed; mods override them instead.
   const errors = errorsOf([STD, NEEDS, TOWN, GARDEN]);
-  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'clock', line: 119, message: /duplicate 'clock': already defined in pack 'town' \(clock\.yaml\)/ });
-  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'start', line: 122, message: /duplicate 'start': already defined in pack 'town'/ });
-  expectError(errors, { pack: 'gdn', file: 'rules.yaml', path: 'lighting', line: 58, message: /duplicate 'lighting': already defined in pack 'town' \(lighting\.yaml\)/ });
+  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'clock', line: 136, message: /duplicate 'clock': already defined in pack 'town' \(clock\.yaml\)/ });
+  expectError(errors, { pack: 'gdn', file: 'content.yaml', path: 'start', line: 139, message: /duplicate 'start': already defined in pack 'town'/ });
+  expectError(errors, { pack: 'gdn', file: 'rules.yaml', path: 'lighting', line: 71, message: /duplicate 'lighting': already defined in pack 'town' \(lighting\.yaml\)/ });
 });
 
 // ── One failing fixture per validation rule ────────────────────────────────

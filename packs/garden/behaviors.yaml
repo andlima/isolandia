@@ -57,3 +57,40 @@ behaviors:
         done: flutter
         on:
           - { when: 'self.has_status("alert")', to: flit }
+
+  # A fox sleeps in its den all day. At dusk it slinks out to prowl, chases
+  # a bunny it spots in the open, sniffs out a crunch on the gravel, and
+  # trots home to sleep by morning.
+  - id: fox
+    initial: sleep
+    states:
+      sleep:
+        do: idle
+        on:
+          - { when: 'not world.is_day', to: prowl }
+      prowl:
+        do: wander
+        radius: 8
+        on:
+          - { when: 'world.is_day', to: den }
+          - { when: 'self.has_status("sly")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
+      chase:
+        do: pursue
+        target: player
+        on:
+          - { when: 'world.is_day', to: den }
+          - { when: 'not self.has_status("sly")', to: prowl }
+        timeout: { after: 15, to: bored }   # loses interest and trots home
+      investigate:                          # sight beats sound
+        do: investigate
+        on:
+          - { when: 'world.is_day', to: den }
+          - { when: 'self.has_status("sly")', to: chase }
+        done: prowl
+      den:
+        do: home
+        done: sleep
+      bored:                                # walks home, ignoring the bunny
+        do: home
+        done: sleep

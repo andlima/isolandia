@@ -1,6 +1,7 @@
 # A gentle garden for little players: gather carrots, snack on clover and
 # strawberries, nap in the burrow. A sleepy cat and the butterflies roam
-# about (behaviors.yaml). Nothing ever gets hurt and there is no defeat.
+# about, and a fox prowls at night (behaviors.yaml). Nothing ever gets hurt
+# and there is no defeat.
 
 measurements:
   - id: energy
@@ -49,6 +50,14 @@ tiles:
     raised: true                    # a leafy dome to hop into
     opaque: false
     tags: [hiding]
+  # The fox's den: a hollow under the roots. Not a burrow, so no napping.
+  - id: den
+    label: Fox den
+    glyph: "o"
+    color: "#a0522d"
+    sprite: den_img
+    walkable: true
+    tags: [den]
   - id: carrot_patch
     label: Carrot patch
     glyph: "v"
@@ -113,6 +122,14 @@ archetypes:
     sprite: butterfly_img
     tags: [bug]
     behavior: butterfly
+  - id: fox
+    label: Fox
+    glyph: f
+    color: "#d8642a"
+    sprite: fox_img
+    tags: [fox]
+    behavior: fox
+    ticks_per_step: 2               # no faster than the cat: the bunny gets away
 
 # The day begins with the morning dew.
 clock:
