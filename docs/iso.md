@@ -70,7 +70,7 @@ navigation: unsaved progress is lost, as on reload).
 | Wheel / pinch                  | Zoom around the cursor / pinch centre, 0.25×–3× |
 | `Space`                        | Re-centre on the player and follow again |
 | `H`                            | Toggle the HUD |
-| `I` / `Tab`                    | Toggle the inventory panel (when the player has an inventory) |
+| `I` / `Tab`                    | Toggle the [transfer window](ui.md#transfer-window) in inventory-only mode (when the player has an inventory) |
 | `PageUp` / `<`, `PageDown` / `>` | Climb the stairs or ladder you stand on, up or down a floor |
 
 A drag never counts as a click (8 px threshold). The HUD shows the
@@ -82,18 +82,17 @@ defeat message and a centred banner covers the canvas; the camera still
 pans and zooms, but movement input is ignored. `start.victory` works the
 same way with its own, gold-on-green banner (`#victory`).
 
-## Inventory and loot panels
+## Transfer window
 
-Two DOM panels are built from the same `hudModel` (`src/web/panels.ts`;
-the view functions are pure and unit-tested) and turn button clicks into
-`world.queueAction`:
+The DOM panels are built from the same `hudModel` (the view functions are
+pure and unit-tested) and turn button clicks into `world.queueAction`:
 
-- the **inventory panel** (`I`/`Tab`) lists the player's stacks with the
-  item's use button (its `use.label`) and *Drop*, plus `Carrying: w/cap`;
-- the **loot panel** opens by itself whenever a container is within reach
-  (the player's cell or the 8 around it). It lists each container's stacks
-  with *Take* (one unit) and *Take all*, and a *Put* section to move
-  inventory stacks into a reachable container. Pack
+- the **transfer window** (`src/web/transfer.ts`, see
+  [ui.md](ui.md#transfer-window)) shows a reachable container (the
+  player's cell or the 8 around it) next to the inventory: clicking a
+  stack moves all of it, Shift-click one unit. It opens on a container
+  from the context menu's *Open* (or a left click), never by itself, and
+  `I`/`Tab` opens it with the inventory only (use buttons and *Drop*). Pack
   [actions](packs.md#actions) are in the **context menu** (right-click,
   long-press or `E`; see [ui.md](ui.md)), which outlines its target cell
   while open;

@@ -51,9 +51,10 @@ unit says so (`Cook: Hot beans ×2`).
 **Walk-then-act.** Choosing an action that is out of reach walks there
 first: the shell queues a `goto` whose `then` is the action
 (`world.approachIntent`), and the simulation starts it on arrival. *Open*
-from afar walks up to the container and then shows it in the loot panel;
-*Take all* from afar takes the first stack on arrival and shows the
-container in the loot panel for the rest. Items are computed when the menu
+from afar walks up to the container and then opens it in the
+[transfer window](#transfer-window); *Take all* from afar takes the first
+stack on arrival and opens the container in the transfer window for the
+rest. Items are computed when the menu
 opens; the simulation checks everything again when the action runs, so a
 stale menu is harmless.
 
@@ -86,8 +87,51 @@ cell (as `E`). Shadows, glass and blocks faded in front of you are clicked
 through; empty spots fall back to the ground cell. See
 [iso.md](iso.md#picking).
 
-Pack actions are not listed in the loot panel; item uses stay in the
-inventory panel (`I` / `Tab`).
+Pack actions are not listed in the transfer window; item uses are its
+*Use* buttons (the item's `use.label`).
+
+## Transfer window
+
+One window moves items between a container and your inventory: the
+container on the left, what you carry on the right, each stack with its
+icon (the item's `sprite` image, drawn pixel-crisp, or a swatch of its
+`color` and `glyph`), label, count and weight.
+
+- **Opening.** *Open* in the context menu (or a left click on a
+  container, see above) opens the window on that container. Chosen from
+  afar, it opens once you arrive. The window never opens by itself: the
+  HUD's `Nearby:` line is the passive cue. **`I` / `Tab`** opens it with
+  your inventory only, or switches an open window to inventory-only and
+  back.
+- **Moving.** Clicking a stack moves **all of it** to the other side (as
+  many units as fit); **Shift + click** moves **one**. Rows are buttons:
+  `Enter` on a focused row moves the stack, `Shift + Enter` one unit.
+  **Take all** and **Put all** sit above each pane. A move that fails
+  (`Too heavy`, …) shows the message under the weight bar for a few
+  seconds, as well as on the HUD. Inventory rows have small **Use** and
+  **Drop** buttons that do not move the row; in inventory-only mode
+  clicking a row does nothing, its buttons still work.
+- **Tabs.** Every reachable container has a tab (tile containers and
+  ground piles, the pile on your own cell included), with its load and
+  capacity. Clicking a tab shows that container. Dropping an item while
+  the window is open makes the ground pile appear as a tab. When the shown
+  container leaves reach (you walked away, the pile emptied), the next
+  tab is selected; with none left the window goes back to inventory-only
+  if `I` opened it, and closes otherwise.
+- **Closing.** `Escape`, the **×** button, or opening the crafting or
+  Game panel closes it.
+- **Layout.** The window sits at the bottom right and stays below the
+  middle of the screen, so it never covers your character at the default
+  zoom. The two panes scroll on their own; on screens narrower than
+  560 px they stack, container on top. After defeat or victory everything
+  is disabled.
+
+The view is the pure function `transferView(world, openContainer,
+readOnly, icons)` in `src/web/transfer.ts` (tabs, the selected
+container's stacks, the inventory with `Carrying: w/cap` and a fill
+fraction, and *Take all* / *Put all*); `src/web/transfer-dom.ts` renders
+it, re-rendering only when the view's JSON changes. Icon URLs come from
+the same pack asset URLs the renderer loads (`itemIconUrls`).
 
 ## Crafting panel
 
@@ -143,7 +187,9 @@ the browser, `MemoryStore` in tests).
 | Arrows / `Enter` / `Escape` (menu open) | Move, choose (or fold/unfold), close |
 | `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
 | `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
-| `I` / `Tab` | Inventory panel |
+| `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
+| `Escape` | Close the transfer window (or the menu, when open) |
+| Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |

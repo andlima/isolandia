@@ -41,8 +41,45 @@
         background: rgba(0, 0, 0, 0.7); border-radius: 4px;
       }
       .panel[hidden] { display: none; }
-      #inventory { top: 8px; }
-      #loot { bottom: 8px; }
+      #transfer {
+        bottom: 8px; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
+        width: min(560px, calc(100vw - 16px)); max-width: none; max-height: calc(50vh - 48px); padding: 4px 6px;
+      }
+      #transfer[hidden] { display: none; }
+      #transfer .transfer-head { display: flex; align-items: flex-start; gap: 4px; flex: none; }
+      #transfer .transfer-head .panel-title { flex: 1; margin: 0; }
+      #transfer .transfer-tabs { flex: 1; display: flex; flex-wrap: wrap; gap: 2px; }
+      #transfer .transfer-tab.selected { background: #5a4a1e; border-color: #ffd23f; color: #ffd23f; }
+      #transfer .transfer-close { margin-left: auto; padding: 0 7px; }
+      #transfer .transfer-panes { display: flex; gap: 8px; flex: 1; min-height: 0; margin-top: 4px; }
+      #transfer .transfer-pane { flex: 1 1 0; min-width: 0; overflow: auto; }
+      #transfer .transfer-pane-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+      #transfer .transfer-pane-head .panel-title { margin: 0; }
+      #transfer .transfer-pane-head button { margin-left: auto; }
+      #transfer .transfer-dim { font-size: 11px; color: #a8adb7; }
+      #transfer .transfer-bar { position: relative; height: 14px; margin: 3px 0; background: #222630; border: 1px solid #556; border-radius: 3px; overflow: hidden; }
+      #transfer .transfer-fill { height: 100%; background: #4a7a4a; }
+      #transfer .transfer-fill.full { background: #8a4a3a; }
+      #transfer .transfer-bar-text { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 14px; }
+      #transfer .transfer-message { font-size: 12px; color: #ff8a8a; }
+      #transfer .transfer-empty { color: #8a8f99; }
+      #transfer .transfer-item { display: flex; align-items: center; gap: 3px; }
+      #transfer .transfer-row {
+        flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; text-align: left; font-size: 13px;
+        padding: 1px 4px; background: transparent; border-color: transparent;
+      }
+      #transfer .transfer-row:hover:not(:disabled):not(.inert), #transfer .transfer-row:focus-visible { background: #333a44; border-color: #556; }
+      #transfer .transfer-row.inert { cursor: default; }
+      #transfer .transfer-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #transfer .transfer-count { color: #ffd23f; }
+      #transfer .transfer-icon {
+        flex: none; width: 24px; height: 24px; object-fit: contain; image-rendering: pixelated;
+        display: inline-flex; align-items: center; justify-content: center; border-radius: 3px;
+        font-size: 14px; font-weight: bold; color: #111; text-shadow: 0 0 2px rgba(255, 255, 255, 0.6);
+      }
+      @media (max-width: 560px) {
+        #transfer .transfer-panes { flex-direction: column; }
+      }
       #crafting { left: 8px; right: auto; bottom: 40px; }
       .panel-subtitle { color: #c9a25a; margin-top: 4px; }
       .panel-hint { font-size: 11px; color: #c9a25a; }
@@ -76,8 +113,6 @@
         border-radius: 3px; padding: 0 5px; margin: 1px 0; cursor: pointer;
       }
       .panel button:disabled { opacity: 0.4; cursor: default; }
-      .panel-title.focus { animation: focus 1s ease-out; }
-      @keyframes focus { from { background: rgba(255, 210, 63, 0.4); } to { background: transparent; } }
       #menu {
         right: auto; z-index: 10; min-width: 160px; max-width: min(300px, calc(100vw - 8px)); max-height: calc(100vh - 8px);
         box-sizing: border-box; padding: 4px; background: rgba(15, 17, 22, 0.94); border: 1px solid #556;

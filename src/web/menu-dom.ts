@@ -26,7 +26,7 @@ export class ContextMenu {
   constructor(
     parent: HTMLElement,
     private readonly world: World,
-    /** Called for items that open the loot panel at a container. */
+    /** Called for items that open the transfer window at a container. */
     private readonly openLoot: (container: number) => void,
   ) {
     this.el = document.createElement('div');
@@ -75,7 +75,7 @@ export class ContextMenu {
     this.select(0);
   }
 
-  /** Run an item (a menu choice or a left click's default): queue it and open the loot panel when it says so. */
+  /** Run an item (a menu choice or a left click's default): queue it and open the transfer window when it says so. */
   run(item: MenuItem): void {
     const open = runMenuItem(this.world, item);
     if (open && item.run.container !== undefined) this.openLoot(item.run.container);

@@ -18,7 +18,7 @@ import {
 } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { activityBar } from '../src/web/hud.ts';
-import { lootView } from '../src/web/panels.ts';
+import { transferView } from '../src/web/transfer.ts';
 import { fixture, GAMES, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
@@ -788,14 +788,14 @@ test('ascii: the x list adds take all for reachable non-empty containers, after 
   assert.equal(count(w, 't:salve'), 3);
 });
 
-test('panels: the loot panel has no Actions section; it shows only with containers in reach', () => {
+test('transfer window: tabs only for containers in reach, no pack actions', () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  assert.equal(lootView(hudModel(w), false), null);
+  assert.deepEqual(transferView(w, 0, false).tabs, []);
   moveTo(w.player, 2, 2);
-  const lv = lootView(hudModel(w), false)!;
-  assert.deepEqual(Object.keys(lv).sort(), ['put', 'sections']);
-  assert.equal(lv.sections[0]!.title, 'Bin');
+  const v = transferView(w, w.containersAt(1, 3)[0]!.id, false);
+  assert.deepEqual(Object.keys(v).sort(), ['container', 'inventory', 'message', 'putAll', 'tabs', 'takeAll']);
+  assert.equal(v.container!.label, 'Bin');
 });
 
 // ── Two-genre scenarios ─────────────────────────────────────────────────────

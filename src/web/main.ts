@@ -24,6 +24,7 @@ import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
 import { showPicker } from './picker-dom.ts';
+import { itemIconUrls, type ItemIconUrls } from './transfer.ts';
 import { exportFile, gameView, loadResult, restoreText, SaveSlots, storageStore, type LoadResult } from './saves.ts';
 
 declare global {
@@ -53,11 +54,12 @@ class GameSession {
     readonly world: World,
     stage: Container,
     textures: TextureBank,
+    icons: ItemIconUrls,
   ) {
     this.scene = new IsoScene(world, textures);
     stage.addChild(this.scene.root);
     this.hud = new Hud(document.body);
-    this.panels = new Panels(document.body, world);
+    this.panels = new Panels(document.body, world, icons);
     this.menu = new ContextMenu(document.body, world, (id) => this.panels.openLoot(id));
     this.lastGoto = world.lastGoto;
   }
@@ -114,7 +116,8 @@ async function main(): Promise<void> {
     web.urls,
   );
   const textures = new TextureBank(app.renderer, def, await loadAssetTextures(def, urls));
-  let session = new GameSession(World.create(def, params.seed), app.stage, textures);
+  const icons = itemIconUrls(def, urls);
+  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons);
 
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
@@ -170,7 +173,7 @@ async function main(): Promise<void> {
       return report(r.message, r.errors);
     }
     session.dispose();
-    session = new GameSession(r.world, app.stage, textures);
+    session = new GameSession(r.world, app.stage, textures, icons);
     loop.reset();
     rig.recenter();
     message = r.message;
@@ -196,6 +199,7 @@ async function main(): Promise<void> {
       );
     },
     titleScreen: () => location.assign(location.pathname),
+    opened: () => session.panels.closeTransfer(),
   });
 
   const input = new Input(app.canvas, () => session.world, {
@@ -233,6 +237,7 @@ async function main(): Promise<void> {
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
+      if (code === 'Escape') panels.closeTransfer();
       if (code === 'KeyO') {
         game.toggle();
         refreshGame();
