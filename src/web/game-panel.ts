@@ -13,6 +13,8 @@ export interface GamePanelHandlers {
   importFile(file: File): void;
   /** Leave for the title screen (plain navigation: unsaved progress is lost). */
   titleScreen(): void;
+  /** The panel was shown (other windows close). */
+  opened?(): void;
 }
 
 /** How long an info note stays up (warnings stay until dismissed). */
@@ -96,6 +98,7 @@ export class GamePanel {
 
   toggle(): void {
     this.el.hidden = !this.el.hidden;
+    if (!this.el.hidden) this.on.opened?.();
   }
 
   render(view: GameView): void {

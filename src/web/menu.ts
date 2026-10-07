@@ -10,11 +10,11 @@ import { GROUND_LABEL, reasonText, type Action, type GotoIntent, type Interactio
 import type { PickTarget } from '../iso/pick.ts';
 import { clickIntent } from './panels.ts';
 
-/** What selecting a menu item does, in order: queue the intent, queue the actions, open the loot panel. */
+/** What selecting a menu item does, in order: queue the intent, queue the actions, open the transfer window. */
 export interface MenuRun {
   readonly intent?: GotoIntent;
   readonly actions?: readonly Action[];
-  /** Show the loot panel at `container` (deferred until it is in reach when an intent walks there). */
+  /** Open the transfer window on `container` (deferred until it is in reach when an intent walks there). */
   readonly openLoot?: boolean;
   readonly container?: number;
 }
@@ -97,7 +97,7 @@ function labelOf(world: World, e: Interaction): string {
  * `Go down` walk to the far end of the link (through it). Out of reach, tile
  * actions, station recipes and `take all` walk there first
  * (`approachIntent`; a `take all` from afar takes the first stack on arrival
- * and opens the loot panel for the rest), and `open` walks up to the
+ * and opens the transfer window for the rest), and `open` walks up to the
  * container and opens the panel once it is in reach.
  */
 function menuItem(world: World, e: Interaction, x: number, y: number, z: number): MenuItem {
@@ -246,7 +246,7 @@ export function hoverInfo(world: World, target: PickTarget): HoverInfo {
   }
 }
 
-/** Queue a menu item's intent and actions; returns whether the loot panel should open. */
+/** Queue a menu item's intent and actions; returns whether the transfer window should open. */
 export function runMenuItem(world: World, item: MenuItem): boolean {
   if (item.disabled) return false;
   const { intent, actions, openLoot } = item.run;

@@ -1,11 +1,13 @@
 /**
- * Inventory, loot and crafting panels for the browser. The views are pure
- * functions of `hudModel` and `availableRecipes` (so they are testable
- * without a DOM); the `Panels` class only renders them and turns button
- * clicks into `world.queueAction`. Pack actions live in the context menu (`menu.ts`).
+ * Crafting panel and transfer window for the browser. The views are pure
+ * functions of `availableRecipes` and `hudModel` (`transfer.ts`), so they
+ * are testable without a DOM; the `Panels` class only renders them and turns
+ * button clicks into `world.queueAction`. Pack actions live in the context menu (`menu.ts`).
  */
 
-import { hudModel, recipeHint, stationLabel, type Action, type GotoIntent, type HudModel, type World } from '../core/index.ts';
+import { recipeHint, stationLabel, type Action, type GotoIntent, type World } from '../core/index.ts';
+import { TransferWindow } from './transfer-dom.ts';
+import type { ItemIconUrls } from './transfer.ts';
 
 export interface PanelButton {
   readonly label: string;
@@ -17,79 +19,11 @@ export interface PanelButton {
   readonly hint?: string;
 }
 
-export interface PanelRow {
-  readonly text: string;
-  readonly buttons: readonly PanelButton[];
-}
-
-export interface InventoryView {
-  /** `Carrying: w/cap`. */
-  readonly carrying: string;
-  readonly rows: readonly PanelRow[];
-}
-
-export interface LootSection {
-  /** Container id. */
-  readonly id: number;
-  readonly title: string;
-  readonly rows: readonly PanelRow[];
-  /** Takes every stack of the container (as much as fits); null when empty. */
-  readonly takeAll: PanelButton | null;
-}
-
-export interface LootView {
-  readonly sections: readonly LootSection[];
-  /** One row per inventory stack, with a Put button per reachable container. */
-  readonly put: readonly PanelRow[];
-}
-
 const button = (label: string, action: Action | Action[], disabled: boolean): PanelButton => ({
   label,
   actions: Array.isArray(action) ? action : [action],
   disabled,
 });
-
-/** Inventory panel: each stack with Use (its use label) and Drop; null without an inventory. */
-export function inventoryView(m: HudModel, readOnly: boolean): InventoryView | null {
-  if (!m.inventory) return null;
-  return {
-    carrying: m.inventory.carrying,
-    rows: m.inventory.stacks.map((s) => ({
-      text: `${s.text} (${s.weight})`,
-      buttons: [
-        ...(s.useLabel ? [button(s.useLabel, { kind: 'use', item: s.item }, readOnly)] : []),
-        button('Drop', { kind: 'drop', item: s.item, count: s.count }, readOnly),
-      ],
-    })),
-  };
-}
-
-/** Loot panel: shown when at least one container is reachable (null otherwise). */
-export function lootView(m: HudModel, readOnly: boolean): LootView | null {
-  if (m.nearby.length === 0) return null;
-  const sections = m.nearby.map(
-    (c): LootSection => ({
-      id: c.id,
-      title: c.label,
-      rows: c.stacks.map((s) => ({
-        text: s.text,
-        buttons: [button('Take', { kind: 'take', container: c.id, item: s.item, count: 1 }, readOnly)],
-      })),
-      takeAll: c.stacks.length
-        ? button(
-            'Take all',
-            c.stacks.map((s): Action => ({ kind: 'take', container: c.id, item: s.item })),
-            readOnly,
-          )
-        : null,
-    }),
-  );
-  const put = (m.inventory?.stacks ?? []).map((s) => ({
-    text: s.text,
-    buttons: m.nearby.map((c) => button(`Put → ${c.label}`, { kind: 'put', container: c.id, item: s.item, count: 1 }, readOnly)),
-  }));
-  return { sections, put };
-}
 
 /** One recipe of the crafting panel. */
 export interface CraftingRow {
@@ -162,38 +96,25 @@ export function clickIntent(world: World, x: number, y: number, z: number = worl
 
 /** DOM rendering of the panels. Re-renders only when their content changes. */
 export class Panels {
-  private readonly inv: HTMLDivElement;
-  private readonly loot: HTMLDivElement;
   private readonly craft: HTMLDivElement;
+  private readonly transfer: TransferWindow;
   private readonly toggle: HTMLButtonElement | null = null;
-  private invKey = '';
-  private lootKey = '';
   private craftKey = '';
   private lastTick = -1;
   private lastVersion = -1;
   private lastTileVersion = -1;
-  /** Container to bring into view once it is in reach (context menu `Open`), or null. */
-  private focus: number | null = null;
 
   constructor(
     parent: HTMLElement,
     private readonly world: World,
+    icons: ItemIconUrls = [],
   ) {
-    this.inv = document.createElement('div');
-    this.inv.id = 'inventory';
-    this.inv.className = 'panel';
-    this.inv.hidden = true;
-    this.loot = document.createElement('div');
-    this.loot.id = 'loot';
-    this.loot.className = 'panel';
-    this.loot.hidden = true;
+    this.transfer = new TransferWindow(parent, world, icons);
     this.craft = document.createElement('div');
     this.craft.id = 'crafting';
     this.craft.className = 'panel';
     this.craft.hidden = true;
-    parent.append(this.inv, this.loot, this.craft);
-    this.inv.addEventListener('click', (ev) => this.onClick(ev));
-    this.loot.addEventListener('click', (ev) => this.onClick(ev));
+    parent.append(this.craft);
     this.craft.addEventListener('click', (ev) => this.onClick(ev));
     if (world.def.recipes.length > 0 && world.player.inv) {
       const toggle = (this.toggle = document.createElement('button'));
@@ -206,47 +127,42 @@ export class Panels {
 
   /** Remove the panels' elements (the world is being replaced). */
   dispose(): void {
-    for (const el of [this.inv, this.loot, this.craft, this.toggle]) el?.remove();
+    this.transfer.dispose();
+    for (const el of [this.craft, this.toggle]) el?.remove();
   }
 
-  /** `C` or the HUD button: show or hide the crafting panel. */
+  /** `C` or the HUD button: show or hide the crafting panel (showing it closes the transfer window). */
   toggleCrafting(): void {
     if (this.world.def.recipes.length === 0 || !this.world.player.inv) return;
     this.craft.hidden = !this.craft.hidden;
+    if (!this.craft.hidden) this.transfer.close();
     this.craftKey = '';
     this.lastTick = -1;
   }
 
-  /** `I` / `Tab`: show or hide the inventory panel. */
+  /** `I` / `Tab`: the transfer window in inventory-only mode (see `TransferWindow.toggleInventory`). */
   toggleInventory(): void {
-    if (!this.world.player.inv) return;
-    this.inv.hidden = !this.inv.hidden;
-    this.invKey = '';
+    this.transfer.toggleInventory();
   }
 
-  /** Show container `id` in the loot panel now, or as soon as it is in reach. */
+  /** Open the transfer window on container `id` now, or as soon as it is in reach. */
   openLoot(id: number): void {
-    this.focus = id;
-    this.lastTick = -1;
+    this.transfer.openContainer(id);
+  }
+
+  /** `Escape`, or the Game panel opening: close the transfer window. */
+  closeTransfer(): void {
+    this.transfer.close();
   }
 
   update(): void {
+    this.transfer.update();
     const w = this.world;
     if (w.tick === this.lastTick && w.containerVersion === this.lastVersion && w.tileVersion === this.lastTileVersion) return;
     this.lastTick = w.tick;
     this.lastVersion = w.containerVersion;
     this.lastTileVersion = w.tileVersion;
-    const m = hudModel(w);
     const readOnly = w.ended;
-
-    const iv = inventoryView(m, readOnly);
-    if (iv && !this.inv.hidden) {
-      const key = JSON.stringify(iv);
-      if (key !== this.invKey) {
-        this.invKey = key;
-        this.inv.replaceChildren(heading('Inventory'), line(iv.carrying), ...iv.rows.map(row), ...(iv.rows.length ? [] : [line('empty')]));
-      }
-    }
 
     if (!this.craft.hidden) {
       const cv = craftingView(w, readOnly);
@@ -272,32 +188,6 @@ export class Panels {
           }
         }
         this.craft.replaceChildren(...parts);
-      }
-    }
-
-    const lv = lootView(m, readOnly);
-    this.loot.hidden = lv === null;
-    if (lv) {
-      const key = JSON.stringify(lv);
-      if (key !== this.lootKey) {
-        this.lootKey = key;
-        const parts: HTMLElement[] = [];
-        for (const s of lv.sections) {
-          const h = heading(s.title);
-          h.dataset['container'] = String(s.id);
-          if (s.takeAll) h.append(' ', buttonEl(s.takeAll));
-          parts.push(h, ...s.rows.map(row), ...(s.rows.length ? [] : [line('empty')]));
-        }
-        if (lv.put.length) parts.push(heading('Put'), ...lv.put.map(row));
-        this.loot.replaceChildren(...parts);
-      }
-      const at = this.focus === null ? null : this.loot.querySelector<HTMLElement>(`[data-container="${this.focus}"]`);
-      if (at) {
-        this.focus = null;
-        at.scrollIntoView({ block: 'nearest' });
-        at.classList.remove('focus');
-        void at.offsetWidth; // restart the highlight animation
-        at.classList.add('focus');
       }
     }
   }
@@ -329,11 +219,4 @@ function buttonEl(b: PanelButton): HTMLButtonElement {
   if (b.hint) el.title = b.hint;
   el.dataset['actions'] = JSON.stringify(b.actions);
   return el;
-}
-
-function row(r: PanelRow): HTMLDivElement {
-  const d = line(r.text);
-  d.className = 'panel-row';
-  for (const b of r.buttons) d.append(' ', buttonEl(b));
-  return d;
 }
