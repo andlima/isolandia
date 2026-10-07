@@ -34,15 +34,17 @@ test('catalog: records from the shipped manifests, with kind and description', (
     SHIPPED.packs.map((p) => [p.dir, p.namespace, p.kind, p.depends.join(',')]),
     [
       ['garden', 'gdn', 'game', 'std'],
+      ['hardship', 'hardship', 'mod', 'std_needs,town'],
       ['std', 'std', 'library', ''],
       ['std-needs', 'std_needs', 'library', 'std'],
-      ['vampire', 'vamp', 'game', 'std'],
-      ['zombie', 'zmb', 'game', 'std,std_needs'],
+      ['town', 'town', 'game', 'std,std_needs'],
+      ['vampire', 'vamp', 'mod', 'std,town'],
+      ['zombie', 'zmb', 'mod', 'std,std_needs,town'],
     ],
   );
   const zmb = SHIPPED.packs.find((p) => p.namespace === 'zmb')!;
   assert.equal(zmb.name, 'Zombie Town');
-  assert.equal(zmb.version, '0.1.0');
+  assert.equal(zmb.version, '0.2.0');
   assert.ok(zmb.description.length > 0);
 });
 
@@ -88,9 +90,12 @@ test('loader: bad kind is a load error too (shared manifest validation)', () => 
 // ── Resolver ──────────────────────────────────────────────────────────────
 
 test('resolver: a game pulls in its dependencies, in order', () => {
-  assert.deepEqual(ns(resolveStack(SHIPPED, ['zombie'])), ['std', 'std_needs', 'zmb']);
-  assert.deepEqual(ns(resolveStack(SHIPPED, ['zmb'])), ['std', 'std_needs', 'zmb']);
-  assert.deepEqual(ns(resolveStack(SHIPPED, ['vampire'])), ['std', 'vamp']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['town'])), ['std', 'std_needs', 'town']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['zombie'])), ['std', 'std_needs', 'town', 'zmb']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['zmb'])), ['std', 'std_needs', 'town', 'zmb']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['vampire'])), ['std', 'std_needs', 'town', 'vamp']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['zombie', 'hardship'])), ['std', 'std_needs', 'town', 'zmb', 'hardship']);
+  assert.deepEqual(ns(resolveStack(SHIPPED, ['vampire', 'zombie'])), ['std', 'std_needs', 'town', 'vamp', 'zmb']);
   assert.deepEqual(ns(resolveStack(SHIPPED, ['std-needs'])), ['std', 'std_needs']);
   assert.deepEqual(ns(resolveStack(SHIPPED, ['std_needs'])), ['std', 'std_needs']);
 });
@@ -98,8 +103,9 @@ test('resolver: a game pulls in its dependencies, in order', () => {
 test('resolver: every explicit stack used in the repo resolves to itself', () => {
   const stacks = [
     ...Object.values(GAMES).map((dirs) => dirs.map((d) => d.replace('packs/', ''))),
-    ['std', 'std-needs', 'zombie'],
-    ['std', 'vampire'],
+    ['std', 'std-needs', 'town', 'zombie'],
+    ['std', 'std-needs', 'town', 'vampire'],
+    ['std', 'std-needs', 'town', 'zombie', 'hardship'],
     ['std', 'garden'],
     ['std', 'std-needs'],
     ['std'],
@@ -211,7 +217,8 @@ test('kind: PackInfo carries kind and description; shipped stacks load as before
     [
       ['std', 'library'],
       ['std_needs', 'library'],
-      ['zmb', 'game'],
+      ['town', 'game'],
+      ['zmb', 'mod'],
     ],
   );
   assert.ok(r.definition.packs.every((p) => typeof p.description === 'string' && p.description.length > 0));

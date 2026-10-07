@@ -87,11 +87,11 @@ test('web packs: Tiled .tmj/.tsj files come in as text, not as asset URLs', () =
 });
 
 test('web packs: equivalent to the Node reader for the real packs', () => {
-  const node = readPack('packs/zombie');
+  const node = readPack('packs/town');
   assert.ok(Object.keys(node.files).some((f) => f.endsWith('.tmj')));
-  const yaml = Object.fromEntries(Object.entries(node.files).map(([f, t]) => [`/packs/zombie/${f}`, t]));
-  const files = Object.fromEntries((node.otherFiles ?? []).map((f) => [`/packs/zombie/${f}`, `/u/${f}`]));
-  const w = buildPackSources(yaml, files, ['zombie']);
+  const yaml = Object.fromEntries(Object.entries(node.files).map(([f, t]) => [`/packs/town/${f}`, t]));
+  const files = Object.fromEntries((node.otherFiles ?? []).map((f) => [`/packs/town/${f}`, `/u/${f}`]));
+  const w = buildPackSources(yaml, files, ['town']);
   assert.deepEqual(w.sources[0]!.files, node.files);
   assert.deepEqual(w.sources[0]!.otherFiles, node.otherFiles);
 });
@@ -139,19 +139,25 @@ test('web catalog: from the glob manifests; ?packs= tokens resolve with the shar
 
 test('web catalog: the real packs resolve short stacks', () => {
   const text: Record<string, string> = {};
-  for (const dir of ['std', 'std-needs', 'zombie', 'vampire', 'garden']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
+  for (const dir of ['std', 'std-needs', 'town', 'zombie', 'vampire', 'hardship', 'garden']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
   const c = webCatalog(text);
   const r = resolveStack(c, ['zombie']);
   assert.ok(r.ok);
   assert.deepEqual(
     r.packs.map((p) => p.dir),
-    ['std', 'std-needs', 'zombie'],
+    ['std', 'std-needs', 'town', 'zombie'],
+  );
+  const v = resolveStack(c, ['vampire', 'hardship']);
+  assert.ok(v.ok);
+  assert.deepEqual(
+    v.packs.map((p) => p.dir),
+    ['std', 'std-needs', 'town', 'vampire', 'hardship'],
   );
 });
 
 test('saves: a short and a full request share slot keys and export names', () => {
   const text: Record<string, string> = {};
-  for (const dir of ['std', 'std-needs', 'zombie']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
+  for (const dir of ['std', 'std-needs', 'town', 'zombie']) text[`/packs/${dir}/pack.yaml`] = readPack(`packs/${dir}`).files['pack.yaml']!;
   const c = webCatalog(text);
   const dirs = (tokens: string[]) => {
     const r = resolveStack(c, tokens);
@@ -159,10 +165,10 @@ test('saves: a short and a full request share slot keys and export names', () =>
     return r.packs.map((p) => p.dir);
   };
   const short = dirs(parseParams('?packs=zombie').packs!);
-  const full = dirs(parseParams('?packs=std,std-needs,zombie').packs!);
+  const full = dirs(parseParams('?packs=std,std-needs,town,zombie').packs!);
   assert.equal(slotKey(short, 'slot1'), slotKey(full, 'slot1'));
   // Slots saved before stacks (under the full list) stay reachable.
-  assert.equal(slotKey(short, 'quick'), 'isolandia:save:std,std-needs,zombie:quick');
+  assert.equal(slotKey(short, 'quick'), 'isolandia:save:std,std-needs,town,zombie:quick');
   assert.equal(exportFileName(short, 2), exportFileName(full, 2));
 });
 

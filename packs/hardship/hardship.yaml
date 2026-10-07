@@ -1,0 +1,31 @@
+# A balance mod made only of overrides and removals
+# (docs/packs.md#mods-and-overrides). It names no genre, so it stacks on the
+# town alone or on any mod of it.
+
+measurements:
+  # Hunger and thirst build twice as fast.
+  - id: std_needs:hunger
+    override: true
+    rate: 0.2
+  - id: std_needs:thirst
+    override: true
+    rate: "0.2 + 0.1 * (self.hunger >= 50) + 0.1 * world.is_day"
+
+loot:
+  # Kitchens were picked over first: fewer rolls, more empty shelves.
+  - id: town:kitchen_food
+    override: true
+    rolls: [1, 2]
+    entries:
+      - { item: canned_beans, weight: 3 }
+      - { item: crackers, weight: 2 }
+      - { item: water_bottle, weight: 2 }
+      - { item: soda, weight: 1 }
+      - { item: coffee, weight: 1 }
+      - { table: junk, weight: 2 }
+      - { nothing: true, weight: 5 }
+
+recipes:
+  # No more tearing rags into bandages: bandages are found, not made.
+  - id: town:tear_bandage
+    remove: true

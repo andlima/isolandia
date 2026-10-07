@@ -1,15 +1,4 @@
 archetypes:
-  - id: survivor
-    label: Survivor
-    glyph: "@"
-    color: bright_yellow
-    sprite: survivor_img
-    tags: [humanoid, living]
-    measurements: [hp, hunger, thirst, fatigue]
-    initial: { hunger: 20 }
-    inventory:
-      capacity: 15
-      items: { water_bottle: 1, crackers: 1 }
   - id: shambler
     label: Shambler
     glyph: Z

@@ -1,6 +1,6 @@
 namespace: vamp
 name: Vampire Mansion
-version: 0.1.0
-depends: [std]
-kind: game
+version: 0.2.0
+depends: [std, town]
+kind: mod
 description: Play a vampire stalking the night across a mansion estate.

@@ -1,0 +1,6 @@
+namespace: hardship
+name: Hardship
+version: 0.1.0
+depends: [std_needs, town]
+kind: mod
+description: Harder times in town. Needs drain faster, food is scarce and rags stay rags.

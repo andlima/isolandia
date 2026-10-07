@@ -816,7 +816,7 @@ function walk(w: World, x: number, y: number, adjacent = false): void {
 test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window while the shamblers hear it', () => {
   const w = game('zombie', 1);
   const id = (s: string) => w.def.ids.items[s]!;
-  const kit = { 'zmb:hammer': 1, 'zmb:plank': 2, 'zmb:nails': 4 };
+  const kit = { 'town:hammer': 1, 'town:plank': 2, 'town:nails': 4 };
   const total = (item: string) => [...w.containers.values()].filter((c) => c.kind === 'tile').reduce((n, c) => n + countOf(c, id(item)), 0);
   for (const [item, n] of Object.entries(kit)) assert.ok(total(item) >= n, `seed 1 has ${total(item)} ${item}`);
 
@@ -839,41 +839,41 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   const T = (x: number, y: number) => genreCell('zombie', x, y);
   const [wx, wy] = T(16, 3);
   const [ix, iy] = T(15, 3);
-  assert.equal(cell(w, wx, wy), 'zmb:window');
+  assert.equal(cell(w, wx, wy), 'town:window');
   walk(w, ix, iy);
-  const offered = w.availableActions().find((a) => a.action === 'zmb:barricade' && a.x === wx && a.y === wy);
+  const offered = w.availableActions().find((a) => a.action === 'town:barricade' && a.x === wx && a.y === wy);
   assert.equal(offered?.ok, true);
-  const planks = have('zmb:plank');
-  const nails = have('zmb:nails');
+  const planks = have('town:plank');
+  const nails = have('town:nails');
   const shambler = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && Math.hypot(e.x - ix, e.y - iy) <= 14);
-  w.queueAction({ kind: 'act', action: 'zmb:barricade', x: wx, y: wy, z: 0 });
+  w.queueAction({ kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0 });
   w.step();
   const start = w.lastAction!;
   assert.equal(start.stage, 'start');
   assert.equal(hudModel(w).activity!.label, 'Barricading');
   assert.equal(hudModel(w).lastAction, 'You start barricading.');
   steps(w, 59);
-  assert.equal(cell(w, wx, wy), 'zmb:window');
+  assert.equal(cell(w, wx, wy), 'town:window');
   w.step();
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
   assert.equal(w.lastAction!.tick, start.tick + 60);
-  assert.equal(cell(w, wx, wy), 'zmb:barricaded_window');
-  assert.equal(have('zmb:plank'), planks - 2);
-  assert.equal(have('zmb:nails'), nails - 4);
-  assert.equal(have('zmb:hammer'), 1);
+  assert.equal(cell(w, wx, wy), 'town:barricaded_window');
+  assert.equal(have('town:plank'), planks - 2);
+  assert.equal(have('town:nails'), nails - 4);
+  assert.equal(have('town:hammer'), 1);
   assert.ok(w.noises.some((n) => n.x === ix && n.y === iy && n.radius >= 12), 'the hammering is heard at completion');
   if (shambler) assert.equal(shambler.heardTick, start.tick + 60);
   assert.ok(!lineOfSight(w.grid, ...T(19, 3), ...T(14, 3)), 'the barricade blocks the view in');
-  assert.ok(!w.availableActions().some((a) => a.action === 'zmb:barricade' && a.x === wx));
+  assert.ok(!w.availableActions().some((a) => a.action === 'town:barricade' && a.x === wx));
 });
 
 test('zombie: a bandage takes 3 s and a nearby noise wastes the attempt', () => {
   const w = game('zombie', 1);
   const inv = w.player.inv!;
-  const bandage = w.def.ids.items['zmb:bandage']!;
+  const bandage = w.def.ids.items['town:bandage']!;
   inv.stacks.push({ item: bandage, count: 1 });
   w.player.m[w.def.ids.measurements['std:hp']!] = 50;
-  w.queueAction({ kind: 'use', item: 'zmb:bandage' });
+  w.queueAction({ kind: 'use', item: 'town:bandage' });
   w.step();
   assert.equal(w.lastAction!.stage, 'start');
   // A noise heard on the start tick (hearing runs after the work step).
@@ -882,7 +882,7 @@ test('zombie: a bandage takes 3 s and a nearby noise wastes the attempt', () => 
   assert.equal(w.lastAction!.reason, 'interrupted');
   assert.equal(countOf(inv, bandage), 1);
   w.player.heardTick = -1;
-  w.queueAction({ kind: 'use', item: 'zmb:bandage' });
+  w.queueAction({ kind: 'use', item: 'town:bandage' });
   steps(w, 31);
   assert.equal(w.lastAction!.ok, true);
   assert.equal(w.lastAction!.stage, 'complete');
@@ -895,7 +895,7 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   const M = (x: number, y: number) => genreCell('vampire', x, y);
   // Shutters on the west room's north window.
   walk(w, ...M(3, 1));
-  assert.equal(cell(w, ...M(3, 0)), 'vamp:window');
+  assert.equal(cell(w, ...M(3, 0)), 'town:window');
   w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(3, 0)[0], y: M(3, 0)[1], z: 0 });
   steps(w, 21);
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));

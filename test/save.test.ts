@@ -502,7 +502,7 @@ for (const name of Object.keys(GAMES) as (keyof typeof GAMES)[]) {
       assertRoundTrip(w, undefined, 120);
       return true;
     });
-    const expected = { zombie: ['act', 'use', 'craft'], vampire: ['act', 'craft'], garden: [] }[name];
+    const expected = { town: ['act', 'use', 'craft'], zombie: ['act', 'use', 'craft'], vampire: ['act', 'use', 'craft'], garden: [] }[name];
     assert.deepEqual(kinds, expected);
     if (def.actions.some((a) => a.effects.some((x) => x.type === 'set_tile'))) {
       const w = midActivity(def, 'act')!;
@@ -564,12 +564,15 @@ function fuzz(seed: number): Script {
 }
 
 const FUZZ_TICKS = 600;
+/** Script seeds that differ from the name length (the default): the town's own (4) acts too rarely. */
+const FUZZ_SEED: Record<string, number> = { town: 3 };
 
 for (const [name, def] of [...Object.entries(GENRES), ['fixture', DEF] as const]) {
   test(`fuzz (${name}): saves at three random ticks restore exactly to tick ${FUZZ_TICKS}`, () => {
-    const r = new Rng(name.length * 31 + 5);
+    const seed = FUZZ_SEED[name] ?? name.length;
+    const r = new Rng(seed * 31 + 5);
     const at = [0, 0, 0].map(() => 1 + Math.floor(r.next() * (FUZZ_TICKS - 1))).sort((a, b) => a - b);
-    const script = fuzz(name.length);
+    const script = fuzz(seed);
     for (const t of at) {
       const w = World.create(def, 3);
       for (let i = 0; i < t; i++) {

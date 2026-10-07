@@ -12,7 +12,7 @@ import { FixedTickLoop } from '../src/web/loop.ts';
 import { exportFile, exportFileName, formatSavedAt, gameView, MemoryStore, restoreText, SaveSlots, slotKey, storageErrorMessage, type SlotId } from '../src/web/saves.ts';
 import { GAMES } from './helpers.ts';
 
-const PACKS = ['std', 'std-needs', 'zombie'];
+const PACKS = ['std', 'std-needs', 'town', 'zombie'];
 const DEF: Definition = loadPacksOrThrow(GAMES.zombie.map((d) => readPack(d)));
 
 function played(ticks = 50): World {
@@ -53,16 +53,16 @@ test('game panel: the quicksave and three slots; Load and Delete disabled when e
 // ── Slots over a SaveStore ──────────────────────────────────────────────────
 
 test('slots: per-pack-list keys; save, metadata, load, delete', () => {
-  assert.equal(slotKey(PACKS, 'slot1'), 'isolandia:save:std,std-needs,zombie:slot1');
+  assert.equal(slotKey(PACKS, 'slot1'), 'isolandia:save:std,std-needs,town,zombie:slot1');
   const store = new MemoryStore();
   const slots = new SaveSlots(store, PACKS);
   assert.deepEqual(slots.metas(), { quick: null, slot1: null, slot2: null, slot3: null });
   const w = played(600);
   assert.deepEqual(slots.save('quick', w, NOW), { ok: true, message: 'Saved to Quicksave.' });
-  assert.deepEqual(store.list(), ['isolandia:save:std,std-needs,zombie:quick']);
-  const stored = JSON.parse(store.read('isolandia:save:std,std-needs,zombie:quick')!);
+  assert.deepEqual(store.list(), ['isolandia:save:std,std-needs,town,zombie:quick']);
+  const stored = JSON.parse(store.read('isolandia:save:std,std-needs,town,zombie:quick')!);
   assert.deepEqual(Object.keys(stored).sort(), ['meta', 'save'], 'wrapper: { meta, save }');
-  assert.deepEqual(stored.meta, { savedAt: NOW.toISOString(), day: 1, time: '09:00', tick: 600, packs: ['std', 'std_needs', 'zmb'] });
+  assert.deepEqual(stored.meta, { savedAt: NOW.toISOString(), day: 1, time: '09:00', tick: 600, packs: ['std', 'std_needs', 'town', 'zmb'] });
   // A fresh SaveSlots reads the metadata back from the store.
   assert.deepEqual(new SaveSlots(store, PACKS).meta('quick'), stored.meta);
   assert.equal(new SaveSlots(store, ['std', 'vampire']).meta('quick'), null, 'another game has its own slots');
@@ -117,10 +117,10 @@ test('slots: a corrupt or mismatched slot lists the restore errors', () => {
 // ── Export / import ─────────────────────────────────────────────────────────
 
 test('export: file name and wrapper; import accepts the wrapper and a bare SaveFile', () => {
-  assert.equal(exportFileName(PACKS, 3), 'isolandia-std-std-needs-zombie-day3.json');
+  assert.equal(exportFileName(PACKS, 3), 'isolandia-std-std-needs-town-zombie-day3.json');
   const w = played();
   const f = exportFile(w, PACKS, NOW);
-  assert.equal(f.name, 'isolandia-std-std-needs-zombie-day1.json');
+  assert.equal(f.name, 'isolandia-std-std-needs-town-zombie-day1.json');
   assert.deepEqual(JSON.parse(f.text), json(f.wrapper));
   for (const text of [f.text, JSON.stringify(w.save())]) {
     const r = restoreText(DEF, text);

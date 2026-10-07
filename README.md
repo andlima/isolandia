@@ -28,8 +28,10 @@ seed. Or go straight to a game with query parameters; dependencies are
 added for you:
 
 ```
+http://localhost:5173/?packs=town
 http://localhost:5173/?packs=zombie
 http://localhost:5173/?packs=vampire&seed=42
+http://localhost:5173/?packs=zombie,hardship
 ```
 
 Move with the arrow keys, WASD or the numpad, or click a tile to walk
@@ -46,6 +48,8 @@ The same simulation runs headless, rendered as top-down ASCII:
 
 ```bash
 npm run play -- zombie [--seed N]
+npm run play -- town                      # the base game alone: a quiet sandbox
+npm run play -- vampire hardship          # a genre mod plus a balance mod
 npm run play -- zombie --load isolandia-save.json
 ```
 
@@ -65,18 +69,25 @@ packs you want and the engine adds what they `depends` on
 packs/
   std/        # stdpack: health, a humanoid archetype, basic tiles
   std-needs/  # stdpack: hunger/thirst/fatigue and their statuses (optional)
-  zombie/     # "Zombie Town": loot, survival systems, a small town map
-              #   (uses std + std-needs)
-  vampire/    # "Vampire Mansion": blood, sunlight, coffins (uses std only)
+  town/       # game "Town": a genre-free 256×256 town with furniture, food,
+              #   loot, cooking, barricading; a quiet sandbox on its own
+  zombie/     # mod "Zombie Town": the dead fill the town; find a car battery
+  vampire/    # mod "Vampire Mansion": blood, sunlight, coffins, on its estate
+              #   (reuses the town's generic content)
+  hardship/   # mod: needs drain faster, food is scarcer (works with either)
   garden/     # "Bunny Garden": a gentle game for kids — gather carrots,
               #   hide from a sleepy cat; won with start.victory (uses std only)
 ```
+
+Switching genre is switching mod: `zombie` and `vampire` both stack on
+`town` (see [docs/packs.md](docs/packs.md#shipped-packs)).
 
 Validate a pack stack without running it:
 
 ```bash
 npm run packs                                  # list the available packs
 npm run check -- vampire
+npm run check -- zombie --overrides            # what the mod changes in the town
 npm run check -- garden
 npm run check -- garden --save my-save.json   # validate a save too
 ```

@@ -437,7 +437,7 @@ test('zombie: crunching over broken glass draws a shambler to the spot', () => {
   const w = game('zombie');
   const z = byHome(w, ...T(16, 10));
   assert.equal(z.archetype.id, 'zmb:shambler');
-  assert.equal(w.grid.tileAt(...T(12, 6))!.id, 'zmb:glass');
+  assert.equal(w.grid.tileAt(...T(12, 6))!.id, 'town:glass');
   place(w.player, ...T(12, 6)); // the hallway of the north-west house, out of z's sight
   const seen: string[] = [];
   let end = -1;
@@ -453,12 +453,12 @@ test('zombie: crunching over broken glass draws a shambler to the spot', () => {
 
 test('zombie: winding up an alarm clock sets shamblers investigating', () => {
   const w = game('zombie');
-  const item = w.def.ids.items['zmb:alarm_clock']!;
+  const item = w.def.ids.items['town:alarm_clock']!;
   add(w.player.inv!, item, 1, w.def.items[item]!.weight);
   place(w.player, ...T(12, 3)); // a bedroom, walled off from everyone
   for (let t = 0; t < 3; t++) w.step();
   assert.ok(w.entities.every((e) => e.heardTick === -1));
-  w.queueAction({ kind: 'use', item: 'zmb:alarm_clock' });
+  w.queueAction({ kind: 'use', item: 'town:alarm_clock' });
   w.step();
   assert.equal(w.lastAction!.ok, true);
   assert.equal(w.noises.length, 1);
@@ -531,7 +531,7 @@ test('garden: hopping on the gravel path draws a napping cat over to investigate
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; noisy: number } {
   const w = game(name, seed);
   if (name === 'zombie') {
-    const item = w.def.ids.items['zmb:alarm_clock']!;
+    const item = w.def.ids.items['town:alarm_clock']!;
     add(w.player.inv!, item, 1, w.def.items[item]!.weight);
     place(w.player, ...T(8, 8));
   } else if (name === 'garden') place(w.player, 8, 7);
@@ -544,7 +544,7 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
       const dx = (Math.floor(input.next() * 3) - 1) as -1 | 0 | 1;
       const dy = (Math.floor(input.next() * 3) - 1) as -1 | 0 | 1;
       w.queueIntent({ kind: 'step', dx, dy });
-    } else if (name === 'zombie' && r > 0.995) w.queueAction({ kind: 'use', item: 'zmb:alarm_clock' });
+    } else if (name === 'zombie' && r > 0.995) w.queueAction({ kind: 'use', item: 'town:alarm_clock' });
     w.step();
     if (w.noises.length > 0) noisy++;
   }

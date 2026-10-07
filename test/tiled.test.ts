@@ -381,7 +381,10 @@ function rewriteEntry(files: Record<string, string>, local: string, tiled: strin
 /** Export every map, load each back through `tiled`, and compare the MapDefs. */
 function roundTrip(sources: PackSource[]): void {
   const def = loadPacksOrThrow(sources);
+  // A map a mod patched is exported with the mod's fields, which do not belong in its own pack's file.
+  const patched = new Set(def.patches.filter((p) => p.domain === 'maps').map((p) => p.id));
   for (const map of def.maps) {
+    if (patched.has(map.id)) continue;
     const [ns, local] = map.id.split(':') as [string, string];
     const at = def.packs.findIndex((p) => p.namespace === ns);
     const name = `rt_${local}`;

@@ -704,7 +704,7 @@ test('scenario (zombie): the player climbs, loots the upstairs dresser, and a sh
     const w = World.create(d, seed);
     const p = w.player;
     const dresser = upstairs(w);
-    assert.equal(w.def.tiles[dresser.tile]!.id, 'zmb:dresser');
+    assert.equal(w.def.tiles[dresser.tile]!.id, 'town:dresser');
     assert.ok(w.roomTagsAt(dresser.x, dresser.y, 1).includes(room), 'the dresser is in a bedroom');
     const below = w.entities.filter((e) => e.archetype.id === 'zmb:shambler' && e.z === 0);
     assert.ok(w.entities.some((e) => e.archetype.id === 'zmb:shambler' && e.z === 1), 'one shambler starts upstairs');
@@ -718,9 +718,9 @@ test('scenario (zombie): the player climbs, loots the upstairs dresser, and a sh
     assert.equal(w.lastAction?.ok, true, `seed ${seed}: ${JSON.stringify(w.lastAction)}`);
     assert.equal(p.z, 1);
     // Wind an alarm clock upstairs: a shambler from the street comes up.
-    const clock = w.def.ids.items['zmb:alarm_clock']!;
+    const clock = w.def.ids.items['town:alarm_clock']!;
     p.inv!.stacks.push({ item: clock, count: 1 });
-    w.queueAction({ kind: 'use', item: 'zmb:alarm_clock' });
+    w.queueAction({ kind: 'use', item: 'town:alarm_clock' });
     let up: Entity | undefined;
     for (let i = 0; i < 3000 && !up; i++) {
       sustain(w);

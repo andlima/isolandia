@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `npm run smoke`: build, serve the build, and open each genre combo in
+// `npm run smoke`: build, serve the build, and open each shipped stack in
 // Playwright Chromium. Fails on console errors or page errors, on a blank
 // canvas, or when the load-error screen shows up; saves screenshots under
 // docs/screens/. Also checks that an unknown pack shows the error screen and
@@ -17,7 +17,7 @@ import { build, preview } from 'vite';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = resolve(root, 'docs/screens');
 // Short stacks: the resolver adds each game's dependencies.
-const combos = [['zombie'], ['vampire'], ['garden']];
+const combos = [['town'], ['zombie'], ['vampire'], ['garden'], ['zombie', 'hardship']];
 
 await build({ root, logLevel: 'warn' });
 const server = await preview({ root, preview: { port: 4175, strictPort: false, open: false }, logLevel: 'warn' });
