@@ -542,6 +542,25 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   - All of it is in snapshots, hashes and saves (version 4; version 3
     saves load with fresh story state). Shells show `world.journal()` (a
     `J` panel and terminal screen) and toast `world.journalEvents`.
+- ~~How does the player talk to NPCs?~~ **Decided (spec `m8-dialogues`,
+  M8):**
+  - **Dialogues are declarative trees on archetypes**: a `dialogues`
+    domain (conditional `start` entries, named nodes with a speaker, text
+    and effects, up to 9 choices gated by `when` with `consume` / `give` /
+    `effects` / `to`), attached with archetype `dialogue`. Expressions see
+    the NPC as `npc`, and `apply` / `set` take `on: npc`. No templating,
+    skill-check fields, barter screens or NPC-to-NPC talk.
+  - **The world pauses while a conversation is open**, as in most RPGs:
+    `step()` is a no-op, and `choose(n)` / `leaveConversation()` are
+    synchronous inputs (not activities: nothing ticks). Effects apply at
+    once; outcomes, statuses and the quest phase follow on the first tick
+    after the conversation ends.
+  - **`once` choices are world-level**, not per NPC entity, and are saved
+    by choice id (version 5, with the open conversation).
+  - **NPCs are reached like containers and are not followed**: `talk`
+    needs Chebyshev 1 on the player's floor with no wall edge between;
+    walk-then-talk walks to the NPC's cell at the time of the click, and
+    the talk fails with `out_of_reach` if the NPC has moved away.
 
 ## 8. Next step
 

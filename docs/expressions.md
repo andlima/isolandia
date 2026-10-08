@@ -62,6 +62,7 @@ string in arithmetic is a load error.
 | `player` | entity | The player entity                                             |
 | `tile`   | tile   | The tile under `self`, on `self`'s floor: `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
 | `world`  | —      | World time; see the fields below                              |
+| `npc`    | entity | The NPC being talked to. Only in the expressions of a [dialogue](packs.md#dialogues) (its `when`, `start` and choice `when`s, effect values), where `self` and `player` are the player; anywhere else it is a load error |
 
 World fields (all derived from the current tick; see the
 [`clock`](packs.md#clock) domain for the calendar):
@@ -76,7 +77,8 @@ World fields (all derived from the current tick; see the
 | `world.time_of_day` | number  | In-game hours since midnight as a float in `[0, 24)`, e.g. `8.5` at 08:30 |
 | `world.is_day`      | boolean | `dawn <= time_of_day < dusk`; `1`/`0` in arithmetic, e.g. `-0.8 - 1.2 * world.is_day` |
 
-Entity members:
+Entity members (the same on `self`, `player` and `npc`, e.g. `npc.hp`,
+`npc.has_tag("guard")`, `count_item(npc, "coin")`):
 
 - `self.x`, `self.y` — grid position; `self.z` — the entity's floor (`0`
   on one-floor maps, see [floors](packs.md#floors)).

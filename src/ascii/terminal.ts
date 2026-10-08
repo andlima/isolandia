@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, journalLines, journalToast, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
+import { hudModel, journalLines, journalToast, LEAVE_REFUSED_TEXT, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -135,7 +135,8 @@ export interface KeyState {
 
 /**
  * The `x` list, at most 9 entries: `Go up` / `Go down` when the player
- * stands on a link, the self and tile actions that can be started here
+ * stands on a link, `Talk to …` for each NPC with a dialogue in reach
+ * (row-major), the self and tile actions that can be started here
  * (`availableActions`), then `take all` for each reachable non-empty
  * container (`interactionsAt` over the reachable cells, row-major).
  */
@@ -144,6 +145,13 @@ export function actionMenu(world: World): ActEntry[] {
   const { x: px, y: py, z: pz } = world.player;
   for (const e of world.interactionsAt(px, py, pz)) {
     if (e.kind === 'climb') out.push({ label: e.label, ok: e.ok, hint: '', actions: [], intent: e.intent! });
+  }
+  for (let y = py - 1; y <= py + 1; y++) {
+    for (let x = px - 1; x <= px + 1; x++) {
+      for (const e of world.interactionsAt(x, y, pz)) {
+        if (e.kind === 'talk' && e.inReach) out.push({ label: e.label, x, y, ok: e.ok, hint: reasonText(e), actions: [e.action!] });
+      }
+    }
   }
   for (const a of world.availableActions()) {
     if (a.kind !== 'act') continue;
@@ -189,6 +197,23 @@ export function craftMenuText(menu: CraftMenu): string {
   return ['Nothing to craft', ...menu.blocked.map((e) => `${e.label} [${e.hint}]`)].join('  ');
 }
 
+/**
+ * The conversation screen while one is open (else null): the speaker, the
+ * text, the numbered visible choices (disabled ones with their hint) and the
+ * keys.
+ */
+export function conversationLines(world: World): string[] | null {
+  const view = world.conversationView();
+  if (!view) return null;
+  const n = view.choices.length;
+  return [
+    `${view.speaker}:`,
+    ...view.text.split('\n').map((l) => `  ${l}`),
+    ...view.choices.map((c, i) => `${i + 1}) ${c.text}${c.ok ? '' : ` [${reasonText(c)}]`}`),
+    `(${n === 1 ? '1' : `1-${n}`}: choose${view.leave ? '  Esc: leave' : ''})`,
+  ];
+}
+
 /** What a key asks of the terminal loop, beyond changing the world. */
 export type KeyResult = 'quit' | 'save' | 'load' | void;
 
@@ -198,7 +223,9 @@ export function journalMessage(world: World): string | null {
 }
 
 /**
- * Apply one key to the world. `J` opens the journal screen (lowercase `j`
+ * Apply one key to the world. While a conversation is open, `1`–`9` choose
+ * a visible choice and Escape leaves (or says `LEAVE_REFUSED_TEXT`); other
+ * keys except `q`, `J`, `S` and `L` do nothing. `J` opens the journal screen (lowercase `j`
  * still moves), closed again by any key. `x` opens the list of pack actions and
  * `take all`s that can be done here, `c` the list of recipes that can be
  * made now (`1`–`9` start one, any other key closes either). With an
@@ -231,6 +258,19 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     state.crafting = null;
     state.dropPending = false;
     return key === 'S' ? 'save' : 'load';
+  }
+  if (world.conversation) {
+    // The world is paused: digits choose, Escape leaves, everything else (movement included) does nothing.
+    state.actions = null;
+    state.crafting = null;
+    state.dropPending = false;
+    if (/^[1-9]$/.test(key)) {
+      world.choose(Number(key) - 1);
+      state.message = journalMessage(world);
+    } else if (key === '\x1b') {
+      if (!world.leaveConversation().ok) state.message = LEAVE_REFUSED_TEXT;
+    }
+    return;
   }
   const open = state.actions ?? state.crafting?.entries;
   if (open) {
@@ -331,6 +371,14 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
       // The view is double resolution (cells between edges): 2·w + 1 columns by 2·h + 1 lines.
       const width = Math.max(5, Math.floor(((stdout.columns ?? 80) - 1) / 2));
       const height = Math.max(2, Math.floor(((stdout.rows ?? 24) - hudRows - 1) / 2));
+      const talk = conversationLines(world);
+      if (talk) {
+        // The conversation replaces the help line under a shorter map.
+        const h = Math.max(2, Math.floor(((stdout.rows ?? 24) - hudRows - talk.length) / 2));
+        const lines = message ? [...talk, message] : talk;
+        stdout.write('\x1b[H' + colorize(renderAscii(world, { width, height: h })).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n${lines.join('\x1b[K\n')}\x1b[J`);
+        return;
+      }
       const frame = renderAscii(world, { width, height });
       if (message && Date.now() - messageAt > STATUS_MS) message = '';
       const sim = simStatus(world);
@@ -364,7 +412,11 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
     };
 
     const timer = setInterval(() => {
-      // Catch up on missed ticks so sim time tracks wall time.
+      // Catch up on missed ticks so sim time tracks wall time; a conversation pauses the clock.
+      if (world.conversation) {
+        startMs = Date.now();
+        startTick = world.tick;
+      }
       const due = startTick + Math.floor((Date.now() - startMs) / tickMs);
       let n = 0;
       while (world.tick < due && n++ < 10) {

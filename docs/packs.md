@@ -80,6 +80,10 @@ domain. Any other top-level key is a load error.
 | `behaviors`    | list of entries |
 | `actions`      | list of entries |
 | `recipes`      | list of entries |
+| `vars`         | list of entries |
+| `quests`       | list of entries |
+| `journal`      | list of entries |
+| `dialogues`    | list of entries |
 | `distributions`| list (no ids)   |
 | `start`        | one mapping     |
 | `clock`        | one mapping     |
@@ -332,6 +336,7 @@ Templates for entities (the player and everything else).
 | `sprite`         | asset id              | placeholder | Anchored at the tile's ground centre |
 | `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
 | `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
+| `dialogue`       | dialogue id           | none    | The [dialogue](#dialogues) of every non-player entity of the archetype: the player can talk to it. Allowed on the player's archetype, where it has no effect |
 
 ```yaml
 archetypes:
@@ -814,7 +819,10 @@ entries within the pack. A system that is not due costs nothing.
 
 (`set_tile`, which edits the map, is only allowed in the effects of
 tile-targeted [actions](#actions).) The last four are valid in **every**
-effect list: systems, item uses, actions, recipes and quest stages.
+effect list: systems, item uses, actions, recipes, quest stages and
+[dialogues](#dialogues). In a dialogue, `apply` and `set` also take
+`on: npc` to change the NPC being talked to instead (`on: self`, the
+default, is the player); `on` anywhere else is a load error.
 
 `set_var`, `add_var`, `quest` and `journal` touch no entity: `self` matters
 only inside their expressions, which are evaluated in the effect's usual
@@ -1424,6 +1432,7 @@ intents, so looting never cancels walking (but a new action cancels an
 | `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units (at completion when timed) |
 | `act`  | `action`, `x?`, `y?`, `z?`, `side?`     | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self`; `z` defaults to the player's floor; `side` (`n`/`w`) targets that edge of the cell |
 | `craft`| `recipe`, `x?`, `y?`, `z?`              | Starts a [recipe](#recipes); for a station recipe `x`/`y` name the station cell (omitted: the first matching cell in reach, row-major); forbidden without a station; `z` defaults to the player's floor |
+| `talk` | `entity`                                | Opens a conversation with an NPC (see [dialogues](#dialogues)); the world pauses while it is open |
 
 An `act` is checked in this order: the action id resolves
 (`unknown_action`); the actor has an inventory if the action needs
@@ -1431,7 +1440,8 @@ An `act` is checked in this order: the action id resolves
 filter (`out_of_reach` / `invalid_target`); tools and consumed items are
 held (`missing`); `when` is truthy (`cannot_act`). A `craft` is checked
 in the same order, with `unknown_recipe` first and the station in place of
-the target (`out_of_reach` when no matching cell is in reach).
+the target (`out_of_reach` when no matching cell is in reach). A `talk` is
+checked as described under [dialogues](#talking).
 
 - `container` is a numeric container id (`world.containersAt(x, y, z?)`,
   `world.reachableContainers()`); `item` is a qualified item id. Like
@@ -1443,9 +1453,10 @@ the target (`out_of_reach` when no matching cell is in reach).
 - `take`/`put` move as many units as fit, up to `count`; moving 0 units is
   a failure.
 - Every action records `world.lastAction`:
-  `{ kind, item, action?, recipe?, moved, dropped?, ok, stage, reason?, tick }`.
-  `item` is empty for `act` and `craft`, `action` is the qualified action
-  id (`act` only) and `recipe` the qualified recipe id (`craft` only).
+  `{ kind, item, action?, recipe?, entity?, moved, dropped?, ok, stage, reason?, tick }`.
+  `item` is empty for `act`, `craft` and `talk`, `action` is the qualified action
+  id (`act` only), `recipe` the qualified recipe id (`craft` only) and
+  `entity` the NPC's entity id (`talk` only).
   `moved` counts units moved, consumed, or produced (`craft`, whose
   `dropped` counts the overflow put on the ground). `stage` is `start` when a timed
   activity starts (or fails to start), and `complete` for an instant
@@ -1454,13 +1465,14 @@ the target (`out_of_reach` when no matching cell is in reach).
   re-check). `reason` is one of `out_of_reach`, `too_heavy`, `missing`,
   `cannot_use`, `no_inventory`, `unknown_container`, `unknown_action`,
   `unknown_recipe`, `invalid_target`, `cannot_act`, `occupied`, `cancelled`,
-  `interrupted` or `unreachable` (a `goto.then` whose goto found no
-  path, see below). `lastAction` is written on start, on completion and on
+  `interrupted`, `unreachable` (a `goto.then` whose goto found no
+  path, see below), `unknown_entity` or `no_dialogue` (`talk`). `lastAction` is written on start, on completion and on
   cancellation or interruption; `actionText` (in `src/core/hud.ts`) turns
   it into a message such as `You start barricading.` or
   `Barricade interrupted.`.
 - Pending actions and `lastAction` are part of `snapshot()`. Once the game
-  has ended (after defeat or victory) `queueAction` ignores its input.
+  has ended (after defeat or victory), and while a conversation is open,
+  `queueAction` ignores its input.
 
 A `goto` intent (`{ kind: 'goto', x, y, z?, adjacent?, side?, then? }`) walks an
 A* path; `z` defaults to the entity's floor, and the path may cross
@@ -1497,7 +1509,10 @@ recipes without a station or cell, `use`, `drop`), so the shell queues the
 action directly; otherwise
 `{ kind: 'goto', x, y, z, adjacent: <target not walkable>, then: action }`
 targeting the action's cell (the container's cell for `take`/`put`, `x`/`y`/`z`
-for `act` and `craft`).
+for `act` and `craft`). For a `talk` it is a goto with `adjacent: true` to
+the NPC's **current** cell; an NPC that has moved out of reach by the time
+the player arrives is not followed, and the talk fails with `out_of_reach`
+(`Barkeep is not close enough.`).
 
 Movement intents (`step` and `goto`) are queued with
 `world.queueIntent(intent, entity?)`; `entity` defaults to the player, and
@@ -1542,6 +1557,9 @@ are driven by their archetype's [behavior](#behaviors).
 8. outcome check: defeat first (see `start.defeat`), then victory (see
    `start.victory`) only if defeat did not trigger on this tick;
 9. `tick++`.
+
+While a [conversation](#the-paused-world) is open, `step()` does nothing,
+as after an outcome: the tick does not advance.
 
 Statuses are also evaluated once when the world is created, after the
 initial clamp. So a status entered on tick *t* first changes drift on tick
@@ -1812,6 +1830,160 @@ order added. Each stage change and journal addition is also listed in
 bumps `world.journalVersion`; the shells show it as a toast (`Journal: Get
 out of town: You have a car battery…`).
 
+### `dialogues`
+
+Conversation trees for NPCs, attached to archetypes with
+[`dialogue`](#archetypes). The player starts one with the `talk` action
+(browser: click the NPC or *Talk to …* in its menu; terminal: the `x`
+list), and the world **pauses** until it ends.
+
+| Field         | Type       | Default  | Notes |
+|---------------|------------|----------|-------|
+| `id`          | id         | required | Own id space |
+| `when`        | expression | `true`   | Whether the NPC will talk at all |
+| `unavailable` | string     | none     | Shown when `when` is falsy, e.g. `He ignores you` |
+| `start`       | node name, or list of `{ when?, node }` | required | The first entry whose `when` is truthy (no `when` = always) picks the opening node. If none matches, the talk fails with `cannot_act`, so a list should end with an entry without `when` |
+| `nodes`       | mapping name → node | required | Non-empty; names match `[a-z][a-z0-9_]*` (`end` is reserved) |
+
+A **node**:
+
+| Field     | Type                       | Default | Notes |
+|-----------|----------------------------|---------|-------|
+| `speaker` | `npc`, `player` or a string | `npc`  | `npc` shows the NPC's archetype label, `player` the player's |
+| `text`    | string                     | required | Non-empty |
+| `effects` | list                       | `[]`    | Run each time the node is entered |
+| `choices` | list                       | none    | At most 9 |
+| `next`    | node name or `end`         | none    | Shorthand for a single choice `{ text: Continue, to: <next> }` |
+| `leave`   | boolean                    | `true`  | `false` forbids leaving with Escape at this node |
+
+A node has `choices` or `next`, not both. A node with neither gets a
+single choice, *Leave*, that ends the conversation.
+
+A **choice**:
+
+| Field         | Type                      | Default | Notes |
+|---------------|---------------------------|---------|-------|
+| `text`        | string                    | required | |
+| `to`          | node name or `end`        | required | `end` ends the conversation |
+| `when`        | expression                | `true`  | |
+| `unavailable` | string                    | none    | When `when` is falsy: with this text the choice is shown disabled; without it the choice is hidden |
+| `consume`     | map item id → integer ≥ 1 | `{}`    | Removed from the player when chosen; missing items disable the choice (`Needs: 2× Coin`) |
+| `give`        | map item id → integer ≥ 1 | `{}`    | Added to the player when chosen; overflow goes to the ground pile at the player's cell, as for [recipes](#recipes) |
+| `effects`     | list                      | `[]`    | Run when chosen, after `consume` and `give` |
+| `once`        | boolean                   | `false` | Once chosen, the choice is hidden for good. This is world-level, not per NPC entity |
+| `id`          | name                      | none    | Required when `once` is true; unique within the dialogue (saves record it) |
+
+```yaml
+archetypes:
+  - { id: barkeep, label: Barkeep, glyph: B, color: white, dialogue: barkeep_talk }
+dialogues:
+  - id: barkeep_talk
+    start:
+      - { when: 'var("bartender_paid")', node: again }
+      - { node: hello }
+    nodes:
+      hello:
+        text: What'll it be?
+        choices:
+          - text: Pay for the information
+            consume: { coin: 2 }
+            effects:
+              - { type: set_var, var: bartender_paid, value: 1 }
+              - { type: journal, entry: back_door }
+            to: tip
+          - { text: Never mind., to: end }
+      tip: { text: Try the back door after midnight., next: end }
+      again: { text: I told you all I know. }
+```
+
+**Load errors:** unknown fields; a `to`, `next` or `start` that names no
+node of the dialogue (with *did you mean*); unknown item ids; an item in
+both `consume` and `give`; more than 9 choices; `choices` and `next` on one
+node; a `once` choice without `id`, or a duplicate choice id. A node that
+no `start` entry, `to` or `next` reaches is a **warning**.
+
+**Expressions and effects.** In every expression of a dialogue (`when`,
+effect values), `self` and `player` are the player, and
+[`npc`](expressions.md#scope) is the NPC being talked to; `npc` anywhere
+else is a load error. Node and choice effects are the effects of
+[systems](#systems), with `self` = the player: `apply`, `set`, `noise` (at
+the player's cell), `set_var`, `add_var`, `quest` and `journal`.
+`apply` and `set` take `on: npc` to change the NPC's measurement instead.
+Effects run in order, at once. `set_tile` is not allowed.
+
+#### Talking
+
+`{ kind: 'talk', entity }` is queued with `world.queueAction` and applied
+in the action step of the tick. Its checks, in order:
+
+1. `unknown_entity`: no such entity, or it is the player;
+2. `no_dialogue`: its archetype has no dialogue;
+3. `out_of_reach`: not on the player's floor within Chebyshev 1 with no
+   non-walkable edge between them (the reach of [containers](#containers));
+4. `cannot_act`: the dialogue's `when` is falsy (with `unavailable`), or
+   no `start` entry matches.
+
+On success the world opens a conversation: the player's activity, path and
+pending intent are cancelled, as when queueing any action; the NPC's path
+and pending intent are cleared and it turns to face the player at once (no
+turn beat); the opening node is entered, running its effects. The rest of
+that tick runs normally. `lastAction` records `{ kind: 'talk', entity, … }`
+(`You talk to Barkeep.`).
+
+`world.interactionsAt(x, y, z)` lists, **first**, one `talk` entry per NPC
+with a dialogue on that cell, in id order: `Talk to <label>`, `ok` (and
+`unavailable`) from the dialogue's `when`, and `inReach`. NPCs are reached
+like containers and are **not followed**: see `approachIntent` under
+[player actions](#player-actions).
+
+#### The paused world
+
+While `world.conversation` is not null:
+
+- `step()` is a no-op, exactly as after an outcome: the tick does not
+  advance, and `queueIntent` and `queueAction` ignore their input;
+- only two inputs change the world, synchronously:
+  - **`world.choose(n)`**, where `n` indexes the node's **visible** choices
+    (as in `conversationView()`): it re-checks `when` and `consume` (a
+    disabled or out-of-range index returns a failure and changes nothing),
+    then removes `consume`, adds `give`, runs `effects`, records `once`,
+    and enters the `to` node (running its effects) or ends the
+    conversation on `end`;
+  - **`world.leaveConversation()`** ends it, unless the current node has
+    `leave: false`;
+- both return `{ ok, reason?, error? }` (`reason`: `no_conversation`,
+  `invalid_choice`, `cannot_act`, `missing`, `cannot_leave` or
+  `runtime_error`) and bump `world.conversationVersion`;
+- effects that draw from the world RNG (`random`, `roll`) do so in choice
+  order, so a replay of the same inputs is identical; checking `when`
+  draws nothing.
+
+**Dialogue effects and the tick.** Effects apply at once, between ticks:
+vars, items, measurements, `quest` stages and `journal` entries change
+immediately (the journal shows them, and `world.journalEvents` lists the
+changes of the last input until the next tick). Everything else that
+`step()` does happens on the first tick after the conversation ends:
+clamping, statuses, the quest phase's `when` checks, hearing a `noise` and
+the outcome checks, so a defeat caused by a choice takes effect then.
+
+A choice whose `to` node would be the 33rd node entered without a player
+choice (`next` choices do not count as one: a `next` loop) ends the
+conversation and returns `runtime_error` with a message. This guards against
+pack mistakes.
+
+`world.conversationView()` returns null or a pure view model,
+`{ npc, speaker, text, leave, choices }`, where each choice is
+`{ text, ok, reason?, missing?, unavailable? }`. Hidden choices (a falsy
+`when` without `unavailable`, or a `once` choice already chosen) are
+omitted; the visible ones keep their definition order. It draws no RNG and
+does not change `hash()`.
+
+The open conversation (NPC, dialogue, node and the entry counter) and the
+chosen `once` choices are part of `snapshot()`, `hash()` and
+[saves](saves.md). Dialogues take `override: true` and `remove: true`;
+`nodes` is one field, so an override replaces the whole tree, while
+`when`, `unavailable` and `start` can be patched alone.
+
 ## Standard packs
 
 The **stdpack** is a set of optional packs with generic content that many
@@ -1910,9 +2082,10 @@ clock:
 
 **Overrides.** Any entry of a list domain (`measurements`, `assets`,
 `tiles`, `archetypes`, `maps`, `systems`, `statuses`, `items`, `loot`,
-`behaviors`, `actions`, `recipes`, `vars`, `quests`, `journal`) may carry
-`override: true` (a quest's `stages` is one field, so an override replaces
-the whole list):
+`behaviors`, `actions`, `recipes`, `vars`, `quests`, `journal`,
+`dialogues`) may carry `override: true` (a quest's `stages` and a
+dialogue's `nodes` are one field each, so an override replaces the whole
+list or tree):
 
 - The `id` must be **qualified**, and its namespace must be one of the
   pack's **direct `depends`** (the same rule as qualified references). A
@@ -2163,7 +2336,7 @@ resolved definition (ids → indices, expressions → closures).
   compiler), `load/` (pack parsing, namespaces, validation, and `stack.ts`: the pack
   catalog and stack resolver), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
-  `hud.ts` (renderer-independent HUD model), `journal.ts` (journal
+  `hud.ts` (renderer-independent HUD model and action texts), `journal.ts` (journal
   sections and toast text shared by both shells), `sim/`
   (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
   checks and lifecycle of timed actions, item uses and recipes, shared
@@ -2175,7 +2348,8 @@ resolved definition (ids → indices, expressions → closures).
   camera, textures and placeholders.
 - `src/web/` — browser shell: pack loading via Vite, input, HUD,
   inventory, loot, crafting and journal panels (`panels.ts`, `I`/`Tab`
-  toggles the inventory, `C` the crafting panel, `J` the journal),
+  toggles the inventory, `C` the crafting panel, `J` the journal), the
+  dialogue box (`dialogue.ts` model, `dialogue-dom.ts`),
   title screen (`picker.ts`, `picker-dom.ts`), error screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
 - `src/cli/` — `play`, `check` and `packs`; `common.ts` turns arguments

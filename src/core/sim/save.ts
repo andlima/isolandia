@@ -22,15 +22,16 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
  * edge walls (their maps had wall cells) and are refused. Version 3 predates
  * vars, quests and the journal: it loads with every var at its `initial`, no
- * quest started and an empty journal.
+ * quest started and an empty journal. Versions 3 and 4 predate dialogues:
+ * they load with no open conversation and no `once` choice chosen.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -101,11 +102,11 @@ function show(v: unknown): string {
   }
 }
 
-const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft'] as const;
+const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft', 'talk'] as const;
 const CONTAINER_KINDS: readonly ContainerKind[] = ['tile', 'inventory', 'ground'];
 
 /** Id tables of a definition, by the name used in messages. */
-type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry';
+type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry' | 'dialogue';
 
 /** Collects errors (with JSON paths) and warnings in one pass. */
 class Checker {
@@ -188,6 +189,8 @@ class Checker {
         return ids.quests;
       case 'journal entry':
         return ids.journal;
+      case 'dialogue':
+        return ids.dialogues;
     }
   }
 
@@ -261,6 +264,9 @@ class Checker {
         this.id('recipe', o['recipe'], `${path}.recipe`);
         xy();
         break;
+      case 'talk':
+        this.int(o['entity'], `${path}.entity`, 0);
+        break;
     }
     return this.errors.length === n ? (o as unknown as Action) : null;
   }
@@ -307,6 +313,7 @@ class Checker {
     if (item) this.id('item', item, `${path}.item`);
     this.opt(o, 'action', path, (c, q) => this.id('action', c, q));
     this.opt(o, 'recipe', path, (c, q) => this.id('recipe', c, q));
+    this.opt(o, 'entity', path, (c, q) => this.int(c, q, 0));
     this.opt(o, 'side', path, (c, q) => this.side(c, q));
     this.num(o['moved'], `${path}.moved`);
     this.opt(o, 'dropped', path, (c, q) => this.num(c, q));
@@ -536,6 +543,8 @@ function restore(def: Definition, raw: unknown): RestoreResult {
 
   // ── Vars, quests and journal (version 4; a version 3 save starts them fresh) ──
   const story = root['version'] === 3 ? null : checkStory(c, s);
+  // ── Conversation and `once` choices (version 5; older saves have neither) ──
+  const talk = root['version'] === 3 || root['version'] === 4 ? null : checkTalk(c, s, rawEntities.length, player);
 
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
 
@@ -602,6 +611,11 @@ function restore(def: Definition, raw: unknown): RestoreResult {
         w.journalHas[j.entry] = 1;
         w.journalLog.push(j);
       }
+    }
+    if (talk) {
+      for (const [d, id] of talk.once) w.dialogueOnce[d]!.add(id);
+      const cv = talk.conversation;
+      if (cv) w.conversation = { npc: w.entities[cv.npc]!, dialogue: def.dialogues[cv.dialogue]!, node: cv.node, entries: cv.entries };
     }
     host.setNextContainer(nextContainer!);
     host.setActions(actions);
@@ -670,6 +684,59 @@ function checkStory(c: Checker, s: Record<string, unknown>): StoryPlan {
     if (seenEntries.has(entry)) return void c.err(`${path}.entry`, `journal entry '${def.journal[entry]!.id}' is listed twice`);
     seenEntries.add(entry);
     plan.journal.push({ entry, tick });
+  });
+  return plan;
+}
+
+/** Checked conversation (entity id, dialogue and node indices) and `once` choices of a version 5 save. */
+interface TalkPlan {
+  conversation: { npc: number; dialogue: number; node: number; entries: number } | null;
+  once: [number, string][];
+}
+
+/** Check `state.conversation` and `state.dialogueOnce`. */
+function checkTalk(c: Checker, s: Record<string, unknown>, entityCount: number, player: number | null): TalkPlan {
+  const { def } = c;
+  const plan: TalkPlan = { conversation: null, once: [] };
+  if (s['conversation'] !== null) {
+    const path = 'state.conversation';
+    const o = c.obj(s['conversation'], path);
+    if (o) {
+      const n = c.errors.length;
+      const npc = c.int(o['npc'], `${path}.npc`, 0);
+      if (npc !== null && npc >= entityCount) c.err(`${path}.npc`, `npc ${npc} is not one of the ${entityCount} entities`);
+      else if (npc !== null && npc === player) c.err(`${path}.npc`, `the player cannot be the NPC of a conversation`);
+      const d = c.id('dialogue', o['dialogue'], `${path}.dialogue`);
+      const name = c.str(o['node'], `${path}.node`);
+      const entries = c.int(o['entries'], `${path}.entries`, 0);
+      let node = -1;
+      if (d !== null && name !== null) {
+        const dialogue = def.dialogues[d]!;
+        node = dialogue.nodes.findIndex((x) => x.name === name);
+        if (node < 0) {
+          const near = nearMiss(name, dialogue.nodes.map((x) => x.name));
+          c.err(`${path}.node`, `dialogue '${dialogue.id}' has no node '${name}'${near ? ` (did you mean '${near}'?)` : ''}`);
+        }
+      }
+      if (c.errors.length === n) plan.conversation = { npc: npc!, dialogue: d!, node, entries: entries! };
+    }
+  }
+  const seen = new Set<string>();
+  c.arr(s['dialogueOnce'], 'state.dialogueOnce')?.forEach((t, i) => {
+    const path = `state.dialogueOnce[${i}]`;
+    if (!Array.isArray(t) || t.length !== 2) return void c.err(path, `expected [dialogue id, choice id], got ${show(t)}`);
+    const d = c.id('dialogue', t[0], `${path}[0]`);
+    const id = c.str(t[1], `${path}[1]`);
+    if (d === null || id === null) return;
+    const dialogue = def.dialogues[d]!;
+    const ids = dialogue.nodes.flatMap((x) => x.choices.filter((ch) => ch.once).map((ch) => ch.id));
+    if (!ids.includes(id)) {
+      const near = nearMiss(id, ids);
+      return void c.err(`${path}[1]`, `dialogue '${dialogue.id}' has no 'once' choice '${id}'${near ? ` (did you mean '${near}'?)` : ''}`);
+    }
+    if (seen.has(`${d}:${id}`)) return void c.err(path, `choice '${id}' of dialogue '${dialogue.id}' is listed twice`);
+    seen.add(`${d}:${id}`);
+    plan.once.push([d, id]);
   });
   return plan;
 }

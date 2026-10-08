@@ -118,6 +118,7 @@ function menuItem(world: World, e: Interaction, x: number, y: number, z: number)
   const detail = e.ok && (e.kind === 'act' || e.kind === 'craft') ? detailOf(e) : undefined;
   const base = e.ok ? { label, disabled: false, ...(detail ? { detail } : {}) } : { label, disabled: true, hint: reasonText(e) };
   switch (e.kind) {
+    case 'talk':
     case 'act':
     case 'craft':
       return { ...base, run: e.inReach ? { actions: [e.action!] } : { intent: world.approachIntent(e.action!)! } };
@@ -136,11 +137,13 @@ function menuItem(world: World, e: Interaction, x: number, y: number, z: number)
 }
 
 /**
- * The safe default among a cell's entries: the first enabled `open`, else the
- * only `climb`, else `walk`. Stairs that lead both ways have none (the menu
- * picks the direction).
+ * The safe default among a cell's entries: the first enabled `talk`, else the
+ * first enabled `open`, else the only `climb`, else `walk`. Stairs that lead
+ * both ways have none (the menu picks the direction).
  */
 function safeEntry(entries: readonly Interaction[]): Interaction | undefined {
+  const talk = entries.find((e) => e.kind === 'talk' && e.ok);
+  if (talk) return talk;
   const open = entries.find((e) => e.kind === 'open' && e.ok);
   if (open) return open;
   const climbs = entries.filter((e) => e.kind === 'climb');
@@ -152,11 +155,13 @@ function safeEntry(entries: readonly Interaction[]): Interaction | undefined {
 
 /**
  * What a plain left click on `target`'s cell (or edge, with `side`) does:
- * `run` the safe default (open a container, the only climb, walk) when the
- * cell has no enabled action or recipe; `menu` when it has one, or has
- * entries but no safe one (an edge with actions always menus); `walk` (next
- * to it when not walkable, `edgeWalkIntent` for an edge) when it has no
- * entries at all; `none` on the player's own cell with nothing to do.
+ * `run` an enabled `talk` (walk up to the NPC and talk) whatever else is
+ * there; else `run` the safe default (open a container, the only climb,
+ * walk) when the cell has no enabled action or recipe; `menu` when it has
+ * one, has a disabled `talk`, or has entries but no safe one (an edge with
+ * actions always menus); `walk` (next to it when not walkable,
+ * `edgeWalkIntent` for an edge) when it has no entries at all; `none` on the
+ * player's own cell with nothing to do.
  */
 export function clickPlan(world: World, target: Cell): ClickPlan {
   const { x, y, z } = target;
@@ -167,8 +172,9 @@ export function clickPlan(world: World, target: Cell): ClickPlan {
     const p = world.player;
     return x === p.x && y === p.y && z === p.z ? { kind: 'none' } : { kind: 'walk', intent: clickIntent(world, x, y, z) };
   }
-  const actionable = entries.some((e) => e.ok && (e.kind === 'act' || e.kind === 'craft'));
   const safe = safeEntry(entries);
+  if (safe?.kind === 'talk') return { kind: 'run', entry: safe, item: menuItem(world, safe, x, y, z) };
+  const actionable = entries.some((e) => (e.ok && (e.kind === 'act' || e.kind === 'craft')) || e.kind === 'talk');
   if (actionable || !safe) return { kind: 'menu' };
   return { kind: 'run', entry: safe, item: menuItem(world, safe, x, y, z) };
 }
@@ -258,6 +264,9 @@ export function hoverInfo(world: World, target: PickTarget): HoverInfo {
       return { title, hint: `Click: ${e.kind === 'open' ? 'Open' : e.label}`, cursor: 'pointer' };
     }
     case 'menu': {
+      // A disabled Talk explains itself: `He ignores you`.
+      const talk = world.interactionsAt(target.x, target.y, target.z, target.kind === 'edge' ? target.side : null).find((e) => e.kind === 'talk');
+      if (talk && !talk.ok) return { title, hint: reasonText(talk), cursor: 'pointer' };
       const n = contextMenu(world, target.x, target.y, target.z, 'click', target.kind === 'edge' ? target.side : null).items.length;
       return { title, hint: n === 0 ? "Click: Can't do now" : `Click: ${n} action${n === 1 ? '' : 's'}`, cursor: 'pointer' };
     }

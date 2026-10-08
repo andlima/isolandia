@@ -165,6 +165,9 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 const UNREACHABLE_TEXT = "You can't get there.";
 
+/** What the shells show when Escape is refused at a node with `leave: false`. */
+export const LEAVE_REFUSED_TEXT = "You can't walk away now.";
+
 /** `Needs: Hammer, 2× Plank`. */
 export function needsText(missing: readonly MissingItem[]): string {
   return `Needs: ${missing.map((m) => (m.count > 1 ? `${m.count}× ${m.label}` : m.label)).join(', ')}`;
@@ -186,6 +189,8 @@ const REASON_TEXT: Record<ActionFailure, string> = {
   cancelled: 'Cancelled',
   interrupted: 'Interrupted',
   unreachable: "Can't get there",
+  unknown_entity: 'Nobody there',
+  no_dialogue: 'Nothing to say',
 };
 
 /**
@@ -291,8 +296,32 @@ function actText(world: World, a: ActionRecord): string {
   }
 }
 
+/** Short feedback text for a `talk` record (`<Label> is not close enough.`). */
+function talkText(world: World, a: ActionRecord): string {
+  const npc = a.entity === undefined ? undefined : world.entities[a.entity];
+  const label = npc?.archetype.label ?? 'Nobody';
+  if (a.ok) return `You talk to ${label}.`;
+  switch (a.reason) {
+    case 'unknown_entity':
+      return 'There is nobody to talk to.';
+    case 'no_dialogue':
+      return `${label} has nothing to say.`;
+    case 'out_of_reach':
+      return `${label} is not close enough.`;
+    case 'cannot_act': {
+      const k = npc?.archetype.dialogue;
+      return (k === undefined || k === null ? null : world.def.dialogues[k]!.unavailable) ?? `${label} won't talk now.`;
+    }
+    case 'unreachable':
+      return UNREACHABLE_TEXT;
+    default:
+      return `You can't talk to ${label}.`;
+  }
+}
+
 /** Short feedback text for an action record. */
 export function actionText(world: World, a: ActionRecord): string {
+  if (a.kind === 'talk') return talkText(world, a);
   if (a.kind === 'act') return actText(world, a);
   if (a.kind === 'craft') return craftText(world, a);
   const idx = world.def.ids.items[a.item];
