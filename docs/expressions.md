@@ -128,6 +128,10 @@ sets.
 | `quest_active("q")`                      | Whether the [quest](packs.md#quests) has started and not ended |
 | `quest_reached("q", "stage")`            | Whether the quest's current stage is that stage or a later one |
 | `quest_succeeded("q")`, `quest_failed("q")` | Whether the quest ended in an `end: success` / `end: failure` stage |
+| `in_faction(entity, "f")`                | Whether the entity's archetype belongs to the [faction](packs.md#factions) (method form `self.in_faction("f")`) |
+| `reputation("f")`                        | The player's current standing with the faction, in [-100, 100] |
+| `attitude(a, b)`                         | How entity `a` regards entity `b`, in [-100, 100] (see [factions](#factions)) |
+| `hostile(a, b)`, `friendly(a, b)`        | `attitude(a, b)` below the regarding faction's `hostile_below` / at or above its `friendly_from` |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 With two entities or tiles they include the floors, one floor counting as
@@ -238,6 +242,42 @@ when: 'var("clues_found") >= 3 and not in_journal("confession")'
 victory: { when: 'quest_succeeded("escape")' }
 when: 'quest_reached("first_dawn", "night") and world.is_day'
 ```
+
+### Factions
+
+`in_faction`, `reputation`, `attitude`, `hostile` and `friendly` read
+[factions](packs.md#factions). Faction ids are **string literals**,
+resolved at load (an unknown id is a load error with *did you mean*).
+Entity arguments are entities (`self`, `player`, `npc`), checked at load
+as for `can_see`; a tile is a load error. `in_faction` is one read of the
+archetype's faction and `attitude` at most two array reads.
+
+**`attitude(a, b)`**, from `a`'s point of view:
+
+| `a`                    | `b`                          | Value |
+|------------------------|------------------------------|-------|
+| the same entity as `b` |                              | `100` |
+| an NPC without a faction | anyone                     | `0` |
+| an NPC of faction F    | the player                   | `reputation(F)` |
+| an NPC of F            | an NPC of F                  | `100` |
+| an NPC of F            | an NPC of G                  | `F.relations[G]`, or `0` when unset |
+| an NPC of F            | an NPC without a faction     | `0` |
+| the player             | an NPC of G                  | `reputation(G)`: the player's view mirrors the faction's view of them |
+| the player             | an NPC without a faction     | `0` |
+
+The **regarding faction** whose thresholds `hostile` and `friendly` use
+is `a`'s faction, or `b`'s when `a` is the player. With no faction on
+either side, both are false. The player's own `faction` plays no part in
+any of these rules (only `in_faction` reads it).
+
+```yaml
+on: [{ when: 'hostile(self, player) and can_see(self, player, 8)', to: chase }]
+when: 'reputation("police") >= 10'          # a dialogue choice for friends of the police
+for: 'self.in_faction("mob")'
+```
+
+Attitudes between NPCs can be read, but no built-in finds other NPCs yet:
+behaviors still target expressions such as `player`.
 
 **`tile` in tile-targeted actions.** In the `when`, `interrupt`,
 `duration` and `effects` of an action whose `target` is a tile filter,

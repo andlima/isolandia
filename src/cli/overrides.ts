@@ -19,6 +19,7 @@ const KIND: Record<PatchDomain, string> = {
   quests: 'quest',
   journal: 'journal entry',
   dialogues: 'dialogue',
+  factions: 'faction',
   start: 'start',
   clock: 'clock',
   lighting: 'lighting',

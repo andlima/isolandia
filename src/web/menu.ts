@@ -64,6 +64,22 @@ export interface HoverInfo {
   /** What a click does (`Click: Open`), empty for a plain walk. */
   readonly hint: string;
   readonly cursor: 'pointer' | 'default' | 'not-allowed';
+  /** An NPC's faction and the player's tier with it, `Police (Wary)`, shown after the title; absent for none. */
+  readonly standing?: string;
+  /** The NPC's faction is hostile to the player: `standing` shows in the danger colour (set with `standing`). */
+  readonly hostile?: boolean;
+}
+
+/** `Police (Wary)` and whether it is hostile, for a hovered NPC with a faction; null otherwise. */
+export function hoverStanding(world: World, target: PickTarget): { text: string; hostile: boolean } | null {
+  if (target.kind !== 'entity') return null;
+  const a = world.attitudeOf(target.entity);
+  return a ? { text: `${a.label} (${a.tier})`, hostile: a.hostile } : null;
+}
+
+/** The tooltip's first line: the title, then ` · <standing>` when there is one (`Officer · Police (Wary)`). */
+export function hoverTitleLine(info: HoverInfo): string {
+  return info.standing ? `${info.title} · ${info.standing}` : info.title;
 }
 
 /** A cell, or with `side` the edge on that side of it. */
@@ -255,6 +271,12 @@ function hoverTitle(world: World, target: PickTarget): string {
 
 /** What hovering `target` shows: its title, what a click does there, and the pointer's cursor. */
 export function hoverInfo(world: World, target: PickTarget): HoverInfo {
+  const base = hoverBase(world, target);
+  const s = hoverStanding(world, target);
+  return s ? { ...base, standing: s.text, hostile: s.hostile } : base;
+}
+
+function hoverBase(world: World, target: PickTarget): Omit<HoverInfo, 'standing' | 'hostile'> {
   const title = hoverTitle(world, target);
   const plan = clickPlan(world, target);
   switch (plan.kind) {

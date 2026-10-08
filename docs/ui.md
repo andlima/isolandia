@@ -80,9 +80,14 @@ an entity's name; `Ground · Crackers, Water bottle` for a pile) and what a
 click does (`Click: Open`, `Click: Go up`, `Click: Talk to Barkeep`,
 `Click: 3 actions`, nothing for a walk). An NPC that will not talk now shows
 its dialogue's `unavailable` text instead (`He ignores you`), and a click
-opens the menu. It is the pure `hoverInfo(world, target)`, recomputed once per
-frame at most and only when the target, the tick, `containerVersion` or
-`tileVersion` changes. Hover is hidden while the menu is open, while
+opens the menu. An NPC of a [faction](packs.md#factions) adds the
+faction and the player's tier with it after its name (`Officer · Police
+(Wary)`, from `world.attitudeOf`); when the faction is hostile to the
+player, that part shows in the danger colour. It is the pure
+`hoverInfo(world, target)` (with `standing` and `hostile` for such an NPC;
+`hoverTitleLine` builds the first line), recomputed once per frame at most
+and only when the target, the tick, `containerVersion`, `tileVersion` or
+`journalVersion` changes. Hover is hidden while the menu is open, while
 dragging and when the pointer leaves the canvas; `H` hides the tooltip
 with the HUD.
 
@@ -211,13 +216,18 @@ and movement keys do nothing.
 ## Journal
 
 `J` or the **Journal [J]** button (top right; shown when the packs define
-quests or journal entries) toggles the **Journal** panel. It shows:
+quests, journal entries or factions that are not hidden) toggles the
+**Journal** panel. It shows:
 
 - **Active**: each started quest's title and its current stage's text;
 - **Done**: ended quests, marked ✓ (success) or ✗ (failure), with their
   last stage's text;
 - one section per entry `category`, in order of first use, listing that
-  category's entries in the order added.
+  category's entries in the order added;
+- **Standing**: each [faction](packs.md#factions) that is not hidden, in
+  definition order: its label, the player's tier and standing (`Police:
+  Wary (-22)`, rounded) and a small bar from -100 to 100 with a mark at 0
+  (`standingRows` in `src/core/journal.ts`).
 
 Hidden quests appear only once they end. The panel is the pure
 `journalView(world)` (`src/web/panels.ts`, over `world.journal()` and the
@@ -230,11 +240,14 @@ about 4 s, under the top edge. Several events in one tick show the last
 one plus `(+N)`; the text is one line, cut with `…`. It is the pure
 `journalToast(events, world)` (`src/core/journal.ts`), read from
 `world.journalEvents` right after each step. A hidden quest's stages make
-no toast until it ends.
+no toast until it ends. A standing that moves into another tier toasts
+`<Label>: <from> → <to>` (`Police: Neutral → Wary`, `standingToast`);
+hidden factions never toast.
 
 The terminal has the same journal: `J` (uppercase; lowercase `j` still
-moves) shows it as text in the same layout until any key, and a stage
-change or entry puts the same `Journal: …` text on the message line.
+moves) shows it as text in the same layout until any key, with the
+standing lines (`Police: Wary (-22)`) last, and a stage change, entry or
+tier change puts the same toast text on the message line.
 
 ## Saving and loading
 

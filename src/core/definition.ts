@@ -314,6 +314,8 @@ export interface ArchetypeDef {
   readonly behavior: number | null;
   /** Dialogue index of the archetype's conversation (`talk`), or null; ignored on the player. */
   readonly dialogue: number | null;
+  /** Faction index the archetype belongs to, or null. */
+  readonly faction: number | null;
 }
 
 /** Built-in activity of a behavior state. */
@@ -496,8 +498,82 @@ export interface JournalEffectDef {
   readonly entry: number;
 }
 
+/**
+ * Changes the player's standing with a faction by the term (clamped to
+ * [-100, 100]); optionally only when a member sees `self`, and optionally
+ * spreading to the factions that have a relation to it.
+ */
+export interface ReputationEffectDef extends NumberTerm {
+  readonly type: 'reputation';
+  /** Faction index. */
+  readonly faction: number;
+  /** Euclidean range (tiles, > 0) within which a member must see `self`; null = always applies. */
+  readonly witnessed: number | null;
+  /** Also change every faction G with `G.relations[faction] = r ≠ 0` by `delta × r / 100` (one step). */
+  readonly spread: boolean;
+}
+
 /** One effect of a system, item use, action, recipe, quest stage or dialogue. */
-export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef | VarEffectDef | QuestEffectDef | JournalEffectDef;
+export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef | VarEffectDef | QuestEffectDef | JournalEffectDef | ReputationEffectDef;
+
+/** Lowest and highest standing and relation. */
+export const REPUTATION_MIN = -100;
+export const REPUTATION_MAX = 100;
+
+/** A named band of standing: from `from` up to the next tier's `from`. */
+export interface FactionTierDef {
+  readonly from: number;
+  readonly label: string;
+}
+
+/** Tiers of a faction without `tiers`. */
+export const DEFAULT_TIERS: readonly FactionTierDef[] = [
+  { from: -100, label: 'Hostile' },
+  { from: -50, label: 'Wary' },
+  { from: -10, label: 'Neutral' },
+  { from: 10, label: 'Liked' },
+  { from: 50, label: 'Trusted' },
+];
+
+/** A faction a spread reaches: faction index and its relation to the changed faction. */
+export interface SpreadTarget {
+  readonly faction: number;
+  readonly relation: number;
+}
+
+/** A group of archetypes sharing an opinion of the player (`factions` domain). */
+export interface FactionDef {
+  readonly id: string;
+  readonly index: number;
+  readonly label: string;
+  /** The player's starting standing, in [-100, 100]. */
+  readonly reputation: number;
+  /**
+   * How this faction regards each faction, by faction index (0 when unset;
+   * the entry for itself is unused: members regard each other at 100).
+   */
+  readonly relations: readonly number[];
+  /** `hostile` holds below this attitude. */
+  readonly hostileBelow: number;
+  /** `friendly` holds from this attitude (> `hostileBelow`). */
+  readonly friendlyFrom: number;
+  /** Ascending `from`; the first is -100. */
+  readonly tiers: readonly FactionTierDef[];
+  /** Not shown in the journal's Standing section (and no tier events). */
+  readonly hidden: boolean;
+  /** Whether any archetype belongs to it (a faction without members never witnesses). */
+  readonly members: boolean;
+  /** Factions with a non-zero relation to this one, ascending index: where a `spread` change goes. */
+  readonly spread: readonly SpreadTarget[];
+}
+
+/** Label of the tier `value` falls in. */
+export function tierOf(f: FactionDef, value: number): string {
+  const tiers = f.tiers;
+  let k = 0;
+  while (k + 1 < tiers.length && tiers[k + 1]!.from <= value) k++;
+  return tiers[k]!.label;
+}
 
 /** A world-level number (`vars` domain): one value per world, clamped to `[min, max]` on every write. */
 export interface VarDef {
@@ -703,6 +779,7 @@ export type PatchDomain =
   | 'quests'
   | 'journal'
   | 'dialogues'
+  | 'factions'
   | 'start'
   | 'clock'
   | 'lighting';
@@ -738,6 +815,7 @@ export interface Definition {
   readonly quests: readonly QuestDef[];
   readonly journal: readonly JournalEntryDef[];
   readonly dialogues: readonly DialogueDef[];
+  readonly factions: readonly FactionDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -775,5 +853,6 @@ export interface Definition {
     readonly quests: Readonly<Record<string, number>>;
     readonly journal: Readonly<Record<string, number>>;
     readonly dialogues: Readonly<Record<string, number>>;
+    readonly factions: Readonly<Record<string, number>>;
   };
 }

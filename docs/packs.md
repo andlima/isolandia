@@ -337,6 +337,7 @@ Templates for entities (the player and everything else).
 | `inventory`      | `{ capacity, items? }` | none   | Every entity of the archetype gets its own inventory [container](#containers). `items` maps item id → count, filled in the order written; they must fit in `capacity` (load error otherwise) |
 | `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
 | `dialogue`       | dialogue id           | none    | The [dialogue](#dialogues) of every non-player entity of the archetype: the player can talk to it. Allowed on the player's archetype, where it has no effect |
+| `faction`        | faction id            | none    | The [faction](#factions) every entity of the archetype belongs to. Allowed on the player's archetype: `in_faction(player, "f")` reads it, but [`attitude`](expressions.md#factions) ignores it |
 
 ```yaml
 archetypes:
@@ -816,18 +817,20 @@ entries within the pack. A system that is not due costs nothing.
 | `{ type: add_var, var: <id>, delta: <n or expr> }`       | Add to the world var (clamped) |
 | `{ type: quest, quest: <id>, stage: <stage id> }`        | Move the [quest](#quests) forward to that stage |
 | `{ type: journal, entry: <id> }`                         | Add the [journal entry](#journal) (a no-op if it is already there) |
+| `{ type: reputation, faction: <id>, delta: <n or expr>, witnessed?: <tiles>, spread?: <bool> }` | Change the player's standing with the [faction](#factions) (clamped); see [the reputation effect](#the-reputation-effect) |
 
 (`set_tile`, which edits the map, is only allowed in the effects of
-tile-targeted [actions](#actions).) The last four are valid in **every**
+tile-targeted [actions](#actions).) The last five are valid in **every**
 effect list: systems, item uses, actions, recipes, quest stages and
 [dialogues](#dialogues). In a dialogue, `apply` and `set` also take
 `on: npc` to change the NPC being talked to instead (`on: self`, the
 default, is the player); `on` anywhere else is a load error.
 
-`set_var`, `add_var`, `quest` and `journal` touch no entity: `self` matters
-only inside their expressions, which are evaluated in the effect's usual
-scope. A system runs its effects **once per matching entity**, so an
-`add_var` in a system that matches 10 entities adds 10 times; filter with
+`set_var`, `add_var`, `quest`, `journal` and `reputation` touch no entity:
+`self` matters only inside their expressions (and for `reputation`'s
+`witnessed`), which are evaluated in the effect's usual scope. A system
+runs its effects **once per matching entity**, so an `add_var` or a
+`reputation` in a system that matches 10 entities applies 10 times; filter with
 `for` (e.g. `'self.has_tag("living")'` for a player-only tag) when a system
 should count once.
 
@@ -1984,6 +1987,104 @@ chosen `once` choices are part of `snapshot()`, `hash()` and
 `nodes` is one field, so an override replaces the whole tree, while
 `when`, `unavailable` and `start` can be patched alone.
 
+### `factions`
+
+Groups of NPCs that share an opinion of the player and of each other. An
+archetype joins one with [`faction`](#archetypes); the player has a
+**standing** (reputation) with every faction, as world state.
+
+| Field           | Type                                   | Default  | Notes |
+|-----------------|----------------------------------------|----------|-------|
+| `id`            | id                                     | required | Own id space |
+| `label`         | string                                 | required | e.g. `Police` |
+| `reputation`    | number in [-100, 100]                  | `0`      | The player's starting standing |
+| `relations`     | map faction id → number in [-100, 100] | `{}`     | How this faction regards others; unset is `0`. Need not be symmetric. A relation to the faction itself is a load error (members always regard each other at `100`) |
+| `hostile_below` | number                                 | `-50`    | [`hostile`](expressions.md#factions) holds below it |
+| `friendly_from` | number                                 | `50`     | [`friendly`](expressions.md#factions) holds from it; must be > `hostile_below` |
+| `tiers`         | list of `{ from: number, label }`      | see below | Named bands of standing: ascending `from`, the first at `-100` |
+| `hidden`        | boolean                                | `false`  | Not shown in the journal's *Standing* section, and no tier events |
+
+The default `tiers` are *Hostile* from -100, *Wary* from -50, *Neutral*
+from -10, *Liked* from 10 and *Trusted* from 50. A standing is in the last
+tier whose `from` it reaches.
+
+```yaml
+factions:
+  - id: police
+    label: Police
+    relations: { mob: -50 }
+  - id: mob
+    label: The Family
+    reputation: -20
+    relations: { police: -80 }
+archetypes:
+  - { id: officer, label: Officer, faction: police, behavior: patrol, dialogue: desk }
+  - { id: thug, label: Thug, faction: mob, behavior: gang }
+behaviors:
+  - id: gang
+    initial: loiter
+    states:
+      loiter: { do: idle, on: [{ when: 'hostile(self, player) and can_see(self, player, 8)', to: chase }] }
+      chase: { do: pursue, target: player }
+actions:
+  - id: pick_lock
+    label: Pick the lock
+    target: { tags: [lock] }
+    duration: 3
+    effects:
+      - { type: reputation, faction: police, delta: -15, witnessed: 8, spread: true }
+```
+
+Expressions read factions with `in_faction`, `reputation`, `attitude`,
+`hostile` and `friendly` (see [expressions](expressions.md#factions)).
+Standings are part of `snapshot()`, `hash()` and [saves](saves.md).
+Relations are fixed data: nothing changes them in play.
+
+#### The reputation effect
+
+```yaml
+- { type: reputation, faction: police, delta: -15, witnessed: 8, spread: true }
+```
+
+| Field       | Type                 | Default  | Notes |
+|-------------|----------------------|----------|-------|
+| `faction`   | faction id           | required | |
+| `delta`     | number or expression | required | Added to the standing, which is clamped to [-100, 100] on every write |
+| `witnessed` | number > 0 (tiles)   | none     | Apply only if a member sees the effect's `self` |
+| `spread`    | boolean              | `false`  | Also change the factions that have a relation to this one |
+
+- **Witnessed.** The effect applies only if at least one entity of the
+  faction is not `self` and not the player, is on `self`'s floor within
+  euclidean distance `witnessed` of `self`, and has `can_see(member,
+  self)`. The search uses the entity index (id order, stopping at the first
+  member that sees), so it costs nothing beyond the radius; a faction no
+  archetype belongs to never sees anything. In a dialogue `self` is the
+  player, and the NPC being talked to counts like any other member.
+- **Spread.** After changing faction F by `delta`, every other faction G
+  with `G.relations[F] = r ≠ 0` changes by `delta × r / 100`, rounded to 2
+  decimals (halves away from zero). It happens once and does not chain:
+  helping the police (+10) with the mob regarding the police at -80
+  changes the mob by -8, and nothing more.
+- The same faction twice in one effect list applies twice. In a system the
+  effect runs once per matching entity, like `add_var`.
+- A change that moves a faction that is not `hidden` into another tier
+  adds a `reputation` event (`{ tick, kind: 'reputation', faction, from,
+  to }`, tier labels) to `world.journalEvents`; any change bumps
+  `journalVersion`. `world.journal().standing` lists the factions that are
+  not hidden, and `world.attitudeOf(entity)` tells how an NPC's faction
+  regards the player (see [ui.md](ui.md#journal)).
+
+Factions take `override: true` and `remove: true`. `relations` and `tiers`
+are single fields, replaced whole. Removing a faction still named by an
+archetype, a relation, an expression or an effect is a load error naming
+the remover. An archetype's `faction` is an ordinary field, so a mod can
+enlist the town's residents:
+
+```yaml
+archetypes:
+  - { id: town:resident, override: true, faction: townsfolk }
+```
+
 ## Standard packs
 
 The **stdpack** is a set of optional packs with generic content that many
@@ -2337,7 +2438,7 @@ resolved definition (ids → indices, expressions → closures).
   catalog and stack resolver), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
   `hud.ts` (renderer-independent HUD model and action texts), `journal.ts` (journal
-  sections and toast text shared by both shells), `sim/`
+  sections, standing rows and toast text shared by both shells), `sim/`
   (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
   checks and lifecycle of timed actions, item uses and recipes, shared
   by every activity source). No Node built-ins, DOM or Pixi.

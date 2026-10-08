@@ -15,11 +15,16 @@ import {
   type DialogueDef,
   type EdgeSide,
   type EffectDef,
+  type FactionDef,
   type MapDef,
   type MeasurementDef,
   type NumberTerm,
+  type ReputationEffectDef,
+  REPUTATION_MAX,
+  REPUTATION_MIN,
+  tierOf,
 } from '../definition.ts';
-import type { ExprContext, ExprEntity } from '../expr/index.ts';
+import { attitude, type ExprContext, type ExprEntity, type FactionTable } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
@@ -90,6 +95,8 @@ export interface Entity extends ExprEntity {
   heardTick: number;
   /** In-progress timed action, item use or recipe, or null. */
   activity: Activity | null;
+  /** Faction index of the archetype, or -1. */
+  readonly faction: number;
 }
 
 /** A noise emitted this tick by a `noise` effect. */
@@ -380,16 +387,42 @@ export interface ActivityProgress {
   readonly fraction: number;
 }
 
-/** A quest stage change or journal addition of the last stepped tick (`world.journalEvents`). */
+/** A quest stage change, journal addition or standing tier change of the last stepped tick (`world.journalEvents`). */
 export interface JournalEvent {
   readonly tick: number;
-  readonly kind: 'stage' | 'entry';
+  readonly kind: 'stage' | 'entry' | 'reputation';
   /** Qualified quest id (`stage`). */
   readonly quest?: string;
   /** Stage id (`stage`). */
   readonly stage?: string;
   /** Qualified journal entry id (`entry`). */
   readonly entry?: string;
+  /** Qualified faction id (`reputation`). */
+  readonly faction?: string;
+  /** Tier labels before and after the change (`reputation`). */
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/** A faction of the journal's Standing section (`world.journal().standing`). */
+export interface JournalStanding {
+  /** Qualified faction id. */
+  readonly faction: string;
+  readonly label: string;
+  /** The player's standing, in [-100, 100]. */
+  readonly value: number;
+  /** Tier label of `value`. */
+  readonly tier: string;
+}
+
+/** `world.attitudeOf(entity)`: how an NPC's faction regards the player. */
+export interface AttitudeView {
+  /** Qualified faction id. */
+  readonly faction: string;
+  readonly label: string;
+  readonly tier: string;
+  readonly hostile: boolean;
+  readonly friendly: boolean;
 }
 
 /** A quest of `world.journal()`. */
@@ -422,6 +455,8 @@ export interface JournalView {
   readonly quests: readonly JournalQuest[];
   /** Added entries, in the order added. */
   readonly entries: readonly JournalItem[];
+  /** One item per faction that is not hidden, in definition order. */
+  readonly standing: readonly JournalStanding[];
 }
 
 /** A started quest in a snapshot (ids qualified). */
@@ -598,6 +633,8 @@ export interface WorldSnapshot {
   conversation: ConversationSnapshot | null;
   /** The chosen `once` choices, as [qualified dialogue id, choice id], sorted. */
   dialogueOnce: [string, string][];
+  /** The player's standing with every faction, by qualified id. */
+  reputation: Record<string, number>;
 }
 
 /** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
@@ -675,6 +712,11 @@ function byPair(a: readonly [string, string], b: readonly [string, string]): num
   return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0;
 }
 
+/** `v` rounded to 2 decimals, halves away from zero (an epsilon absorbs float noise: -15 × 33.3 / 100 is -5). */
+function round2(v: number): number {
+  return (Math.sign(v) * Math.round(Math.abs(v) * 100 + 1e-7)) / 100;
+}
+
 /** 32-bit integer hash of two values (murmur3 finalizer). */
 function mix(a: number, b: number): number {
   let h = Math.imul((a ^ b) >>> 0, 0x85ebca6b);
@@ -732,6 +774,10 @@ export class World {
   conversationVersion = 0;
   /** Per dialogue: the ids of its `once` choices already chosen (world-level). */
   readonly dialogueOnce: Set<string>[];
+  /** The player's standing per faction index, clamped to [-100, 100] on every write. */
+  readonly reputation: Float64Array;
+  /** Standings (the same array as `reputation`), relations and thresholds as expressions read them. */
+  readonly factionTable: FactionTable;
 
   private actions: Action[] = [];
   private nextContainerId = 0;
@@ -846,6 +892,17 @@ export class World {
     this.questPhaseTick = new Float64Array(def.quests.length).fill(-1);
     this.journalHas = new Uint8Array(def.journal.length);
     this.dialogueOnce = def.dialogues.map(() => new Set<string>());
+    const nf = def.factions.length;
+    this.reputation = Float64Array.from(def.factions, (f) => f.reputation);
+    const rel = new Float64Array(nf * nf);
+    for (const f of def.factions) rel.set(f.relations, f.index * nf);
+    this.factionTable = {
+      n: nf,
+      rep: this.reputation,
+      rel,
+      hostileBelow: Float64Array.from(def.factions, (f) => f.hostileBelow),
+      friendlyFrom: Float64Array.from(def.factions, (f) => f.friendlyFrom),
+    };
 
     if (restore) {
       this.player = restore(this, {
@@ -898,6 +955,7 @@ export class World {
       questStage: this.questStage,
       questEnd: this.questEnd,
       journalHas: this.journalHas,
+      factions: this.factionTable,
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     this.runner = new ActivityRunner({
@@ -1017,6 +1075,7 @@ export class World {
       heardZ: 0,
       heardTick: -1,
       activity: null,
+      faction: archetype.faction ?? -1,
     };
     this.entities.push(e);
     this.bucketOf.push(-1);
@@ -1420,8 +1479,63 @@ export class World {
         case 'journal':
           this.addEntry(eff.entry);
           break;
+        case 'reputation':
+          this.reputationEffect(e, eff);
+          break;
       }
     }
+  }
+
+  /**
+   * The `reputation` effect on `self` = `e`: skipped when `witnessed` is set
+   * and no member sees `e`; then the faction changes by the term and, with
+   * `spread`, every faction with a relation to it by `delta × r / 100`
+   * (rounded to 2 decimals, one step).
+   */
+  private reputationEffect(e: Entity, eff: ReputationEffectDef): void {
+    const f = eff.faction;
+    if (eff.witnessed !== null && !this.witnessed(e, f, eff.witnessed)) return;
+    const delta = eff.fn ? Number(eff.fn(this.ctx)) : eff.constant;
+    if (!Number.isFinite(delta)) return;
+    this.writeReputation(f, this.reputation[f]! + delta);
+    if (!eff.spread) return;
+    for (const t of this.def.factions[f]!.spread) this.writeReputation(t.faction, this.reputation[t.faction]! + round2((delta * t.relation) / 100));
+  }
+
+  /**
+   * Whether an entity of faction `f` other than `e` and the player is on
+   * `e`'s floor within euclidean distance `range` of it and can see it (id
+   * order, stopping at the first member that sees it).
+   */
+  private witnessed(e: Entity, f: number, range: number): boolean {
+    if (!this.def.factions[f]!.members) return false;
+    const r2 = range * range;
+    for (const m of this.entitiesNear(e.x, e.y, e.z, Math.floor(range))) {
+      if (m === e || m === this.player || m.faction !== f) continue;
+      const dx = m.x - e.x;
+      const dy = m.y - e.y;
+      if (dx * dx + dy * dy > r2) continue;
+      if (lineOfSight(this.grid, m.x, m.y, e.x, e.y, m.z, e.z)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Write a standing, clamped to [-100, 100]. A change bumps
+   * `journalVersion`; one into another tier of a faction that is not hidden
+   * also adds a `reputation` journal event.
+   */
+  private writeReputation(k: number, v: number): void {
+    const old = this.reputation[k]!;
+    const next = v < REPUTATION_MIN ? REPUTATION_MIN : v > REPUTATION_MAX ? REPUTATION_MAX : v;
+    if (next === old) return;
+    this.reputation[k] = next;
+    this.journalVersion++;
+    const f = this.def.factions[k]!;
+    if (f.hidden) return;
+    const from = tierOf(f, old);
+    const to = tierOf(f, next);
+    if (from !== to) this.journalEvents.push({ tick: this.tick, kind: 'reputation', faction: f.id, from, to });
   }
 
   /** Write a var, clamped to its range. */
@@ -2182,6 +2296,7 @@ export class World {
         ? { npc: this.conversation.npc.id, dialogue: this.conversation.dialogue.id, node: this.conversation.dialogue.nodes[this.conversation.node]!.name, entries: this.conversation.entries }
         : null,
       dialogueOnce: this.def.dialogues.flatMap((d) => [...this.dialogueOnce[d.index]!].map((id): [string, string] => [d.id, id])).sort(byPair),
+      reputation: Object.fromEntries(this.def.factions.map((f) => [f.id, this.reputation[f.index]!])),
     };
   }
 
@@ -2205,7 +2320,25 @@ export class World {
       const e = this.def.journal[j.entry]!;
       return { entry: e.id, text: e.text, category: e.category, tick: j.tick };
     });
-    return { quests, entries };
+    const standing = this.def.factions
+      .filter((f) => !f.hidden)
+      .map((f): JournalStanding => {
+        const value = this.reputation[f.index]!;
+        return { faction: f.id, label: f.label, value, tier: tierOf(f, value) };
+      });
+    return { quests, entries, standing };
+  }
+
+  /**
+   * How an NPC's faction regards the player: its label, the tier of the
+   * player's standing, and whether it is hostile or friendly. Null for the
+   * player and for an NPC without a faction. Pure.
+   */
+  attitudeOf(entity: Entity): AttitudeView | null {
+    if (entity === this.player || entity.faction < 0) return null;
+    const f: FactionDef = this.def.factions[entity.faction]!;
+    const v = attitude(this.factionTable, this.player, entity, this.player);
+    return { faction: f.id, label: f.label, tier: tierOf(f, v), hostile: v < f.hostileBelow, friendly: v >= f.friendlyFrom };
   }
 
   /** [x, y, z] of a cell index. */

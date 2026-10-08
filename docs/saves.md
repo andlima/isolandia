@@ -17,7 +17,7 @@ else show(r.errors);
 ```ts
 interface SaveFile {
   format: 'isolandia-save';
-  version: 5;
+  version: 6;
   /** Loaded packs, in load order. */
   packs: { namespace: string; version: string }[];
   /** Qualified id of the start map, and its size. */
@@ -44,8 +44,9 @@ added [entries](packs.md#journal) in the order added), and the
 dialogue, node, entries }` for the open conversation, by entity id,
 qualified dialogue id and node name; `entries` is the loop guard's
 counter) and `dialogueOnce` (the chosen `once` choices as `[dialogue id,
-choice id]`, sorted). A save made mid-conversation restores into the same
-open conversation. An activity on an edge (barricading a
+choice id]`, sorted), and `reputation` (`{ "ns:id": value }`, the player's
+standing with every [faction](packs.md#factions)). A save made
+mid-conversation restores into the same open conversation. An activity on an edge (barricading a
 window) records its `side` next to its target cell. Every cell carries its floor `z`: entity `z` and
 `fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
 `[x, y, z, tick]`, `heard` and the activity target with `z`, `lastGoto.z`,
@@ -63,7 +64,7 @@ inside `state`:
 
 ```json
 { "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "town", "zmb"] },
-  "save": { "format": "isolandia-save", "version": 5, "...": "..." } }
+  "save": { "format": "isolandia-save", "version": 6, "...": "..." } }
 ```
 
 Every reader (browser import, `--load`, `check --save`) accepts both the
@@ -86,7 +87,8 @@ keep the round-trip invariant.
 | 2 | floors (`m6-floors`): `map.floors` and a `z` on every cell | refused (see below) |
 | 3 | edge walls (`edge-walls`): `state.edges` and the activity `side` | upgraded (see below) |
 | 4 | vars, quests and journal (`m8-flags-quests`): `state.vars`, `state.quests`, `state.journal` | upgraded (see below) |
-| 5 | dialogues (`m8-dialogues`): `state.conversation`, `state.dialogueOnce`, the `talk` action | current |
+| 5 | dialogues (`m8-dialogues`): `state.conversation`, `state.dialogueOnce`, the `talk` action | upgraded (see below) |
+| 6 | factions (`m8-factions`): `state.reputation` | current |
 
 Versions 1 and 2 are refused with an error that says why: their maps had
 walls in cells, and the edge-wall conversion turned those cells into
@@ -99,7 +101,10 @@ started and the journal is empty (no warnings). The first tick's quest
 phase then runs as usual, so quests whose `when` holds start at once.
 
 Version 3 and 4 saves load with no open conversation and no `once` choice
-chosen (no warnings). Saving an upgraded world writes version 5.
+chosen (no warnings).
+
+Version 3 to 5 saves load with every faction at its starting `reputation`
+(no warnings). Saving an upgraded world writes version 6.
 
 ## Validation
 
@@ -117,7 +122,8 @@ mean 'zmb:shambler'?)`).
   from the start map.
   These stop the check: the state's ids and cells would only add noise.
 - A qualified id does not resolve: archetype, measurement, status, item,
-  tile, action, recipe, var, quest, journal entry, dialogue, the stage id of a saved
+  tile, action, recipe, var, quest, journal entry, dialogue, faction (a key
+  of `reputation`), the stage id of a saved
   quest, the node of the open conversation, a `once` choice id of a
   dialogue, or the behavior state name of the entity's archetype behavior. Each has a *did you mean* suggestion when one is
   close.
@@ -151,6 +157,8 @@ mean 'zmb:shambler'?)`).
   dropped; an archetype that gained one starts in its initial state.
 - A var the packs define is missing: it takes its `initial`. A saved value
   outside the var's (new) range is clamped.
+- A faction the packs define is missing from `reputation`: it takes its
+  starting `reputation`. A saved standing outside [-100, 100] is clamped.
 - A saved quest's `ended` disagrees with whether its stage now has an
   `end`: the packs decide.
 

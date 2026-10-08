@@ -5,7 +5,7 @@
  * container creation and loot rolls; nothing is rolled or re-clamped.
  */
 
-import { EMPTY_TILE, type ArchetypeDef, type Definition, type EdgeSide } from '../definition.ts';
+import { EMPTY_TILE, REPUTATION_MAX, REPUTATION_MIN, type ArchetypeDef, type Definition, type EdgeSide } from '../definition.ts';
 import { FACINGS, type Facing } from '../facing.ts';
 import { nearMiss } from '../expr/index.ts';
 import type { Activity } from './activity.ts';
@@ -22,7 +22,7 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
@@ -30,8 +30,10 @@ export const SAVE_VERSION = 5;
  * vars, quests and the journal: it loads with every var at its `initial`, no
  * quest started and an empty journal. Versions 3 and 4 predate dialogues:
  * they load with no open conversation and no `once` choice chosen.
+ * Versions 3 to 5 predate factions: every faction takes its starting
+ * `reputation`.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -106,7 +108,7 @@ const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft', 'talk'] as c
 const CONTAINER_KINDS: readonly ContainerKind[] = ['tile', 'inventory', 'ground'];
 
 /** Id tables of a definition, by the name used in messages. */
-type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry' | 'dialogue';
+type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry' | 'dialogue' | 'faction';
 
 /** Collects errors (with JSON paths) and warnings in one pass. */
 class Checker {
@@ -191,6 +193,8 @@ class Checker {
         return ids.journal;
       case 'dialogue':
         return ids.dialogues;
+      case 'faction':
+        return ids.factions;
     }
   }
 
@@ -545,6 +549,8 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   const story = root['version'] === 3 ? null : checkStory(c, s);
   // ── Conversation and `once` choices (version 5; older saves have neither) ──
   const talk = root['version'] === 3 || root['version'] === 4 ? null : checkTalk(c, s, rawEntities.length, player);
+  // ── Reputation (version 6; older saves start every faction at its `reputation`) ──
+  const standing = (root['version'] as number) < 6 ? null : checkReputation(c, s);
 
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
 
@@ -617,6 +623,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       const cv = talk.conversation;
       if (cv) w.conversation = { npc: w.entities[cv.npc]!, dialogue: def.dialogues[cv.dialogue]!, node: cv.node, entries: cv.entries };
     }
+    if (standing) for (const [k, v] of standing) w.reputation[k] = v;
     host.setNextContainer(nextContainer!);
     host.setActions(actions);
     return w.entities[player!]!;
@@ -686,6 +693,26 @@ function checkStory(c: Checker, s: Record<string, unknown>): StoryPlan {
     plan.journal.push({ entry, tick });
   });
   return plan;
+}
+
+/** Check `state.reputation`: (faction index, value) pairs; a missing faction keeps its start with a warning. */
+function checkReputation(c: Checker, s: Record<string, unknown>): [number, number][] {
+  const { def } = c;
+  const out: [number, number][] = [];
+  const o = c.obj(s['reputation'], 'state.reputation');
+  if (!o) return out;
+  const saved = new Set<number>();
+  for (const [key, value] of Object.entries(o)) {
+    const path = `state.reputation[${JSON.stringify(key)}]`;
+    const k = c.id('faction', key, path);
+    const v = c.num(value, path);
+    if (k === null || v === null) continue;
+    saved.add(k);
+    if (v < REPUTATION_MIN || v > REPUTATION_MAX) c.warn(path, `${v} is outside [${REPUTATION_MIN}, ${REPUTATION_MAX}]; clamped`);
+    out.push([k, Math.min(Math.max(v, REPUTATION_MIN), REPUTATION_MAX)]);
+  }
+  for (const f of def.factions) if (!saved.has(f.index)) c.warn('state.reputation', `faction '${f.id}' is missing; it starts at ${f.reputation}`);
+  return out;
 }
 
 /** Checked conversation (entity id, dialogue and node indices) and `once` choices of a version 5 save. */

@@ -561,6 +561,28 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     needs Chebyshev 1 on the player's floor with no wall edge between;
     walk-then-talk walks to the NPC's cell at the time of the click, and
     the talk fails with `out_of_reach` if the NPC has moved away.
+- ~~How do groups of NPCs remember what the player did?~~ **Decided (spec
+  `m8-factions`, M8):**
+  - **Membership is per archetype**: a `factions` domain, joined with
+    archetype `faction`. No ranks, disguises or joining in play; a mod
+    enlists residents by overriding their archetype's `faction`.
+  - **The player's standing is world state per faction** (one number in
+    [-100, 100] each, in snapshots, hashes and saves version 6), not a
+    memory per NPC. `attitude` ignores the player's own faction.
+  - **Relations are fixed data and can be asymmetric**: how F regards G
+    is a number on F, unset is 0, members always regard each other at 100.
+    Nothing changes relations at run time.
+  - **Crimes count when a member sees them**: the `reputation` effect's
+    `witnessed` range applies it only if a member other than `self` and the
+    player sees `self` (`can_see` within a euclidean range, same floor). No
+    witnesses who report later.
+  - **Spread is one step and opt-in**: with `spread: true` a change of F
+    also moves every faction G by `delta × G.relations[F] / 100` (2
+    decimals), without chaining.
+  - **NPC-to-NPC hostility is readable but not yet acted upon**:
+    `attitude`, `hostile` and `friendly` work between NPCs, but nothing
+    seeks out enemies until a `nearest(...)`-style target and combat are
+    decided.
 
 ## 8. Next step
 

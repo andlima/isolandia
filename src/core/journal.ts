@@ -1,11 +1,11 @@
 /**
  * Journal view models shared by the shells: the sections of the journal
- * panel (browser) and screen (terminal), and the one-line toast for a tick's
- * stage changes and journal additions. Pure functions of `world.journal()`
- * and `world.journalEvents`.
+ * panel (browser) and screen (terminal), its Standing rows, and the one-line
+ * toast for a tick's stage changes, journal additions and standing tier
+ * changes. Pure functions of `world.journal()` and `world.journalEvents`.
  */
 
-import type { JournalEvent, JournalView, World } from './sim/world.ts';
+import type { JournalEvent, JournalStanding, JournalView, World } from './sim/world.ts';
 
 /** One section of the journal: `Active`, `Done`, then one per entry category. */
 export interface JournalSection {
@@ -40,12 +40,44 @@ export function journalSections(view: JournalView): JournalSection[] {
   return out;
 }
 
-/** The journal as text lines (the terminal's journal screen): a heading per section, its rows indented. */
+/** Title of the journal's standing section. */
+export const STANDING_TITLE = 'Standing';
+
+/** One faction of the Standing section. */
+export interface StandingRow {
+  /** Qualified faction id. */
+  readonly faction: string;
+  readonly label: string;
+  readonly tier: string;
+  /** The standing, rounded to a whole number for display. */
+  readonly value: number;
+  /** Position of the standing on a bar from -100 (0) to 100 (1). */
+  readonly fraction: number;
+  /** `Police: Wary (-22)`. */
+  readonly text: string;
+}
+
+/** A standing rounded for display (never `-0`). */
+function displayValue(value: number): number {
+  return Math.round(value) || 0;
+}
+
+/** The Standing section's rows: one per faction that is not hidden, in definition order. */
+export function standingRows(view: JournalView): StandingRow[] {
+  return view.standing.map((s: JournalStanding) => {
+    const value = displayValue(s.value);
+    return { faction: s.faction, label: s.label, tier: s.tier, value, fraction: Math.min(1, Math.max(0, (s.value + 100) / 200)), text: `${s.label}: ${s.tier} (${value})` };
+  });
+}
+
+/** The journal as text lines (the terminal's journal screen): a heading per section, its rows indented, then the standing lines. */
 export function journalLines(view: JournalView): string[] {
   const sections = journalSections(view);
-  if (sections.length === 0) return ['Journal', '', '  Nothing yet.'];
+  const standing = standingRows(view);
+  if (sections.length === 0 && standing.length === 0) return ['Journal', '', '  Nothing yet.'];
   const out = ['Journal'];
   for (const s of sections) out.push('', s.title, ...s.rows.map((r) => `  ${r}`));
+  if (standing.length) out.push('', STANDING_TITLE, ...standing.map((r) => `  ${r.text}`));
   return out;
 }
 
@@ -63,11 +95,17 @@ function visible(e: JournalEvent, world: World): boolean {
   return !q.hidden || q.stages.some((s) => s.name === e.stage && s.end !== null);
 }
 
+/** The toast text of a standing tier change: `<Label>: <from> → <to>`. */
+export function standingToast(e: JournalEvent, world: World): string {
+  const f = world.def.factions[world.def.ids.factions[e.faction!]!]!;
+  return `${f.label}: ${e.from} → ${e.to}`;
+}
+
 /**
  * The toast for a tick's journal events: `Journal: <quest title>: <stage
- * text>` or `Journal: <entry text>` for the last shown event, with `(+N)`
- * when there were N more; one line, cut with `…`. Null when there is nothing
- * to show.
+ * text>`, `Journal: <entry text>` or `<Faction>: <from tier> → <to tier>`
+ * for the last shown event, with `(+N)` when there were N more; one line,
+ * cut with `…`. Null when there is nothing to show.
  */
 export function journalToast(events: readonly JournalEvent[], world: World): string | null {
   const shown = events.filter((e) => visible(e, world));
@@ -75,10 +113,11 @@ export function journalToast(events: readonly JournalEvent[], world: World): str
   if (!last) return null;
   const { def } = world;
   let text: string;
-  if (last.kind === 'stage') {
+  if (last.kind === 'reputation') text = standingToast(last, world);
+  else if (last.kind === 'stage') {
     const q = def.quests[def.ids.quests[last.quest!]!]!;
-    text = `${q.title}: ${q.stages.find((s) => s.name === last.stage)!.journal}`;
-  } else text = def.journal[def.ids.journal[last.entry!]!]!.text;
+    text = `Journal: ${q.title}: ${q.stages.find((s) => s.name === last.stage)!.journal}`;
+  } else text = `Journal: ${def.journal[def.ids.journal[last.entry!]!]!.text}`;
   const more = shown.length > 1 ? ` (+${shown.length - 1})` : '';
-  return `${oneLine(`Journal: ${text}`, TOAST_MAX - more.length)}${more}`;
+  return `${oneLine(text, TOAST_MAX - more.length)}${more}`;
 }
