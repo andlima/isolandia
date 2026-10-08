@@ -6,6 +6,9 @@ export function activityBar(m: HudModel): { label: string; percent: number } | n
   return m.activity ? { label: m.activity.label, percent: Math.round(m.activity.fraction * 100) } : null;
 }
 
+/** How long a journal toast stays up. */
+export const TOAST_MS = 4000;
+
 /** DOM overlay with the same data as the ASCII HUD block; toggled with `H`. */
 export class Hud {
   private readonly el: HTMLPreElement;
@@ -15,6 +18,8 @@ export class Hud {
   private readonly barFill: HTMLDivElement;
   private readonly barLabel: HTMLSpanElement;
   private readonly perf: HTMLDivElement;
+  private readonly toastEl: HTMLDivElement;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private lastTick = -1;
   private barTick = -1;
   private perfShown = 0;
@@ -39,12 +44,27 @@ export class Hud {
     this.perf = document.createElement('div');
     this.perf.id = 'perf';
     this.perf.hidden = true;
-    parent.append(this.el, this.banner, this.victoryBanner, this.bar, this.perf);
+    this.toastEl = document.createElement('div');
+    this.toastEl.id = 'journal-toast';
+    this.toastEl.hidden = true;
+    parent.append(this.el, this.banner, this.victoryBanner, this.bar, this.perf, this.toastEl);
   }
 
   /** Remove the overlay's elements (the world is being replaced). */
   dispose(): void {
-    for (const el of [this.el, this.banner, this.victoryBanner, this.bar, this.perf]) el.remove();
+    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    for (const el of [this.el, this.banner, this.victoryBanner, this.bar, this.perf, this.toastEl]) el.remove();
+  }
+
+  /** Show a journal toast (`journalToast`) for about 4 s; a newer one replaces it. */
+  toast(text: string): void {
+    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    this.toastEl.textContent = text;
+    this.toastEl.hidden = false;
+    this.toastTimer = setTimeout(() => {
+      this.toastEl.hidden = true;
+      this.toastTimer = null;
+    }, TOAST_MS);
   }
 
   /** Show or hide the perf line (F3). */
@@ -97,6 +117,6 @@ export class Hud {
     if (this.el.hidden || world.tick === this.lastTick) return;
     this.lastTick = world.tick;
     const m = hudModel(world);
-    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', ...(world.grid.floors > 1 ? ['[PgUp/PgDn or </>] climb'] : []), '[drag] pan  [wheel] zoom  [space] follow  [H] hud  [F3] perf', '[O] game  [F5] quicksave  [F9] quickload', ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
+    this.el.textContent = [...hudLines(m), '', '[click] walk  [WASD/arrows/numpad] move', ...(world.grid.floors > 1 ? ['[PgUp/PgDn or </>] climb'] : []), '[drag] pan  [wheel] zoom  [space] follow  [H] hud  [F3] perf', '[O] game  [F5] quicksave  [F9] quickload', ...(world.def.quests.length || world.def.journal.length ? ['[J] journal'] : []), ...(world.player.inv ? [world.def.recipes.length ? '[I/Tab] inventory  [C] crafting' : '[I/Tab] inventory'] : [])].join('\n');
   }
 }

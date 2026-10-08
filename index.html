@@ -81,6 +81,17 @@
         #transfer .transfer-panes { flex-direction: column; }
       }
       #crafting { left: 8px; right: auto; bottom: 40px; }
+      #journal { top: 36px; right: 8px; max-width: 380px; }
+      #journal-toggle {
+        position: fixed; top: 8px; right: 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: #333a44; border: 1px solid #556; border-radius: 3px; padding: 2px 8px; cursor: pointer;
+      }
+      #journal-toast {
+        position: fixed; top: 44px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90vw); padding: 4px 10px;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ffe9a8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        background: rgba(0, 0, 0, 0.75); border: 1px solid #c9a25a; border-radius: 4px; pointer-events: none;
+      }
+      #journal-toast[hidden] { display: none; }
       .panel-subtitle { color: #c9a25a; margin-top: 4px; }
       .panel-hint { font-size: 11px; color: #c9a25a; }
       #craft-toggle {

@@ -466,8 +466,82 @@ export interface SetTileEffectDef {
   readonly tile: number;
 }
 
-/** One effect of a system, item use or action. */
-export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef;
+/**
+ * Writes a world var (`set_var`) or adds to it (`add_var`), clamped to the
+ * var's range. Touches no entity: `self` matters only inside the term.
+ */
+export interface VarEffectDef extends NumberTerm {
+  readonly type: 'set_var' | 'add_var';
+  /** Var index. */
+  readonly var: number;
+}
+
+/** Moves a quest forward to a stage (a no-op for an earlier or equal stage, or an ended quest). */
+export interface QuestEffectDef {
+  readonly type: 'quest';
+  /** Quest index. */
+  readonly quest: number;
+  /** Stage index within the quest. */
+  readonly stage: number;
+}
+
+/** Adds a journal entry (a no-op when it is already there). */
+export interface JournalEffectDef {
+  readonly type: 'journal';
+  /** Journal entry index. */
+  readonly entry: number;
+}
+
+/** One effect of a system, item use, action, recipe or quest stage. */
+export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef | VarEffectDef | QuestEffectDef | JournalEffectDef;
+
+/** A world-level number (`vars` domain): one value per world, clamped to `[min, max]` on every write. */
+export interface VarDef {
+  readonly id: string;
+  readonly index: number;
+  /** For tools and debugging only; never shown to players. */
+  readonly label: string;
+  readonly initial: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** A one-time journal entry (`journal` domain). */
+export interface JournalEntryDef {
+  readonly id: string;
+  readonly index: number;
+  readonly text: string;
+  /** Grouping in the journal view (default `Notes`). */
+  readonly category: string;
+}
+
+/** One stage of a quest. */
+export interface QuestStageDef {
+  /** Stage id, unique within the quest. */
+  readonly name: string;
+  readonly index: number;
+  /** What the journal shows while the quest is at this stage. */
+  readonly journal: string;
+  /** Enters the stage automatically (quest phase), with `self` = the player; null = only by a `quest` effect. */
+  readonly whenFn: Compiled | null;
+  /** Entering this stage ends the quest. */
+  readonly end: 'success' | 'failure' | null;
+  /** Run once on entering, with `self` = the player. */
+  readonly effects: readonly EffectDef[];
+}
+
+/** A quest (`quests` domain): ordered stages that only move forward. */
+export interface QuestDef {
+  readonly id: string;
+  readonly index: number;
+  readonly title: string;
+  /** Not shown in the journal view until it ends. */
+  readonly hidden: boolean;
+  /** Non-empty; order is also priority order for the quest phase. */
+  readonly stages: readonly QuestStageDef[];
+  /** Indices of the stages with a `when`, ascending (the quest phase's work list). */
+  readonly watched: readonly number[];
+}
 
 /** A periodic rule (`systems` domain), run once per matching entity. */
 export interface SystemDef {
@@ -556,6 +630,9 @@ export type PatchDomain =
   | 'behaviors'
   | 'actions'
   | 'recipes'
+  | 'vars'
+  | 'quests'
+  | 'journal'
   | 'start'
   | 'clock'
   | 'lighting';
@@ -587,6 +664,9 @@ export interface Definition {
   readonly behaviors: readonly BehaviorDef[];
   readonly actions: readonly ActionDef[];
   readonly recipes: readonly RecipeDef[];
+  readonly vars: readonly VarDef[];
+  readonly quests: readonly QuestDef[];
+  readonly journal: readonly JournalEntryDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -620,5 +700,8 @@ export interface Definition {
     readonly behaviors: Readonly<Record<string, number>>;
     readonly actions: Readonly<Record<string, number>>;
     readonly recipes: Readonly<Record<string, number>>;
+    readonly vars: Readonly<Record<string, number>>;
+    readonly quests: Readonly<Record<string, number>>;
+    readonly journal: Readonly<Record<string, number>>;
   };
 }

@@ -6,7 +6,7 @@ import { nearMiss } from '../expr/index.ts';
 import { at, formatPath, lineOf, type ErrorSink, type Src } from './errors.ts';
 import { ID_RE } from './pack.ts';
 
-export type Kind = 'measurement' | 'asset' | 'tile' | 'archetype' | 'map' | 'system' | 'status' | 'item' | 'loot' | 'behavior' | 'action' | 'recipe';
+export type Kind = 'measurement' | 'asset' | 'tile' | 'archetype' | 'map' | 'system' | 'status' | 'item' | 'loot' | 'behavior' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry';
 
 /** The namespaces a pack can see: its own first, then its direct depends. */
 export interface Scope {
@@ -45,6 +45,9 @@ export class SymbolTable {
     behavior: new Map(),
     action: new Map(),
     recipe: new Map(),
+    var: new Map(),
+    quest: new Map(),
+    'journal entry': new Map(),
   };
 
   /** Qualified id → namespace of the pack that removed it, per kind. */
@@ -61,6 +64,9 @@ export class SymbolTable {
     behavior: new Map(),
     action: new Map(),
     recipe: new Map(),
+    var: new Map(),
+    quest: new Map(),
+    'journal entry': new Map(),
   };
 
   /**

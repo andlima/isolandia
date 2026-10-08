@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
+import { hudModel, journalLines, journalToast, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -129,6 +129,8 @@ export interface KeyState {
   crafting?: CraftMenu | null;
   /** A message for the help line set by the last key (e.g. `No way up here.`), or null/absent. */
   message?: string | null;
+  /** The open journal screen (`J`, `journalLines`), shown until any key; null/absent when closed. */
+  journal?: string[] | null;
 }
 
 /**
@@ -190,8 +192,14 @@ export function craftMenuText(menu: CraftMenu): string {
 /** What a key asks of the terminal loop, beyond changing the world. */
 export type KeyResult = 'quit' | 'save' | 'load' | void;
 
+/** The message-line text for the last stepped tick's journal events (`journalToast`), or null. */
+export function journalMessage(world: World): string | null {
+  return world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
+}
+
 /**
- * Apply one key to the world. `x` opens the list of pack actions and
+ * Apply one key to the world. `J` opens the journal screen (lowercase `j`
+ * still moves), closed again by any key. `x` opens the list of pack actions and
  * `take all`s that can be done here, `c` the list of recipes that can be
  * made now (`1`–`9` start one, any other key closes either). With an
  * inventory, `g` takes everything that fits from every reachable container,
@@ -205,7 +213,19 @@ export type KeyResult = 'quit' | 'save' | 'load' | void;
  */
 export function handleKey(world: World, key: string, state: KeyState): KeyResult {
   state.message = null;
-  if (key === 'q' || key === 'Q' || key === '\x03') return 'quit';
+  if (key === '\x03') return 'quit';
+  if (state.journal) {
+    state.journal = null;
+    return;
+  }
+  if (key === 'q' || key === 'Q') return 'quit';
+  if (key === 'J') {
+    state.actions = null;
+    state.crafting = null;
+    state.dropPending = false;
+    state.journal = journalLines(world.journal());
+    return;
+  }
   if (key === 'S' || key === 'L') {
     state.actions = null;
     state.crafting = null;
@@ -303,7 +323,11 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
     const draw = () => {
       // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
       const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + world.player.archetype.measurements.length + 7 + 2;
-      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + (saves ? '  S: save  L: load' : '');
+      if (keys.journal) {
+        stdout.write('\x1b[H' + [...keys.journal, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
+        return;
+      }
+      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + '  J: journal' + (saves ? '  S: save  L: load' : '');
       // The view is double resolution (cells between edges): 2·w + 1 columns by 2·h + 1 lines.
       const width = Math.max(5, Math.floor(((stdout.columns ?? 80) - 1) / 2));
       const height = Math.max(2, Math.floor(((stdout.rows ?? 24) - hudRows - 1) / 2));
@@ -343,7 +367,11 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
       // Catch up on missed ticks so sim time tracks wall time.
       const due = startTick + Math.floor((Date.now() - startMs) / tickMs);
       let n = 0;
-      while (world.tick < due && n++ < 10) world.step();
+      while (world.tick < due && n++ < 10) {
+        world.step();
+        const note = journalMessage(world);
+        if (note) say(note);
+      }
       draw();
     }, tickMs);
 

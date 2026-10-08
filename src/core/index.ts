@@ -36,7 +36,14 @@ export {
   type ActivitySnapshot,
   type SaveFile,
   type RestoreResult,
+  type JournalEvent,
+  type JournalQuest,
+  type JournalItem,
+  type JournalView,
+  type QuestSnapshot,
+  MAX_QUEST_DEPTH,
 } from './sim/world.ts';
+export { journalSections, journalLines, journalToast, oneLine, QUEST_MARK, TOAST_MAX, type JournalSection } from './journal.ts';
 export { SAVE_VERSION, SUPPORTED_SAVE_VERSIONS, saveMeta, wrapSave, unwrapSave, type SaveMeta, type SaveWrapper } from './sim/save.ts';
 export { type Activity, type ActivitySource, type ActivityStage, type CompletionStep } from './sim/activity.ts';
 export { add, remove, fits, load, countOf, createContainer, type Container, type ContainerKind, type Stack } from './sim/containers.ts';

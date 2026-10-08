@@ -1,0 +1,20 @@
+# The first night as a quest (docs/packs.md#quests): survive the dawn of day 2.
+# It adds no victory: the estate stays open-ended after it.
+quests:
+  - id: first_dawn
+    title: The first dawn
+    stages:
+      - id: night
+        when: "true"                # entered on the first tick
+        journal: The sun rises at six. Be resting in the crypt, or at least in the shade, by then.
+      # Shade is what the sun spares (survival.yaml: `daylight` and `sunburnt`
+      # stop on shaded tiles); the crypt's floor is shaded, so resting there counts.
+      - id: survived
+        end: success
+        when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or tile.has_tag("shade"))'
+        journal: You lay in the dark while the sun rose. The first dawn is behind you.
+      # Later stages win ties: burnt below a quarter of health (max 100) in daylight fails it.
+      - id: scorched
+        end: failure
+        when: 'world.is_day and self.hp < 25'
+        journal: The sun found you. You crawled into the dark, more ash than flesh.

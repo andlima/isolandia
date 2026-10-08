@@ -22,13 +22,15 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
- * edge walls (their maps had wall cells) and are refused.
+ * edge walls (their maps had wall cells) and are refused. Version 3 predates
+ * vars, quests and the journal: it loads with every var at its `initial`, no
+ * quest started and an empty journal.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -103,7 +105,7 @@ const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft'] as const;
 const CONTAINER_KINDS: readonly ContainerKind[] = ['tile', 'inventory', 'ground'];
 
 /** Id tables of a definition, by the name used in messages. */
-type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe';
+type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry';
 
 /** Collects errors (with JSON paths) and warnings in one pass. */
 class Checker {
@@ -180,6 +182,12 @@ class Checker {
         return ids.actions;
       case 'recipe':
         return ids.recipes;
+      case 'var':
+        return ids.vars;
+      case 'quest':
+        return ids.quests;
+      case 'journal entry':
+        return ids.journal;
     }
   }
 
@@ -374,7 +382,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     headerOk = false;
   }
   if (root['version'] === 1 || root['version'] === 2) {
-    c.err('version', `save version ${root['version']} predates edge walls (version ${SAVE_VERSION}): its map had walls in cells, so it cannot be restored; start a new game`);
+    c.err('version', `save version ${root['version']} predates edge walls (version 3): its map had walls in cells, so it cannot be restored; start a new game`);
     headerOk = false;
   } else if (!SUPPORTED_SAVE_VERSIONS.includes(root['version'] as number)) {
     c.err('version', `unsupported save version ${show(root['version'])} (supported: ${SUPPORTED_SAVE_VERSIONS.join(', ')})`);
@@ -526,6 +534,9 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     if (p?.archetype.inventory && !owners.has(i)) c.err(`state.entities[${i}]`, `archetype '${p.archetype.id}' has an inventory, but the save has no inventory container for entity ${i}`);
   });
 
+  // ── Vars, quests and journal (version 4; a version 3 save starts them fresh) ──
+  const story = root['version'] === 3 ? null : checkStory(c, s);
+
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -579,11 +590,88 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       }
       e.then = p.then;
     });
+    if (story) {
+      for (const [k, v] of story.vars) w.vars[k] = v;
+      for (const q of story.quests) {
+        w.questStage[q.quest] = q.stage;
+        w.questSince[q.quest] = q.since;
+        const end = def.quests[q.quest]!.stages[q.stage]!.end;
+        w.questEnd[q.quest] = end === 'success' ? 1 : end === 'failure' ? 2 : 0;
+      }
+      for (const j of story.journal) {
+        w.journalHas[j.entry] = 1;
+        w.journalLog.push(j);
+      }
+    }
     host.setNextContainer(nextContainer!);
     host.setActions(actions);
     return w.entities[player!]!;
   });
   return { ok: true, world, warnings: c.warnings };
+}
+
+/** Checked vars (index, value), started quests and journal entries of a version 4 save. */
+interface StoryPlan {
+  vars: [number, number][];
+  quests: { quest: number; stage: number; since: number }[];
+  journal: { entry: number; tick: number }[];
+}
+
+/** Check `state.vars`, `state.quests` and `state.journal`. */
+function checkStory(c: Checker, s: Record<string, unknown>): StoryPlan {
+  const { def } = c;
+  const plan: StoryPlan = { vars: [], quests: [], journal: [] };
+  const vars = c.obj(s['vars'], 'state.vars');
+  if (vars) {
+    const saved = new Set<number>();
+    for (const [key, value] of Object.entries(vars)) {
+      const vp = `state.vars[${JSON.stringify(key)}]`;
+      const k = c.id('var', key, vp);
+      const v = c.num(value, vp);
+      if (k === null || v === null) continue;
+      saved.add(k);
+      const d = def.vars[k]!;
+      if (v < d.min || v > d.max) c.warn(vp, `${v} is outside [${d.min}, ${d.max}]; clamped`);
+      plan.vars.push([k, Math.min(Math.max(v, d.min), d.max)]);
+    }
+    for (const d of def.vars) if (!saved.has(d.index)) c.warn('state.vars', `var '${d.id}' is missing; it starts at ${d.initial}`);
+  }
+  const seenQuests = new Set<number>();
+  c.arr(s['quests'], 'state.quests')?.forEach((v, i) => {
+    const path = `state.quests[${i}]`;
+    const o = c.obj(v, path);
+    if (!o) return;
+    const q = c.id('quest', o['quest'], `${path}.quest`);
+    const since = c.int(o['since'], `${path}.since`, 0);
+    const ended = c.bool(o['ended'], `${path}.ended`);
+    const name = c.str(o['stage'], `${path}.stage`);
+    if (q === null || name === null) return;
+    if (seenQuests.has(q)) return void c.err(`${path}.quest`, `quest '${def.quests[q]!.id}' is listed twice`);
+    seenQuests.add(q);
+    const quest = def.quests[q]!;
+    const k = quest.stages.findIndex((st) => st.name === name);
+    if (k < 0) {
+      const near = nearMiss(name, quest.stages.map((st) => st.name));
+      return void c.err(`${path}.stage`, `quest '${quest.id}' has no stage '${name}'${near ? ` (did you mean '${near}'?)` : ''}`);
+    }
+    if (ended !== null && ended !== (quest.stages[k]!.end !== null)) {
+      c.warn(`${path}.ended`, `stage '${name}' of quest '${quest.id}' ${ended ? 'no longer ends' : 'now ends'} the quest; the packs decide`);
+    }
+    if (since !== null && ended !== null) plan.quests.push({ quest: q, stage: k, since });
+  });
+  const seenEntries = new Set<number>();
+  c.arr(s['journal'], 'state.journal')?.forEach((v, i) => {
+    const path = `state.journal[${i}]`;
+    const o = c.obj(v, path);
+    if (!o) return;
+    const entry = c.id('journal entry', o['entry'], `${path}.entry`);
+    const tick = c.int(o['tick'], `${path}.tick`, 0);
+    if (entry === null || tick === null) return;
+    if (seenEntries.has(entry)) return void c.err(`${path}.entry`, `journal entry '${def.journal[entry]!.id}' is listed twice`);
+    seenEntries.add(entry);
+    plan.journal.push({ entry, tick });
+  });
+  return plan;
 }
 
 /** Check one saved entity; null when it has errors. */

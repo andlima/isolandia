@@ -349,6 +349,63 @@ export interface ActivityProgress {
   readonly fraction: number;
 }
 
+/** A quest stage change or journal addition of the last stepped tick (`world.journalEvents`). */
+export interface JournalEvent {
+  readonly tick: number;
+  readonly kind: 'stage' | 'entry';
+  /** Qualified quest id (`stage`). */
+  readonly quest?: string;
+  /** Stage id (`stage`). */
+  readonly stage?: string;
+  /** Qualified journal entry id (`entry`). */
+  readonly entry?: string;
+}
+
+/** A quest of `world.journal()`. */
+export interface JournalQuest {
+  /** Qualified quest id. */
+  readonly quest: string;
+  readonly title: string;
+  /** Current (or final) stage id. */
+  readonly stage: string;
+  /** The stage's journal text. */
+  readonly text: string;
+  readonly state: 'active' | 'success' | 'failure';
+  /** Tick of the quest's last stage change. */
+  readonly since: number;
+}
+
+/** An added entry of `world.journal()`. */
+export interface JournalItem {
+  /** Qualified journal entry id. */
+  readonly entry: string;
+  readonly text: string;
+  readonly category: string;
+  /** Tick at which it was added. */
+  readonly tick: number;
+}
+
+/** `world.journal()`: what the journal shows (pure view model). */
+export interface JournalView {
+  /** Started quests that are not hidden, plus ended hidden ones: active first, then newest change first. */
+  readonly quests: readonly JournalQuest[];
+  /** Added entries, in the order added. */
+  readonly entries: readonly JournalItem[];
+}
+
+/** A started quest in a snapshot (ids qualified). */
+export interface QuestSnapshot {
+  quest: string;
+  /** Stage id. */
+  stage: string;
+  /** Tick it entered that stage. */
+  since: number;
+  ended: boolean;
+}
+
+/** Deepest chain of stages entered by stage effects before it is treated as a pack mistake. */
+export const MAX_QUEST_DEPTH = 8;
+
 /** An activity in a snapshot (ids qualified). */
 export interface ActivitySnapshot {
   kind: 'act' | 'use' | 'craft';
@@ -427,6 +484,12 @@ export interface WorldSnapshot {
    * id or null for a removed edge], in cell index order (`n` before `w`).
    */
   edges: [number, number, number, EdgeSide, string | null][];
+  /** Every var's value, by qualified id. */
+  vars: Record<string, number>;
+  /** Started quests, in definition order. */
+  quests: QuestSnapshot[];
+  /** Added journal entries, in the order added. */
+  journal: { entry: string; tick: number }[];
 }
 
 /** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
@@ -526,6 +589,25 @@ export class World {
   readonly containers = new Map<number, Container>();
   /** Bumped whenever any container's contents change or a pile appears/disappears (for renderers). */
   containerVersion = 0;
+  /** World var values, by var index (clamped to each var's range on every write). */
+  readonly vars: Float64Array;
+  /** Current stage index per quest (-1 = not started); an ended quest keeps its final stage. */
+  readonly questStage: Int32Array;
+  /** Per quest: the tick it entered its current stage. */
+  readonly questSince: Float64Array;
+  /** Per quest: 0 = not ended, 1 = ended in success, 2 = ended in failure. */
+  readonly questEnd: Uint8Array;
+  /** 1 at each added journal entry index. */
+  readonly journalHas: Uint8Array;
+  /** Added journal entries (entry index, tick added), in the order added. */
+  readonly journalLog: { readonly entry: number; readonly tick: number }[] = [];
+  /** Bumped on every quest stage change and journal addition, so shells can re-render cheaply. */
+  journalVersion = 0;
+  /**
+   * The stage changes and journal additions of the last stepped tick, in
+   * order (for toasts; read right after `step`). Not state: not saved or hashed.
+   */
+  journalEvents: JournalEvent[] = [];
 
   private actions: Action[] = [];
   private nextContainerId = 0;
@@ -582,6 +664,11 @@ export class World {
   /** Activity source per recipe index. */
   private readonly recipeSources: readonly ActivitySource[];
   private readonly runner: ActivityRunner;
+  /** Per quest: the tick of its last stage change during a quest phase (-1 = none), for one change per quest per phase. */
+  private readonly questPhaseTick: Float64Array;
+  private inQuestPhase = false;
+  /** Stages being entered, outermost first (`quest:stage`), for the nesting guard. */
+  private readonly questChain: string[] = [];
 
   /**
    * `restore` (internal, see `World.restore`) replaces spawning, container
@@ -626,6 +713,12 @@ export class World {
     this.actionSources = def.actions.map(actionSource);
     this.useSources = def.items.map(useSource);
     this.recipeSources = def.recipes.map(recipeSource);
+    this.vars = Float64Array.from(def.vars, (v) => v.initial);
+    this.questStage = new Int32Array(def.quests.length).fill(-1);
+    this.questSince = new Float64Array(def.quests.length);
+    this.questEnd = new Uint8Array(def.quests.length);
+    this.questPhaseTick = new Float64Array(def.quests.length).fill(-1);
+    this.journalHas = new Uint8Array(def.journal.length);
 
     if (restore) {
       this.player = restore(this, {
@@ -673,6 +766,10 @@ export class World {
       inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
       los: (x0, y0, x1, y1, z0, z1) => lineOfSight(world.grid, x0, y0, x1, y1, z0, z1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
+      vars: this.vars,
+      questStage: this.questStage,
+      questEnd: this.questEnd,
+      journalHas: this.journalHas,
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     this.runner = new ActivityRunner({
@@ -1071,13 +1168,14 @@ export class World {
    * (beyond the active radius: they neither think nor move this tick),
    * behaviors think (id order), every entity's movement intent (id order), player actions,
    * activity work (id order), drift, due systems, hearing, clamp, status
-   * update, defeat then victory check, `tick++`.
+   * update, quests, defeat then victory check, `tick++`.
    * A no-op once the game has ended.
    */
   step(): void {
     if (this.ended) return;
     this.ctx.tick = this.tick;
     this.pendingCount = 0;
+    if (this.journalEvents.length > 0) this.journalEvents = [];
     this.syncIndex();
     this.markDormant();
     this.think();
@@ -1094,6 +1192,7 @@ export class World {
     if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
+    if (this.def.quests.length > 0) this.questPhase();
     this.checkOutcome();
     this.tick++;
   }
@@ -1162,19 +1261,123 @@ export class World {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
-      if (eff.type === 'noise') {
-        this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
-        continue;
+      switch (eff.type) {
+        case 'apply':
+        case 'set': {
+          const idx = eff.measurement;
+          if (has[idx] !== 1) continue;
+          const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
+          e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+          break;
+        }
+        case 'noise':
+          this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+          break;
+        case 'set_tile':
+          if (target?.side) this.grid.setEdge(this.grid.index(target.x, target.y, target.z), target.side, eff.tile);
+          else if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
+          break;
+        case 'set_var':
+          this.writeVar(eff.var, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+          break;
+        case 'add_var':
+          this.writeVar(eff.var, this.vars[eff.var]! + (eff.fn ? Number(eff.fn(ctx)) : eff.constant));
+          break;
+        case 'quest':
+          this.enterStage(eff.quest, eff.stage);
+          break;
+        case 'journal':
+          this.addEntry(eff.entry);
+          break;
       }
-      if (eff.type === 'set_tile') {
-        if (target?.side) this.grid.setEdge(this.grid.index(target.x, target.y, target.z), target.side, eff.tile);
-        else if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
-        continue;
+    }
+  }
+
+  /** Write a var, clamped to its range. */
+  private writeVar(k: number, v: number): void {
+    const d = this.def.vars[k]!;
+    this.vars[k] = v < d.min ? d.min : v > d.max ? d.max : v;
+  }
+
+  /** Add a journal entry (a no-op when it is already there). */
+  private addEntry(k: number): void {
+    if (this.journalHas[k] === 1) return;
+    this.journalHas[k] = 1;
+    this.journalLog.push({ entry: k, tick: this.tick });
+    this.journalVersion++;
+    this.journalEvents.push({ tick: this.tick, kind: 'entry', entry: this.def.journal[k]!.id });
+  }
+
+  /**
+   * Move quest `q` forward to stage `s` and run the stage's effects with
+   * `self` = the player. A stage before or equal to the current one, or any
+   * stage of an ended quest, is a no-op, as is a second change in the same
+   * quest phase. Throws when stage effects nest more than `MAX_QUEST_DEPTH`
+   * deep (a pack mistake).
+   */
+  private enterStage(q: number, s: number): void {
+    if (this.questEnd[q] !== 0 || s <= this.questStage[q]!) return;
+    if (this.inQuestPhase && this.questPhaseTick[q] === this.tick) return;
+    const quest = this.def.quests[q]!;
+    const stage = quest.stages[s]!;
+    const chain = this.questChain;
+    chain.push(`${quest.id}:${stage.name}`);
+    try {
+      if (chain.length > MAX_QUEST_DEPTH + 1) {
+        throw new Error(`quest stages entered by effects nest more than ${MAX_QUEST_DEPTH} deep: ${chain.join(' → ')}`);
       }
-      const idx = eff.measurement;
-      if (has[idx] !== 1) continue;
-      const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
-      e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+      this.questStage[q] = s;
+      this.questSince[q] = this.tick;
+      this.questEnd[q] = stage.end === 'success' ? 1 : stage.end === 'failure' ? 2 : 0;
+      if (this.inQuestPhase) this.questPhaseTick[q] = this.tick;
+      this.journalVersion++;
+      this.journalEvents.push({ tick: this.tick, kind: 'stage', quest: quest.id, stage: stage.name });
+      if (stage.effects.length === 0) return;
+      const ctx = this.ctx;
+      const { self, target } = ctx;
+      ctx.self = this.player;
+      ctx.target = null;
+      try {
+        this.runEffects(this.player, stage.effects);
+      } finally {
+        ctx.self = self;
+        ctx.target = target;
+      }
+    } finally {
+      chain.pop();
+    }
+  }
+
+  /**
+   * Quest phase: quests in definition order; each not-ended quest enters the
+   * last stage after its current one whose `when` holds (with `self` = the
+   * player), skipping those in between. At most one change per quest; stage
+   * effects run at once, so later quests see them.
+   */
+  private questPhase(): void {
+    const ctx = this.ctx;
+    ctx.self = this.player;
+    ctx.target = null;
+    const tick = this.tick;
+    this.inQuestPhase = true;
+    try {
+      for (const q of this.def.quests) {
+        const k = q.index;
+        if (this.questEnd[k] !== 0 || this.questPhaseTick[k] === tick) continue;
+        const cur = this.questStage[k]!;
+        const watched = q.watched;
+        for (let i = watched.length - 1; i >= 0; i--) {
+          const s = watched[i]!;
+          if (s <= cur) break;
+          if (q.stages[s]!.whenFn!(ctx)) {
+            this.enterStage(k, s);
+            ctx.self = this.player;
+            break;
+          }
+        }
+      }
+    } finally {
+      this.inQuestPhase = false;
     }
   }
 
@@ -1645,7 +1848,35 @@ export class World {
           const { i, side } = edgeOfKey(key);
           return [...this.cellTriple(i), side, t === EMPTY_TILE ? null : this.def.tiles[t]!.id];
         }),
+      vars: Object.fromEntries(this.def.vars.map((v) => [v.id, this.vars[v.index]!])),
+      quests: this.def.quests
+        .filter((q) => this.questStage[q.index]! >= 0)
+        .map((q) => ({ quest: q.id, stage: q.stages[this.questStage[q.index]!]!.name, since: this.questSince[q.index]!, ended: this.questEnd[q.index] !== 0 })),
+      journal: this.journalLog.map((j) => ({ entry: this.def.journal[j.entry]!.id, tick: j.tick })),
     };
+  }
+
+  /**
+   * The journal as a view model: the started quests that are not hidden,
+   * plus the ended hidden ones (active first, then newest change first;
+   * definition order breaks ties), and the added entries in the order added.
+   * Pure: draws no RNG and does not change `hash()`.
+   */
+  journal(): JournalView {
+    const quests: JournalQuest[] = [];
+    for (const q of this.def.quests) {
+      const s = this.questStage[q.index]!;
+      const end = this.questEnd[q.index]!;
+      if (s < 0 || (q.hidden && end === 0)) continue;
+      const stage = q.stages[s]!;
+      quests.push({ quest: q.id, title: q.title, stage: stage.name, text: stage.journal, state: end === 1 ? 'success' : end === 2 ? 'failure' : 'active', since: this.questSince[q.index]! });
+    }
+    quests.sort((a, b) => Number(b.state === 'active') - Number(a.state === 'active') || b.since - a.since);
+    const entries = this.journalLog.map((j): JournalItem => {
+      const e = this.def.journal[j.entry]!;
+      return { entry: e.id, text: e.text, category: e.category, tick: j.tick };
+    });
+    return { quests, entries };
   }
 
   /** [x, y, z] of a cell index. */
