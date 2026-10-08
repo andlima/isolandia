@@ -25,6 +25,8 @@ export interface ExprEntity {
   readonly heardTick: number;
   /** In-progress activity (`action` = action index, -1 for an item use); null or absent when idle. */
   readonly activity?: { readonly action: number } | null;
+  /** Faction index of the entity's archetype; -1 or absent for none. */
+  readonly faction?: number;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -37,6 +39,41 @@ export interface TileRef {
 }
 
 export type Value = number | boolean | string | ExprEntity | TileRef;
+
+/** Faction state as seen by expressions (`reputation`, `attitude`, `hostile`, `friendly`). */
+export interface FactionTable {
+  /** Number of factions. */
+  readonly n: number;
+  /** The player's standing per faction. */
+  readonly rep: Float64Array;
+  /** Relations, row = the regarding faction: `rel[f * n + g]` is how f regards g (0 when unset). */
+  readonly rel: Float64Array;
+  /** Per faction: `hostile` threshold. */
+  readonly hostileBelow: Float64Array;
+  /** Per faction: `friendly` threshold. */
+  readonly friendlyFrom: Float64Array;
+}
+
+/** A table with no factions. */
+export const NO_FACTIONS: FactionTable = { n: 0, rep: new Float64Array(0), rel: new Float64Array(0), hostileBelow: new Float64Array(0), friendlyFrom: new Float64Array(0) };
+
+/** How `a` regards `b`, in [-100, 100] (the rules of `attitude(a, b)`; the player's own faction plays no part). */
+export function attitude(t: FactionTable, player: ExprEntity, a: ExprEntity, b: ExprEntity): number {
+  if (a === b) return 100;
+  const fb = b.faction ?? -1;
+  if (a === player) return fb < 0 ? 0 : t.rep[fb]!;
+  const fa = a.faction ?? -1;
+  if (fa < 0) return 0;
+  if (b === player) return t.rep[fa]!;
+  if (fb < 0) return 0;
+  return fa === fb ? 100 : t.rel[fa * t.n + fb]!;
+}
+
+/** The faction whose thresholds `hostile(a, b)` / `friendly(a, b)` use: `a`'s, or `b`'s when `a` is the player; -1 for none. */
+export function regardingFaction(player: ExprEntity, a: ExprEntity, b: ExprEntity): number {
+  if (a !== player) return a.faction ?? -1;
+  return b === player ? -1 : (b.faction ?? -1);
+}
 
 /**
  * Evaluation context. The simulation owns one of these and mutates `self`
@@ -51,6 +88,8 @@ export interface ExprContext {
    */
   target?: { readonly x: number; readonly y: number; readonly z: number; readonly side?: 'n' | 'w' | null } | null;
   player: ExprEntity;
+  /** The NPC being talked to, set only while a dialogue's expressions run (see `CompileSymbols.npc`). */
+  npc?: ExprEntity | null;
   tick: number;
   ticksPerSecond: number;
   /** Calendar constants; `world.day`, `world.hour`, … are computed from `tick`. */
@@ -69,6 +108,16 @@ export interface ExprContext {
   /** Tile line of sight between two cells; false across floors (see `lineOfSight`). */
   los(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean;
   warn(message: string): void;
+  /** World var values, by var index. */
+  vars: Float64Array;
+  /** Current stage index per quest (-1 = not started); an ended quest keeps its final stage. */
+  questStage: Int32Array;
+  /** Per quest: 0 = not ended, 1 = ended in success, 2 = ended in failure. */
+  questEnd: Uint8Array;
+  /** 1 at each journal entry index that has been added. */
+  journalHas: Uint8Array;
+  /** Standings, relations and thresholds of the factions. */
+  factions: FactionTable;
 }
 
 export type Compiled = (ctx: ExprContext) => Value;
@@ -101,6 +150,18 @@ export interface CompileSymbols {
   resolveRoomTag?(tag: string): { index: number } | { error: string };
   /** Resolve an action reference to its index; without it, `doing` is an error. */
   resolveAction?(ref: string): { index: number } | { error: string };
+  /** Resolve a var reference to its index; without it, `var` is an error. */
+  resolveVar?(ref: string): { index: number } | { error: string };
+  /** Resolve a journal entry reference to its index; without it, `in_journal` is an error. */
+  resolveEntry?(ref: string): { index: number } | { error: string };
+  /** Resolve a quest reference to its index; without it, the `quest_*` built-ins are errors. */
+  resolveQuest?(ref: string): { index: number } | { error: string };
+  /** Resolve a stage id of a quest (by quest index) to its stage index. */
+  resolveStage?(quest: number, stage: string): { index: number } | { error: string };
+  /** Resolve a faction reference to its index; without it, the faction built-ins are errors. */
+  resolveFaction?(ref: string): { index: number } | { error: string };
+  /** Whether `npc` (the NPC being talked to) is in scope: dialogue expressions only. */
+  npc?: boolean;
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -228,10 +289,30 @@ const BUILTINS: Record<string, Builtin> = {
 };
 
 /** Built-ins compiled specially (their id argument is resolved at load time). */
-const SPECIAL_NAMES = ['has_status', 'count_item', 'has_item', 'in_room', 'can_see', 'heard', 'busy', 'doing'];
+const SPECIAL_NAMES = [
+  'has_status',
+  'count_item',
+  'has_item',
+  'in_room',
+  'can_see',
+  'heard',
+  'busy',
+  'doing',
+  'var',
+  'in_journal',
+  'quest_active',
+  'quest_reached',
+  'quest_succeeded',
+  'quest_failed',
+  'in_faction',
+  'reputation',
+  'attitude',
+  'hostile',
+  'friendly',
+];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing', 'in_faction']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
@@ -294,9 +375,11 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     return fail;
   };
 
-  function entityRoot(name: 'self' | 'player'): (ctx: ExprContext) => ExprEntity {
-    return name === 'self' ? (c) => c.self : (c) => c.player;
+  function entityRoot(name: 'self' | 'player' | 'npc'): (ctx: ExprContext) => ExprEntity {
+    return name === 'self' ? (c) => c.self : name === 'player' ? (c) => c.player : (c) => c.npc!;
   }
+
+  const NPC_ONLY = `'npc' is only available in dialogues`;
 
   function member(node: Extract<Ast, { kind: 'member' }>): CompiledExpr {
     const obj = node.object;
@@ -304,7 +387,9 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const prop = node.property;
     switch (obj.name) {
       case 'self':
-      case 'player': {
+      case 'player':
+      case 'npc': {
+        if (obj.name === 'npc' && !symbols.npc) return err(NPC_ONLY, obj.pos);
         const root = entityRoot(obj.name);
         if (prop === 'x') return { fn: (c) => root(c).x, type: 'number' };
         if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
@@ -315,6 +400,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         const r = symbols.resolveMeasurement(prop);
         if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
         const idx = r.index;
+        if (obj.name === 'npc') return { fn: (c) => c.npc!.m[idx]!, type: 'number' };
         return obj.name === 'self'
           ? { fn: (c) => c.self.m[idx]!, type: 'number' }
           : { fn: (c) => c.player.m[idx]!, type: 'number' };
@@ -345,6 +431,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         return { fn: (c) => c.self, type: 'entity' };
       case 'player':
         return { fn: (c) => c.player, type: 'entity' };
+      case 'npc':
+        return symbols.npc ? { fn: (c) => c.npc!, type: 'entity' } : err(NPC_ONLY, node.pos);
       case 'tile':
         return {
           fn: (c) => {
@@ -382,6 +470,15 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'heard') return heard(argNodes, node.pos);
     if (name === 'busy') return busy(argNodes, node.pos);
     if (name === 'doing') return doing(argNodes, node.pos);
+    if (name === 'in_faction') return inFaction(argNodes, node.pos);
+    if (node.callee.kind === 'ident') {
+      if (name === 'var') return worldVar(argNodes, node.pos);
+      if (name === 'in_journal') return inJournal(argNodes, node.pos);
+      if (name === 'quest_active' || name === 'quest_succeeded' || name === 'quest_failed') return questState(name, argNodes, node.pos);
+      if (name === 'quest_reached') return questReached(argNodes, node.pos);
+      if (name === 'reputation') return reputation(argNodes, node.pos);
+      if (name === 'attitude' || name === 'hostile' || name === 'friendly') return regard(name, argNodes, node.pos);
+    }
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
       if (fast) return fast;
@@ -511,6 +608,107 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       fn: (c) => {
         const a = target(c).activity;
         return a !== undefined && a !== null && a.action === k;
+      },
+    };
+  }
+
+  /** The string literal id argument of a world built-in, resolved now; null after reporting. */
+  function literalId(
+    name: string,
+    node: Ast,
+    what: string,
+    example: string,
+    resolve: ((ref: string) => { index: number } | { error: string }) | undefined,
+  ): number | null {
+    if (node.kind !== 'string') {
+      err(`${name}() expects a string literal ${what} id, e.g. ${example}`, node.pos);
+      return null;
+    }
+    if (!resolve) {
+      err(`${name}() is not available here`, node.pos);
+      return null;
+    }
+    const r = resolve(node.value);
+    if ('error' in r) {
+      err(`${name}: ${r.error}`, node.pos);
+      return null;
+    }
+    return r.index;
+  }
+
+  /** `var("id")`: the var's current value; runtime is one array read. */
+  function worldVar(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`var() takes 1 argument, got ${argNodes.length}`, pos);
+    const k = literalId('var', argNodes[0]!, 'var', 'var("clues_found")', symbols.resolveVar);
+    if (k === null) return fail;
+    return { type: 'number', fn: (c) => c.vars[k]! };
+  }
+
+  /** `in_journal("id")`: whether the entry has been added. */
+  function inJournal(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`in_journal() takes 1 argument, got ${argNodes.length}`, pos);
+    const k = literalId('in_journal', argNodes[0]!, 'journal entry', 'in_journal("torn_letter")', symbols.resolveEntry);
+    if (k === null) return fail;
+    return { type: 'boolean', fn: (c) => c.journalHas[k] === 1 };
+  }
+
+  /** `quest_active("q")` (started, not ended), `quest_succeeded("q")`, `quest_failed("q")`. */
+  function questState(name: 'quest_active' | 'quest_succeeded' | 'quest_failed', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`${name}() takes 1 argument, got ${argNodes.length}`, pos);
+    const k = literalId(name, argNodes[0]!, 'quest', `${name}("escape")`, symbols.resolveQuest);
+    if (k === null) return fail;
+    if (name === 'quest_active') return { type: 'boolean', fn: (c) => c.questStage[k]! >= 0 && c.questEnd[k] === 0 };
+    const want = name === 'quest_succeeded' ? 1 : 2;
+    return { type: 'boolean', fn: (c) => c.questEnd[k] === want };
+  }
+
+  /** `quest_reached("q", "stage")`: the quest's stage index is that stage's or higher (positional). */
+  function questReached(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`quest_reached() takes 2 arguments, got ${argNodes.length}`, pos);
+    const q = literalId('quest_reached', argNodes[0]!, 'quest', 'quest_reached("escape", "battery")', symbols.resolveQuest);
+    if (q === null) return fail;
+    const resolveStage = symbols.resolveStage;
+    const s = literalId('quest_reached', argNodes[1]!, 'stage', 'quest_reached("escape", "battery")', resolveStage && ((ref) => resolveStage(q, ref)));
+    if (s === null) return fail;
+    return { type: 'boolean', fn: (c) => c.questStage[q]! >= s };
+  }
+
+  /** `in_faction(entity, "f")` / `self.in_faction("f")`: one read of the archetype's faction index. */
+  function inFaction(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`in_faction() takes 2 arguments, got ${argNodes.length}`, pos);
+    const k = literalId('in_faction', argNodes[1]!, 'faction', 'in_faction(self, "police")', symbols.resolveFaction);
+    if (k === null) return fail;
+    const target = entityArg('in_faction', argNodes[0]!, pos, 'entity, faction');
+    if (!target) return fail;
+    return { type: 'boolean', fn: (c) => target(c).faction === k };
+  }
+
+  /** `reputation("f")`: the player's standing with the faction; one array read. */
+  function reputation(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`reputation() takes 1 argument, got ${argNodes.length}`, pos);
+    const k = literalId('reputation', argNodes[0]!, 'faction', 'reputation("police")', symbols.resolveFaction);
+    if (k === null) return fail;
+    return { type: 'number', fn: (c) => c.factions.rep[k]! };
+  }
+
+  /** `attitude(a, b)`, `hostile(a, b)`, `friendly(a, b)`: entity arguments, at most two array reads. */
+  function regard(name: 'attitude' | 'hostile' | 'friendly', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`${name}() takes 2 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const A = entityArg(name, argNodes[0]!, pos, 'a, b');
+    const B = entityArg(name, argNodes[1]!, pos, 'a, b');
+    if (errors.length > before || !A || !B) return fail;
+    if (name === 'attitude') return { type: 'number', fn: (c) => attitude(c.factions, c.player, A(c), B(c)) };
+    const hostile = name === 'hostile';
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const a = A(c);
+        const b = B(c);
+        const f = regardingFaction(c.player, a, b);
+        if (f < 0) return false;
+        const v = attitude(c.factions, c.player, a, b);
+        return hostile ? v < c.factions.hostileBelow[f]! : v >= c.factions.friendlyFrom[f]!;
       },
     };
   }

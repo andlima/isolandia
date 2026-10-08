@@ -6,7 +6,7 @@
  */
 
 import { Application, type Container } from 'pixi.js';
-import { loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
+import { journalToast, loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
@@ -20,6 +20,7 @@ import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
 import { clickPlan, edgeWalkIntent } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
+import { DialogueBox } from './dialogue-dom.ts';
 import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
@@ -47,6 +48,7 @@ class GameSession {
   readonly hud: Hud;
   readonly panels: Panels;
   readonly menu: ContextMenu;
+  readonly dialogue: DialogueBox;
   /** The last goto shown (to flash unreachable targets once). */
   lastGoto: GotoRecord | null;
 
@@ -61,10 +63,22 @@ class GameSession {
     this.hud = new Hud(document.body);
     this.panels = new Panels(document.body, world, icons);
     this.menu = new ContextMenu(document.body, world, (id) => this.panels.openLoot(id));
+    // While a conversation is open, map clicks, movement, the context menu and the transfer window are off.
+    this.dialogue = new DialogueBox(document.body, world, {
+      opened: () => {
+        this.menu.close();
+        this.panels.closeTransfer();
+      },
+      input: () => {
+        const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
+        if (toast) this.hud.toast(toast);
+      },
+    });
     this.lastGoto = world.lastGoto;
   }
 
   dispose(): void {
+    this.dialogue.dispose();
     this.menu.dispose();
     this.panels.dispose();
     this.hud.dispose();
@@ -134,6 +148,7 @@ async function main(): Promise<void> {
   const targetAt = (sx: number, sy: number) => session.scene.pickTarget(sx, sy);
   /** Right-click, long-press: the menu with `Walk here`. */
   const openMenu = (sx: number, sy: number) => {
+    if (session.world.conversation) return;
     const t = targetAt(sx, sy);
     session.menu.open(t.x, t.y, t.z, sx, sy, 'context', t.kind === 'edge' ? t.side : null);
   };
@@ -144,8 +159,12 @@ async function main(): Promise<void> {
     () => {
       input.beforeTick();
       const t0 = performance.now();
-      session.world.step();
+      const world = session.world;
+      world.step();
       perf.tick(performance.now() - t0);
+      // `journalEvents` holds only the last tick's events: read them right after each step.
+      const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
+      if (toast) session.hud.toast(toast);
     },
     { ticksPerSecond: def.ticksPerSecond, maxTicksPerFrame: 5 },
   );
@@ -218,6 +237,7 @@ async function main(): Promise<void> {
         menu.dismissed = false;
         return;
       }
+      if (world.conversation) return;
       const t = targetAt(sx, sy);
       // Shift-click always walks; otherwise the click plan runs the safe default or opens the menu.
       if (shift) return world.queueIntent(t.kind === 'edge' ? edgeWalkIntent(world, t.x, t.y, t.z, t.side) : clickIntent(world, t.x, t.y, t.z));
@@ -229,7 +249,7 @@ async function main(): Promise<void> {
     hover: (p) => hover.move(p),
     longPress: openMenu,
     menu: openMenu,
-    captureKey: (code) => session.menu.key(code),
+    captureKey: (code) => session.menu.key(code) || session.dialogue.key(code),
     key: (code) => {
       const { hud, panels, menu, world } = session;
       if (code === 'KeyH') hud.toggle();
@@ -237,6 +257,7 @@ async function main(): Promise<void> {
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
+      if (code === 'KeyJ') panels.toggleJournal();
       if (code === 'Escape') panels.closeTransfer();
       if (code === 'KeyO') {
         game.toggle();
@@ -266,6 +287,7 @@ async function main(): Promise<void> {
     const s = session;
     const { world, scene } = s;
     if (world.ended) s.menu.close();
+    s.dialogue.update();
     if (world.lastGoto !== s.lastGoto) {
       s.lastGoto = world.lastGoto;
       if (s.lastGoto && !s.lastGoto.ok) scene.flashUnreachable(s.lastGoto.x, s.lastGoto.y, s.lastGoto.z, now);
@@ -275,7 +297,7 @@ async function main(): Promise<void> {
     scene.markMenuTarget(s.menu.target);
     const stats = scene.update(cam, width, height, loop.alpha, now);
     // Hover picks against the camera just applied; its outline shows from this frame on.
-    scene.markHover(hover.update(world, targetAt, now, !s.menu.isOpen && !world.ended, s.hud.visible));
+    scene.markHover(hover.update(world, targetAt, now, !s.menu.isOpen && !world.ended && !world.conversation, s.hud.visible));
     s.hud.update(world);
     perf.frame(now);
     if (s.hud.perfVisible) {

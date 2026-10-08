@@ -25,6 +25,11 @@ export const KIND_OF: Record<ListDomain, Kind> = {
   behaviors: 'behavior',
   actions: 'action',
   recipes: 'recipe',
+  vars: 'var',
+  quests: 'quest',
+  journal: 'journal entry',
+  dialogues: 'dialogue',
+  factions: 'faction',
 };
 
 /** A loaded pack: its raw content, what it can see, and every pack it depends on (transitively). */

@@ -8,12 +8,16 @@ actions that cost something. The rule is the pure function
 `clickPlan(world, target)` in `src/web/menu.ts`, over
 `world.interactionsAt(x, y, z)` for the target's cell:
 
-- the **safe** entry is the first enabled **Open**, else **Go up** /
+- an enabled **Talk to …** (an NPC with a [dialogue](packs.md#dialogues)
+  on the cell) always runs: clicking an NPC you can talk to walks up to it
+  and talks (see [Dialogue box](#dialogue-box));
+- otherwise the **safe** entry is the first enabled **Open**, else **Go up** /
   **Go down** when the cell has exactly one way, else **Walk here**;
 - when the cell has no enabled tile action or recipe, the click **runs**
   the safe entry, exactly as choosing it in the menu would (walk up to a
   fridge and show its contents, climb the stairs, walk);
-- when it has one (*Barricade* you can do now, *Cook* at a stove), or has
+- when it has one (*Barricade* you can do now, *Cook* at a stove), a
+  disabled *Talk to …* (an NPC that will not talk now), or has
   entries but nothing safe (only disabled actions, stairs that go both
   ways), the click opens the **menu**;
 - a cell with nothing on it walks there, next to it when it cannot be
@@ -30,7 +34,8 @@ opening)` (`src/web/menu-dom.ts` only renders it). Rows, in order:
 
 1. the **default** (the safe entry, unless it is *Walk here*), with a
    `click` tag;
-2. the other **enabled** entries in `interactionsAt` order: tile actions
+2. the other **enabled** entries in `interactionsAt` order: *Talk to …*
+   per NPC with a dialogue on the cell, tile actions
    (e.g. *Barricade* on a window), station recipes (*Cook: Hot beans* on a
    stove), *Open* / *Take all from …* per container, *Go up* / *Go down*
    on an open [link](packs.md#floors), and on your own cell the self
@@ -72,10 +77,17 @@ runs something or opens the menu, the normal arrow for a plain walk, and
 "not allowed" on your own cell with nothing to do) and, after the pointer
 rests ~150 ms on a target, shows a tooltip: the title (`Fridge · kitchen`;
 an entity's name; `Ground · Crackers, Water bottle` for a pile) and what a
-click does (`Click: Open`, `Click: Go up`, `Click: 3 actions`, nothing for
-a walk). It is the pure `hoverInfo(world, target)`, recomputed once per
-frame at most and only when the target, the tick, `containerVersion` or
-`tileVersion` changes. Hover is hidden while the menu is open, while
+click does (`Click: Open`, `Click: Go up`, `Click: Talk to Barkeep`,
+`Click: 3 actions`, nothing for a walk). An NPC that will not talk now shows
+its dialogue's `unavailable` text instead (`He ignores you`), and a click
+opens the menu. An NPC of a [faction](packs.md#factions) adds the
+faction and the player's tier with it after its name (`Officer · Police
+(Wary)`, from `world.attitudeOf`); when the faction is hostile to the
+player, that part shows in the danger colour. It is the pure
+`hoverInfo(world, target)` (with `standing` and `hostile` for such an NPC;
+`hoverTitleLine` builds the first line), recomputed once per frame at most
+and only when the target, the tick, `containerVersion`, `tileVersion` or
+`journalVersion` changes. Hover is hidden while the menu is open, while
 dragging and when the pointer leaves the canvas; `H` hides the tooltip
 with the HUD.
 
@@ -169,6 +181,74 @@ to walk there and craft). The view is the pure function
 or `tileVersion` changes. Recipes without a station live only here, not in
 the context menu.
 
+## Dialogue box
+
+Talking to an NPC (a click on it, *Talk to …* in its menu, or walking up
+first when it is out of reach) opens a [conversation](packs.md#dialogues)
+and **pauses the world**. A box at the bottom of the screen shows the
+speaker's name, the line, and the visible answers numbered `1`–`9`.
+Disabled answers are greyed out with the reason underneath (`Needs: 2×
+Coin`, or the choice's `unavailable` text).
+
+- `1`–`9`, a click or a tap choose an answer;
+- the arrow keys move over the enabled answers and `Enter` chooses the
+  selected one; with nothing selected, `Enter` picks the only enabled
+  answer (when there is exactly one);
+- `Escape` leaves the conversation. At a node that cannot be left
+  (`leave: false`) the box shakes briefly and says `You can't walk away
+  now.`
+
+While the box is open, map clicks, movement keys, the context menu and the
+transfer window (`I`, `Tab`) are off, and hover tooltips are hidden. The
+journal (`J`) and the Game panel (`O`, `F5`, `F9`) still open on top. A
+choice that adds a journal entry or moves a quest shows its toast at once.
+
+The box is the pure `dialogueBox(world.conversationView())` and
+`dialogueKey(box, selected, code)` (`src/web/dialogue.ts`); the DOM layer
+(`dialogue-dom.ts`) re-renders when `world.conversationVersion` changes.
+
+In the terminal, `x` lists *Talk to …* for each NPC in reach. While a
+conversation is open, the screen shows the speaker, the line and the
+numbered answers (disabled ones with their hint in brackets) under the
+map: digits choose, `Escape` leaves (or says `You can't walk away now.`),
+and movement keys do nothing.
+
+## Journal
+
+`J` or the **Journal [J]** button (top right; shown when the packs define
+quests, journal entries or factions that are not hidden) toggles the
+**Journal** panel. It shows:
+
+- **Active**: each started quest's title and its current stage's text;
+- **Done**: ended quests, marked ✓ (success) or ✗ (failure), with their
+  last stage's text;
+- one section per entry `category`, in order of first use, listing that
+  category's entries in the order added;
+- **Standing**: each [faction](packs.md#factions) that is not hidden, in
+  definition order: its label, the player's tier and standing (`Police:
+  Wary (-22)`, rounded) and a small bar from -100 to 100 with a mark at 0
+  (`standingRows` in `src/core/journal.ts`).
+
+Hidden quests appear only once they end. The panel is the pure
+`journalView(world)` (`src/web/panels.ts`, over `world.journal()` and the
+shared `journalSections`), re-rendered only when `world.journalVersion`
+changes. It has no buttons, so it stays as it is after defeat or victory.
+
+**Toasts.** When a tick changes a quest's stage or adds an entry, the HUD
+shows `Journal: <quest title>: <stage text>` or `Journal: <entry text>` for
+about 4 s, under the top edge. Several events in one tick show the last
+one plus `(+N)`; the text is one line, cut with `…`. It is the pure
+`journalToast(events, world)` (`src/core/journal.ts`), read from
+`world.journalEvents` right after each step. A hidden quest's stages make
+no toast until it ends. A standing that moves into another tier toasts
+`<Label>: <from> → <to>` (`Police: Neutral → Wary`, `standingToast`);
+hidden factions never toast.
+
+The terminal has the same journal: `J` (uppercase; lowercase `j` still
+moves) shows it as text in the same layout until any key, with the
+standing lines (`Police: Wary (-22)`) last, and a stage change, entry or
+tier change puts the same toast text on the message line.
+
 ## Saving and loading
 
 The browser keeps a **quicksave** and **three slots** per pack list in
@@ -201,18 +281,21 @@ the browser, `MemoryStore` in tests).
 | Key | Action |
 |---|---|
 | Arrows, WASD, numpad | Move (screen-relative) |
-| Click / tap | Safe default (open, climb, walk) or the menu |
+| Click / tap | Talk to an NPC, the safe default (open, climb, walk), or the menu |
 | Shift + click | Walk there |
 | Right-click / long-press | Menu (with *Walk here*) |
 | `E` | Menu on your own cell |
 | `1`–`9` (menu open) | Choose that menu row |
 | Arrows / `Enter` / `Escape` (menu open) | Move, choose (or fold/unfold), close |
+| `1`–`9` / click (dialogue box open) | Choose that answer |
+| Arrows / `Enter` / `Escape` (dialogue box open) | Move, choose (or the only enabled answer), leave |
 | `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
 | `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
 | `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
 | `Escape` | Close the transfer window (or the menu, when open) |
 | Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
+| `J` | [Journal](#journal) panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
 | `H` | Toggle the HUD text (and hover tooltips) |
@@ -225,7 +308,7 @@ with more than one floor the HUD shows `Floor N` (your floor `z`, the
 ground floor being `Floor 0`).
 
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
-loads it; lowercase `s` and `l` still move. `<` / `>` climb (with no link
+loads it, and `J` shows the journal; lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add

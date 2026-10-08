@@ -4,8 +4,27 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import { EMPTY_TILE, populateCandidates, type ArchetypeDef, type BehaviorDef, type Definition, type EdgeSide, type EffectDef, type MapDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
-import type { ExprContext, ExprEntity } from '../expr/index.ts';
+import {
+  DIALOGUE_END,
+  EMPTY_TILE,
+  populateCandidates,
+  type ArchetypeDef,
+  type BehaviorDef,
+  type Definition,
+  type DialogueChoiceDef,
+  type DialogueDef,
+  type EdgeSide,
+  type EffectDef,
+  type FactionDef,
+  type MapDef,
+  type MeasurementDef,
+  type NumberTerm,
+  type ReputationEffectDef,
+  REPUTATION_MAX,
+  REPUTATION_MIN,
+  tierOf,
+} from '../definition.ts';
+import { attitude, type ExprContext, type ExprEntity, type FactionTable } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
@@ -76,6 +95,8 @@ export interface Entity extends ExprEntity {
   heardTick: number;
   /** In-progress timed action, item use or recipe, or null. */
   activity: Activity | null;
+  /** Faction index of the archetype, or -1. */
+  readonly faction: number;
 }
 
 /** A noise emitted this tick by a `noise` effect. */
@@ -219,8 +240,19 @@ export interface CraftAction {
   readonly z?: number;
 }
 
+/**
+ * Start a conversation with an NPC: an entity whose archetype has a
+ * `dialogue`, in reach like a container. On success the world pauses (see
+ * `world.conversation`).
+ */
+export interface TalkAction {
+  readonly kind: 'talk';
+  /** Entity id of the NPC. */
+  readonly entity: number;
+}
+
 /** A player action, queued with `queueAction` and applied after the movement intents. */
-export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction | CraftAction;
+export type Action = TakeAction | PutAction | DropAction | UseAction | ActAction | CraftAction | TalkAction;
 
 export type ActionFailure =
   | 'out_of_reach'
@@ -236,7 +268,9 @@ export type ActionFailure =
   | 'occupied'
   | 'cancelled'
   | 'interrupted'
-  | 'unreachable';
+  | 'unreachable'
+  | 'unknown_entity'
+  | 'no_dialogue';
 
 /** An item the player lacks for an action: its id and label, and how many more units are needed. */
 export interface MissingItem {
@@ -249,8 +283,10 @@ export interface MissingItem {
 /** Outcome of the latest action, for shell feedback. */
 export interface ActionRecord {
   readonly kind: Action['kind'];
-  /** Qualified item id (take/put/drop/use); empty for `act` and `craft`. */
+  /** Qualified item id (take/put/drop/use); empty for `act`, `craft` and `talk`. */
   readonly item: string;
+  /** Entity id of the NPC (`talk` only). */
+  readonly entity?: number;
   /** Qualified action id (`act` only). */
   readonly action?: string;
   /** Qualified recipe id (`craft` only). */
@@ -313,11 +349,11 @@ export interface AvailableRecipe {
   readonly station?: { readonly x: number; readonly y: number; readonly z: number };
 }
 
-export type InteractionKind = 'act' | 'craft' | 'open' | 'take_all' | 'climb' | 'walk';
+export type InteractionKind = 'talk' | 'act' | 'craft' | 'open' | 'take_all' | 'climb' | 'walk';
 
 /** An entry of `world.interactionsAt(x, y, z)`. */
 export interface Interaction {
-  /** Stable within a query, e.g. `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `climb:up`, `walk`. */
+  /** Stable within a query, e.g. `talk:4`, `act:t:board_up`, `craft:t:stew`, `open:3`, `take_all:3`, `climb:up`, `walk`. */
   readonly id: string;
   readonly label: string;
   readonly kind: InteractionKind;
@@ -332,6 +368,8 @@ export interface Interaction {
   readonly actions?: readonly Action[];
   /** Container id (`open`, `take_all`). */
   readonly container?: number;
+  /** Entity id of the NPC (`talk`). */
+  readonly entity?: number;
   /** The goto to the far end of the link (`climb`). */
   readonly intent?: GotoIntent;
   /** Whether the player can do it without walking. */
@@ -347,6 +385,164 @@ export interface ActivityProgress {
   readonly label: string;
   /** In [0, 1]. */
   readonly fraction: number;
+}
+
+/** A quest stage change, journal addition or standing tier change of the last stepped tick (`world.journalEvents`). */
+export interface JournalEvent {
+  readonly tick: number;
+  readonly kind: 'stage' | 'entry' | 'reputation';
+  /** Qualified quest id (`stage`). */
+  readonly quest?: string;
+  /** Stage id (`stage`). */
+  readonly stage?: string;
+  /** Qualified journal entry id (`entry`). */
+  readonly entry?: string;
+  /** Qualified faction id (`reputation`). */
+  readonly faction?: string;
+  /** Tier labels before and after the change (`reputation`). */
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/** A faction of the journal's Standing section (`world.journal().standing`). */
+export interface JournalStanding {
+  /** Qualified faction id. */
+  readonly faction: string;
+  readonly label: string;
+  /** The player's standing, in [-100, 100]. */
+  readonly value: number;
+  /** Tier label of `value`. */
+  readonly tier: string;
+}
+
+/** `world.attitudeOf(entity)`: how an NPC's faction regards the player. */
+export interface AttitudeView {
+  /** Qualified faction id. */
+  readonly faction: string;
+  readonly label: string;
+  readonly tier: string;
+  readonly hostile: boolean;
+  readonly friendly: boolean;
+}
+
+/** A quest of `world.journal()`. */
+export interface JournalQuest {
+  /** Qualified quest id. */
+  readonly quest: string;
+  readonly title: string;
+  /** Current (or final) stage id. */
+  readonly stage: string;
+  /** The stage's journal text. */
+  readonly text: string;
+  readonly state: 'active' | 'success' | 'failure';
+  /** Tick of the quest's last stage change. */
+  readonly since: number;
+}
+
+/** An added entry of `world.journal()`. */
+export interface JournalItem {
+  /** Qualified journal entry id. */
+  readonly entry: string;
+  readonly text: string;
+  readonly category: string;
+  /** Tick at which it was added. */
+  readonly tick: number;
+}
+
+/** `world.journal()`: what the journal shows (pure view model). */
+export interface JournalView {
+  /** Started quests that are not hidden, plus ended hidden ones: active first, then newest change first. */
+  readonly quests: readonly JournalQuest[];
+  /** Added entries, in the order added. */
+  readonly entries: readonly JournalItem[];
+  /** One item per faction that is not hidden, in definition order. */
+  readonly standing: readonly JournalStanding[];
+}
+
+/** A started quest in a snapshot (ids qualified). */
+export interface QuestSnapshot {
+  quest: string;
+  /** Stage id. */
+  stage: string;
+  /** Tick it entered that stage. */
+  since: number;
+  ended: boolean;
+}
+
+/** Deepest chain of stages entered by stage effects before it is treated as a pack mistake. */
+export const MAX_QUEST_DEPTH = 8;
+
+/** Most node entries without a player choice (a `next` loop) before a conversation ends with an error. */
+export const MAX_DIALOGUE_ENTRIES = 32;
+
+/** The open conversation (`world.conversation`): the world is paused until it ends. */
+export interface Conversation {
+  /** The NPC being talked to. */
+  readonly npc: Entity;
+  readonly dialogue: DialogueDef;
+  /** Current node index. */
+  node: number;
+  /** Node entries since the last player choice (`next` choices do not count as one). */
+  entries: number;
+}
+
+/** Why `choose` or `leaveConversation` failed. */
+export type ConversationFailure =
+  /** No conversation is open. */
+  | 'no_conversation'
+  /** The index is not one of the visible choices. */
+  | 'invalid_choice'
+  /** The choice's `when` is falsy. */
+  | 'cannot_act'
+  /** The player lacks items the choice consumes. */
+  | 'missing'
+  /** The node has `leave: false`. */
+  | 'cannot_leave'
+  /** The choice was applied, but entering its node passed `MAX_DIALOGUE_ENTRIES`: the conversation ended (see `error`). */
+  | 'runtime_error';
+
+/** Result of `world.choose` / `world.leaveConversation`. */
+export interface ConversationRecord {
+  readonly ok: boolean;
+  readonly reason?: ConversationFailure;
+  /** The pack mistake that ended the conversation (`runtime_error`). */
+  readonly error?: string;
+}
+
+/** A visible choice of `world.conversationView()`. */
+export interface ConversationChoice {
+  readonly text: string;
+  /** False when its `when` is falsy (with `unavailable`) or items it consumes are missing. */
+  readonly ok: boolean;
+  /** `cannot_act` (with `unavailable`) or `missing` (with `missing`). */
+  readonly reason?: ActionFailure;
+  readonly missing?: readonly MissingItem[];
+  readonly unavailable?: string;
+}
+
+/** `world.conversationView()`: what the dialogue box shows (pure view model). */
+export interface ConversationView {
+  /** Entity id of the NPC. */
+  readonly npc: number;
+  /** The line's speaker: the NPC's or player's archetype label, or the node's `speaker` name. */
+  readonly speaker: string;
+  readonly text: string;
+  /** Whether the player may leave (Escape) at this node. */
+  readonly leave: boolean;
+  /** The visible choices, in definition order (`choose(n)` indexes this list). */
+  readonly choices: readonly ConversationChoice[];
+}
+
+/** The open conversation in a snapshot (ids qualified). */
+export interface ConversationSnapshot {
+  /** Entity id of the NPC. */
+  npc: number;
+  /** Qualified dialogue id. */
+  dialogue: string;
+  /** Node name. */
+  node: string;
+  /** Node entries since the last player choice. */
+  entries: number;
 }
 
 /** An activity in a snapshot (ids qualified). */
@@ -427,6 +623,18 @@ export interface WorldSnapshot {
    * id or null for a removed edge], in cell index order (`n` before `w`).
    */
   edges: [number, number, number, EdgeSide, string | null][];
+  /** Every var's value, by qualified id. */
+  vars: Record<string, number>;
+  /** Started quests, in definition order. */
+  quests: QuestSnapshot[];
+  /** Added journal entries, in the order added. */
+  journal: { entry: string; tick: number }[];
+  /** The open conversation, or null. */
+  conversation: ConversationSnapshot | null;
+  /** The chosen `once` choices, as [qualified dialogue id, choice id], sorted. */
+  dialogueOnce: [string, string][];
+  /** The player's standing with every faction, by qualified id. */
+  reputation: Record<string, number>;
 }
 
 /** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
@@ -498,6 +706,17 @@ export interface PathStats {
   maxPlayerExpanded: number;
 }
 
+/** Order of [string, string] pairs: by the first, then the second (code units). */
+function byPair(a: readonly [string, string], b: readonly [string, string]): number {
+  if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+  return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0;
+}
+
+/** `v` rounded to 2 decimals, halves away from zero (an epsilon absorbs float noise: -15 × 33.3 / 100 is -5). */
+function round2(v: number): number {
+  return (Math.sign(v) * Math.round(Math.abs(v) * 100 + 1e-7)) / 100;
+}
+
 /** 32-bit integer hash of two values (murmur3 finalizer). */
 function mix(a: number, b: number): number {
   let h = Math.imul((a ^ b) >>> 0, 0x85ebca6b);
@@ -526,6 +745,39 @@ export class World {
   readonly containers = new Map<number, Container>();
   /** Bumped whenever any container's contents change or a pile appears/disappears (for renderers). */
   containerVersion = 0;
+  /** World var values, by var index (clamped to each var's range on every write). */
+  readonly vars: Float64Array;
+  /** Current stage index per quest (-1 = not started); an ended quest keeps its final stage. */
+  readonly questStage: Int32Array;
+  /** Per quest: the tick it entered its current stage. */
+  readonly questSince: Float64Array;
+  /** Per quest: 0 = not ended, 1 = ended in success, 2 = ended in failure. */
+  readonly questEnd: Uint8Array;
+  /** 1 at each added journal entry index. */
+  readonly journalHas: Uint8Array;
+  /** Added journal entries (entry index, tick added), in the order added. */
+  readonly journalLog: { readonly entry: number; readonly tick: number }[] = [];
+  /** Bumped on every quest stage change and journal addition, so shells can re-render cheaply. */
+  journalVersion = 0;
+  /**
+   * The stage changes and journal additions of the last stepped tick, in
+   * order (for toasts; read right after `step`). Not state: not saved or hashed.
+   */
+  journalEvents: JournalEvent[] = [];
+  /**
+   * The open conversation, or null. While it is open the world is paused:
+   * `step()` is a no-op, queued intents and actions are ignored, and only
+   * `choose` and `leaveConversation` change the world.
+   */
+  conversation: Conversation | null = null;
+  /** Bumped when a conversation opens and on every `choose` / `leaveConversation`, so shells can re-render cheaply. */
+  conversationVersion = 0;
+  /** Per dialogue: the ids of its `once` choices already chosen (world-level). */
+  readonly dialogueOnce: Set<string>[];
+  /** The player's standing per faction index, clamped to [-100, 100] on every write. */
+  readonly reputation: Float64Array;
+  /** Standings (the same array as `reputation`), relations and thresholds as expressions read them. */
+  readonly factionTable: FactionTable;
 
   private actions: Action[] = [];
   private nextContainerId = 0;
@@ -582,6 +834,13 @@ export class World {
   /** Activity source per recipe index. */
   private readonly recipeSources: readonly ActivitySource[];
   private readonly runner: ActivityRunner;
+  /** Per quest: the tick of its last stage change during a quest phase (-1 = none), for one change per quest per phase. */
+  private readonly questPhaseTick: Float64Array;
+  private inQuestPhase = false;
+  /** Stages being entered, outermost first (`quest:stage`), for the nesting guard. */
+  private readonly questChain: string[] = [];
+  /** Set once a conversation input emitted into a fresh noise list: the next `step` hears those noises instead of clearing them. */
+  private noiseCarry = false;
 
   /**
    * `restore` (internal, see `World.restore`) replaces spawning, container
@@ -626,6 +885,24 @@ export class World {
     this.actionSources = def.actions.map(actionSource);
     this.useSources = def.items.map(useSource);
     this.recipeSources = def.recipes.map(recipeSource);
+    this.vars = Float64Array.from(def.vars, (v) => v.initial);
+    this.questStage = new Int32Array(def.quests.length).fill(-1);
+    this.questSince = new Float64Array(def.quests.length);
+    this.questEnd = new Uint8Array(def.quests.length);
+    this.questPhaseTick = new Float64Array(def.quests.length).fill(-1);
+    this.journalHas = new Uint8Array(def.journal.length);
+    this.dialogueOnce = def.dialogues.map(() => new Set<string>());
+    const nf = def.factions.length;
+    this.reputation = Float64Array.from(def.factions, (f) => f.reputation);
+    const rel = new Float64Array(nf * nf);
+    for (const f of def.factions) rel.set(f.relations, f.index * nf);
+    this.factionTable = {
+      n: nf,
+      rep: this.reputation,
+      rel,
+      hostileBelow: Float64Array.from(def.factions, (f) => f.hostileBelow),
+      friendlyFrom: Float64Array.from(def.factions, (f) => f.friendlyFrom),
+    };
 
     if (restore) {
       this.player = restore(this, {
@@ -659,6 +936,7 @@ export class World {
     this.ctx = {
       self: this.player,
       player: this.player,
+      npc: null,
       tick: 0,
       ticksPerSecond: def.ticksPerSecond,
       clock: def.clock,
@@ -673,6 +951,11 @@ export class World {
       inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
       los: (x0, y0, x1, y1, z0, z1) => lineOfSight(world.grid, x0, y0, x1, y1, z0, z1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
+      vars: this.vars,
+      questStage: this.questStage,
+      questEnd: this.questEnd,
+      journalHas: this.journalHas,
+      factions: this.factionTable,
     };
     this.thinkEnv = { grid: this.grid, rng: this.rng, ctx: this.ctx };
     this.runner = new ActivityRunner({
@@ -792,6 +1075,7 @@ export class World {
       heardZ: 0,
       heardTick: -1,
       activity: null,
+      faction: archetype.faction ?? -1,
     };
     this.entities.push(e);
     this.bucketOf.push(-1);
@@ -1027,20 +1311,21 @@ export class World {
     }
   }
 
-  /** Queue a player action (FIFO; applied after the movement intents). Ignored once the game has ended. */
+  /** Queue a player action (FIFO; applied after the movement intents). Ignored once the game has ended and while a conversation is open. */
   queueAction(action: Action): void {
-    if (this.ended) return;
+    if (this.ended || this.conversation) return;
     this.actions.push(action);
   }
 
   /**
    * Queue an entity's next move (the player by default); the latest intent
-   * wins until it is applied. Throws for an entity of another world.
+   * wins until it is applied. Ignored once the game has ended and while a
+   * conversation is open. Throws for an entity of another world.
    */
   queueIntent(intent: Intent, entity: Entity = this.player): void {
     if (this.entities[entity.id] !== entity) throw new Error(`entity ${entity.id} does not belong to this world`);
     if (intent.kind === 'goto' && intent.then && entity !== this.player) throw new Error(`only the player's goto may carry 'then' (entity ${entity.id})`);
-    if (this.ended) return;
+    if (this.ended || this.conversation) return;
     if (intent.kind === 'step' && intent.dx === 0 && intent.dy === 0) return;
     entity.intent = intent;
   }
@@ -1071,13 +1356,15 @@ export class World {
    * (beyond the active radius: they neither think nor move this tick),
    * behaviors think (id order), every entity's movement intent (id order), player actions,
    * activity work (id order), drift, due systems, hearing, clamp, status
-   * update, defeat then victory check, `tick++`.
-   * A no-op once the game has ended.
+   * update, quests, defeat then victory check, `tick++`.
+   * A no-op once the game has ended and while a conversation is open.
    */
   step(): void {
-    if (this.ended) return;
+    if (this.ended || this.conversation) return;
     this.ctx.tick = this.tick;
-    this.pendingCount = 0;
+    if (this.noiseCarry) this.noiseCarry = false;
+    else this.pendingCount = 0;
+    if (this.journalEvents.length > 0) this.journalEvents = [];
     this.syncIndex();
     this.markDormant();
     this.think();
@@ -1094,6 +1381,7 @@ export class World {
     if (this.pendingCount > 0) this.hear();
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
+    if (this.def.quests.length > 0) this.questPhase();
     this.checkOutcome();
     this.tick++;
   }
@@ -1162,19 +1450,179 @@ export class World {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
-      if (eff.type === 'noise') {
-        this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
-        continue;
+      switch (eff.type) {
+        case 'apply':
+        case 'set': {
+          const idx = eff.measurement;
+          const t = eff.on === 'npc' ? (this.conversation?.npc ?? null) : e;
+          if (!t || (t === e ? has : this.hasM[t.archetype.index]!)[idx] !== 1) continue;
+          const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
+          t.m[idx] = eff.type === 'apply' ? t.m[idx]! + v : v;
+          break;
+        }
+        case 'noise':
+          this.emitNoise(e, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+          break;
+        case 'set_tile':
+          if (target?.side) this.grid.setEdge(this.grid.index(target.x, target.y, target.z), target.side, eff.tile);
+          else if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
+          break;
+        case 'set_var':
+          this.writeVar(eff.var, eff.fn ? Number(eff.fn(ctx)) : eff.constant);
+          break;
+        case 'add_var':
+          this.writeVar(eff.var, this.vars[eff.var]! + (eff.fn ? Number(eff.fn(ctx)) : eff.constant));
+          break;
+        case 'quest':
+          this.enterStage(eff.quest, eff.stage);
+          break;
+        case 'journal':
+          this.addEntry(eff.entry);
+          break;
+        case 'reputation':
+          this.reputationEffect(e, eff);
+          break;
       }
-      if (eff.type === 'set_tile') {
-        if (target?.side) this.grid.setEdge(this.grid.index(target.x, target.y, target.z), target.side, eff.tile);
-        else if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
-        continue;
+    }
+  }
+
+  /**
+   * The `reputation` effect on `self` = `e`: skipped when `witnessed` is set
+   * and no member sees `e`; then the faction changes by the term and, with
+   * `spread`, every faction with a relation to it by `delta × r / 100`
+   * (rounded to 2 decimals, one step).
+   */
+  private reputationEffect(e: Entity, eff: ReputationEffectDef): void {
+    const f = eff.faction;
+    if (eff.witnessed !== null && !this.witnessed(e, f, eff.witnessed)) return;
+    const delta = eff.fn ? Number(eff.fn(this.ctx)) : eff.constant;
+    if (!Number.isFinite(delta)) return;
+    this.writeReputation(f, this.reputation[f]! + delta);
+    if (!eff.spread) return;
+    for (const t of this.def.factions[f]!.spread) this.writeReputation(t.faction, this.reputation[t.faction]! + round2((delta * t.relation) / 100));
+  }
+
+  /**
+   * Whether an entity of faction `f` other than `e` and the player is on
+   * `e`'s floor within euclidean distance `range` of it and can see it (id
+   * order, stopping at the first member that sees it).
+   */
+  private witnessed(e: Entity, f: number, range: number): boolean {
+    if (!this.def.factions[f]!.members) return false;
+    const r2 = range * range;
+    for (const m of this.entitiesNear(e.x, e.y, e.z, Math.floor(range))) {
+      if (m === e || m === this.player || m.faction !== f) continue;
+      const dx = m.x - e.x;
+      const dy = m.y - e.y;
+      if (dx * dx + dy * dy > r2) continue;
+      if (lineOfSight(this.grid, m.x, m.y, e.x, e.y, m.z, e.z)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Write a standing, clamped to [-100, 100]. A change bumps
+   * `journalVersion`; one into another tier of a faction that is not hidden
+   * also adds a `reputation` journal event.
+   */
+  private writeReputation(k: number, v: number): void {
+    const old = this.reputation[k]!;
+    const next = v < REPUTATION_MIN ? REPUTATION_MIN : v > REPUTATION_MAX ? REPUTATION_MAX : v;
+    if (next === old) return;
+    this.reputation[k] = next;
+    this.journalVersion++;
+    const f = this.def.factions[k]!;
+    if (f.hidden) return;
+    const from = tierOf(f, old);
+    const to = tierOf(f, next);
+    if (from !== to) this.journalEvents.push({ tick: this.tick, kind: 'reputation', faction: f.id, from, to });
+  }
+
+  /** Write a var, clamped to its range. */
+  private writeVar(k: number, v: number): void {
+    const d = this.def.vars[k]!;
+    this.vars[k] = v < d.min ? d.min : v > d.max ? d.max : v;
+  }
+
+  /** Add a journal entry (a no-op when it is already there). */
+  private addEntry(k: number): void {
+    if (this.journalHas[k] === 1) return;
+    this.journalHas[k] = 1;
+    this.journalLog.push({ entry: k, tick: this.tick });
+    this.journalVersion++;
+    this.journalEvents.push({ tick: this.tick, kind: 'entry', entry: this.def.journal[k]!.id });
+  }
+
+  /**
+   * Move quest `q` forward to stage `s` and run the stage's effects with
+   * `self` = the player. A stage before or equal to the current one, or any
+   * stage of an ended quest, is a no-op, as is a second change in the same
+   * quest phase. Throws when stage effects nest more than `MAX_QUEST_DEPTH`
+   * deep (a pack mistake).
+   */
+  private enterStage(q: number, s: number): void {
+    if (this.questEnd[q] !== 0 || s <= this.questStage[q]!) return;
+    if (this.inQuestPhase && this.questPhaseTick[q] === this.tick) return;
+    const quest = this.def.quests[q]!;
+    const stage = quest.stages[s]!;
+    const chain = this.questChain;
+    chain.push(`${quest.id}:${stage.name}`);
+    try {
+      if (chain.length > MAX_QUEST_DEPTH + 1) {
+        throw new Error(`quest stages entered by effects nest more than ${MAX_QUEST_DEPTH} deep: ${chain.join(' → ')}`);
       }
-      const idx = eff.measurement;
-      if (has[idx] !== 1) continue;
-      const v = eff.fn ? Number(eff.fn(ctx)) : eff.constant;
-      e.m[idx] = eff.type === 'apply' ? e.m[idx]! + v : v;
+      this.questStage[q] = s;
+      this.questSince[q] = this.tick;
+      this.questEnd[q] = stage.end === 'success' ? 1 : stage.end === 'failure' ? 2 : 0;
+      if (this.inQuestPhase) this.questPhaseTick[q] = this.tick;
+      this.journalVersion++;
+      this.journalEvents.push({ tick: this.tick, kind: 'stage', quest: quest.id, stage: stage.name });
+      if (stage.effects.length === 0) return;
+      const ctx = this.ctx;
+      const { self, target } = ctx;
+      ctx.self = this.player;
+      ctx.target = null;
+      try {
+        this.runEffects(this.player, stage.effects);
+      } finally {
+        ctx.self = self;
+        ctx.target = target;
+      }
+    } finally {
+      chain.pop();
+    }
+  }
+
+  /**
+   * Quest phase: quests in definition order; each not-ended quest enters the
+   * last stage after its current one whose `when` holds (with `self` = the
+   * player), skipping those in between. At most one change per quest; stage
+   * effects run at once, so later quests see them.
+   */
+  private questPhase(): void {
+    const ctx = this.ctx;
+    ctx.self = this.player;
+    ctx.target = null;
+    const tick = this.tick;
+    this.inQuestPhase = true;
+    try {
+      for (const q of this.def.quests) {
+        const k = q.index;
+        if (this.questEnd[k] !== 0 || this.questPhaseTick[k] === tick) continue;
+        const cur = this.questStage[k]!;
+        const watched = q.watched;
+        for (let i = watched.length - 1; i >= 0; i--) {
+          const s = watched[i]!;
+          if (s <= cur) break;
+          if (q.stages[s]!.whenFn!(ctx)) {
+            this.enterStage(k, s);
+            ctx.self = this.player;
+            break;
+          }
+        }
+      }
+    } finally {
+      this.inQuestPhase = false;
     }
   }
 
@@ -1399,7 +1847,8 @@ export class World {
   private unreachable(a: Action): ActionRecord {
     return {
       kind: a.kind,
-      item: a.kind === 'act' || a.kind === 'craft' ? '' : a.item,
+      item: a.kind === 'act' || a.kind === 'craft' || a.kind === 'talk' ? '' : a.item,
+      ...(a.kind === 'talk' ? { entity: a.entity } : {}),
       ...(a.kind === 'act' ? { action: a.action } : {}),
       ...(a.kind === 'craft' ? { recipe: a.recipe } : {}),
       ...(a.kind === 'act' && a.side ? { side: a.side } : {}),
@@ -1447,6 +1896,8 @@ export class World {
     const tick = this.tick;
     const p = this.player;
     const inv = p.inv;
+
+    if (a.kind === 'talk') return this.talk(a);
 
     if (a.kind === 'act') {
       const side = a.side === 'n' || a.side === 'w' ? a.side : null;
@@ -1528,6 +1979,197 @@ export class World {
     add(to, item, n, weight);
     this.pruneGround(c);
     return done(n);
+  }
+
+  // ── Conversations ───────────────────────────────────────────────────────
+
+  /** Point the expression context at a conversation with `npc`: `self` and `player` are the player. */
+  private bindTalk(npc: Entity): ExprContext {
+    const ctx = this.ctx;
+    ctx.self = this.player;
+    ctx.target = null;
+    ctx.npc = npc;
+    return ctx;
+  }
+
+  /**
+   * The `talk` action: checks `unknown_entity`, `no_dialogue`,
+   * `out_of_reach` (container reach), then the dialogue's `when` and its
+   * `start` list (`cannot_act`); then opens the conversation.
+   */
+  private talk(a: TalkAction): ActionRecord {
+    const p = this.player;
+    const record = (reason?: ActionFailure): ActionRecord => ({
+      kind: 'talk',
+      item: '',
+      entity: a.entity,
+      moved: 0,
+      ok: !reason,
+      stage: 'complete',
+      ...(reason ? { reason } : {}),
+      tick: this.tick,
+    });
+    const npc = Number.isInteger(a.entity) ? this.entities[a.entity] : undefined;
+    if (!npc || npc === p) return record('unknown_entity');
+    if (npc.archetype.dialogue === null) return record('no_dialogue');
+    if (!this.grid.reaches(p.x, p.y, p.z, npc.x, npc.y, npc.z)) return record('out_of_reach');
+    const dialogue = this.def.dialogues[npc.archetype.dialogue]!;
+    const ctx = this.bindTalk(npc);
+    if (dialogue.whenFn && !dialogue.whenFn(ctx)) return record('cannot_act');
+    const opening = dialogue.start.find((s) => !s.whenFn || s.whenFn(ctx));
+    if (!opening) return record('cannot_act');
+    p.path = null;
+    p.pathPos = 0;
+    p.then = null;
+    p.intent = null;
+    npc.path = null;
+    npc.pathPos = 0;
+    npc.intent = null;
+    const facing = facingOfStep(Math.sign(p.x - npc.x), Math.sign(p.y - npc.y));
+    if (facing) npc.facing = facing;
+    this.conversation = { npc, dialogue, node: opening.node, entries: 0 };
+    this.conversationVersion++;
+    this.enterNode(opening.node);
+    return record();
+  }
+
+  /**
+   * Enter node `k` of the open conversation and run its effects. Past
+   * `MAX_DIALOGUE_ENTRIES` entries without a player choice, ends the
+   * conversation instead and returns the error.
+   */
+  private enterNode(k: number): string | null {
+    const c = this.conversation!;
+    if (++c.entries > MAX_DIALOGUE_ENTRIES) {
+      const from = c.dialogue.nodes[c.node]!.name;
+      this.endConversation();
+      return `dialogue '${c.dialogue.id}' entered more than ${MAX_DIALOGUE_ENTRIES} nodes without a player choice (a 'next' loop?), going from '${from}' to '${c.dialogue.nodes[k]!.name}'`;
+    }
+    c.node = k;
+    const node = c.dialogue.nodes[k]!;
+    if (node.effects.length > 0) {
+      this.bindTalk(c.npc);
+      this.runEffects(this.player, node.effects);
+    }
+    return null;
+  }
+
+  private endConversation(): void {
+    this.conversation = null;
+    this.ctx.npc = null;
+  }
+
+  /** Before a conversation input changes the world: fresh journal events and noise list for shells and the next tick. */
+  private beginInput(): void {
+    this.conversationVersion++;
+    this.ctx.tick = this.tick;
+    if (this.journalEvents.length > 0) this.journalEvents = [];
+    if (!this.noiseCarry) {
+      this.pendingCount = 0;
+      this.noiseCarry = true;
+    }
+  }
+
+  /** The visible choices of the open conversation's node with their verdicts (definition order). */
+  private visibleChoices(c: Conversation): { choice: DialogueChoiceDef; verdict: ConversationChoice }[] {
+    const ctx = this.bindTalk(c.npc);
+    const once = this.dialogueOnce[c.dialogue.index]!;
+    const inv = this.player.inv;
+    const items = this.def.items;
+    const out: { choice: DialogueChoiceDef; verdict: ConversationChoice }[] = [];
+    for (const choice of c.dialogue.nodes[c.node]!.choices) {
+      if (choice.once && once.has(choice.id)) continue;
+      if (choice.whenFn && !choice.whenFn(ctx)) {
+        if (choice.unavailable !== null) out.push({ choice, verdict: { text: choice.text, ok: false, reason: 'cannot_act', unavailable: choice.unavailable } });
+        continue;
+      }
+      const missing: MissingItem[] = [];
+      for (const r of choice.consume) {
+        const lack = r.count - (inv ? countOf(inv, r.item) : 0);
+        if (lack > 0) missing.push({ item: items[r.item]!.id, label: items[r.item]!.label, count: lack });
+      }
+      out.push({ choice, verdict: missing.length ? { text: choice.text, ok: false, reason: 'missing', missing } : { text: choice.text, ok: true } });
+    }
+    return out;
+  }
+
+  /**
+   * Apply choice `n` of the open conversation's visible choices (as in
+   * `conversationView`), synchronously: re-check `when` and `consume`, then
+   * remove `consume`, add `give` (overflow to the ground pile at the
+   * player's cell), run `effects`, record `once`, and enter the `to` node
+   * (running its effects) or end the conversation. A failed check changes
+   * nothing.
+   */
+  choose(n: number): ConversationRecord {
+    const c = this.conversation;
+    if (!c) return { ok: false, reason: 'no_conversation' };
+    this.beginInput();
+    // `when` is checked like the view checks it: `random` draws from a throwaway copy.
+    const picked = Number.isInteger(n) ? this.pure(() => this.visibleChoices(c))[n] : undefined;
+    if (!picked) return { ok: false, reason: 'invalid_choice' };
+    if (!picked.verdict.ok) return { ok: false, reason: picked.verdict.reason === 'missing' ? 'missing' : 'cannot_act' };
+    const choice = picked.choice;
+    const p = this.player;
+    for (const r of choice.consume) remove(p.inv!, r.item, r.count, this.itemWeights[r.item]!);
+    for (const g of choice.give) this.giveItem(p, g.item, g.count);
+    if (choice.consume.length > 0 || choice.give.length > 0) this.containerVersion++;
+    if (choice.effects.length > 0) {
+      this.bindTalk(c.npc);
+      this.runEffects(p, choice.effects);
+    }
+    if (choice.once) this.dialogueOnce[c.dialogue.index]!.add(choice.id);
+    if (!choice.auto) c.entries = 0;
+    if (choice.to === DIALOGUE_END) {
+      this.endConversation();
+      return { ok: true };
+    }
+    const error = this.enterNode(choice.to);
+    return error ? { ok: false, reason: 'runtime_error', error } : { ok: true };
+  }
+
+  /** End the open conversation, unless its node has `leave: false`. */
+  leaveConversation(): ConversationRecord {
+    const c = this.conversation;
+    if (!c) return { ok: false, reason: 'no_conversation' };
+    this.beginInput();
+    if (!c.dialogue.nodes[c.node]!.leave) return { ok: false, reason: 'cannot_leave' };
+    this.endConversation();
+    return { ok: true };
+  }
+
+  /**
+   * The open conversation as a view model, or null: the speaker, the text,
+   * whether the player may leave, and the visible choices (hidden: a falsy
+   * `when` without `unavailable`, or a `once` choice already chosen).
+   * Pure: draws no RNG and does not change `hash()`.
+   */
+  conversationView(): ConversationView | null {
+    const c = this.conversation;
+    if (!c) return null;
+    return this.pure(() => {
+      const node = c.dialogue.nodes[c.node]!;
+      const s = node.speaker;
+      const speaker = s.kind === 'name' ? s.name : s.kind === 'npc' ? c.npc.archetype.label : this.player.archetype.label;
+      const choices = this.visibleChoices(c).map((v) => v.verdict);
+      return { npc: c.npc.id, speaker, text: node.text, leave: node.leave, choices };
+    });
+  }
+
+  /** The `talk` interaction with `npc` (inside `pure`): `ok` from its dialogue's `when`. */
+  private talkInteraction(npc: Entity): Interaction {
+    const p = this.player;
+    const d = this.def.dialogues[npc.archetype.dialogue!]!;
+    const ok = !d.whenFn || !!d.whenFn(this.bindTalk(npc));
+    const base = {
+      id: `talk:${npc.id}`,
+      label: `Talk to ${npc.archetype.label}`,
+      kind: 'talk' as const,
+      action: { kind: 'talk' as const, entity: npc.id },
+      entity: npc.id,
+      inReach: this.grid.reaches(p.x, p.y, p.z, npc.x, npc.y, npc.z),
+    };
+    return ok ? { ...base, ok: true } : { ...base, ok: false, reason: 'cannot_act', ...(d.unavailable ? { unavailable: d.unavailable } : {}) };
   }
 
   /** Take one step on the entity's floor if allowed (the caller has already turned to face it); records the step for rendering. */
@@ -1645,7 +2287,58 @@ export class World {
           const { i, side } = edgeOfKey(key);
           return [...this.cellTriple(i), side, t === EMPTY_TILE ? null : this.def.tiles[t]!.id];
         }),
+      vars: Object.fromEntries(this.def.vars.map((v) => [v.id, this.vars[v.index]!])),
+      quests: this.def.quests
+        .filter((q) => this.questStage[q.index]! >= 0)
+        .map((q) => ({ quest: q.id, stage: q.stages[this.questStage[q.index]!]!.name, since: this.questSince[q.index]!, ended: this.questEnd[q.index] !== 0 })),
+      journal: this.journalLog.map((j) => ({ entry: this.def.journal[j.entry]!.id, tick: j.tick })),
+      conversation: this.conversation
+        ? { npc: this.conversation.npc.id, dialogue: this.conversation.dialogue.id, node: this.conversation.dialogue.nodes[this.conversation.node]!.name, entries: this.conversation.entries }
+        : null,
+      dialogueOnce: this.def.dialogues.flatMap((d) => [...this.dialogueOnce[d.index]!].map((id): [string, string] => [d.id, id])).sort(byPair),
+      reputation: Object.fromEntries(this.def.factions.map((f) => [f.id, this.reputation[f.index]!])),
     };
+  }
+
+  /**
+   * The journal as a view model: the started quests that are not hidden,
+   * plus the ended hidden ones (active first, then newest change first;
+   * definition order breaks ties), and the added entries in the order added.
+   * Pure: draws no RNG and does not change `hash()`.
+   */
+  journal(): JournalView {
+    const quests: JournalQuest[] = [];
+    for (const q of this.def.quests) {
+      const s = this.questStage[q.index]!;
+      const end = this.questEnd[q.index]!;
+      if (s < 0 || (q.hidden && end === 0)) continue;
+      const stage = q.stages[s]!;
+      quests.push({ quest: q.id, title: q.title, stage: stage.name, text: stage.journal, state: end === 1 ? 'success' : end === 2 ? 'failure' : 'active', since: this.questSince[q.index]! });
+    }
+    quests.sort((a, b) => Number(b.state === 'active') - Number(a.state === 'active') || b.since - a.since);
+    const entries = this.journalLog.map((j): JournalItem => {
+      const e = this.def.journal[j.entry]!;
+      return { entry: e.id, text: e.text, category: e.category, tick: j.tick };
+    });
+    const standing = this.def.factions
+      .filter((f) => !f.hidden)
+      .map((f): JournalStanding => {
+        const value = this.reputation[f.index]!;
+        return { faction: f.id, label: f.label, value, tier: tierOf(f, value) };
+      });
+    return { quests, entries, standing };
+  }
+
+  /**
+   * How an NPC's faction regards the player: its label, the tier of the
+   * player's standing, and whether it is hostile or friendly. Null for the
+   * player and for an NPC without a faction. Pure.
+   */
+  attitudeOf(entity: Entity): AttitudeView | null {
+    if (entity === this.player || entity.faction < 0) return null;
+    const f: FactionDef = this.def.factions[entity.faction]!;
+    const v = attitude(this.factionTable, this.player, entity, this.player);
+    return { faction: f.id, label: f.label, tier: tierOf(f, v), hostile: v < f.hostileBelow, friendly: v >= f.friendlyFrom };
   }
 
   /** [x, y, z] of a cell index. */
@@ -1821,7 +2514,8 @@ export class World {
 
   /**
    * What the player can choose at a cell (floor `z`, default the player's),
-   * ignoring reach: the tile actions whose filter matches the cell's tile
+   * ignoring reach: first a `talk` per NPC with a dialogue on the cell (id
+   * order; `ok` from the dialogue's `when`), then the tile actions whose filter matches the cell's tile
    * (definition order), the recipes whose station matches it (definition
    * order), `open` and (when not empty) `take_all` per container on the
    * cell, `Go up` / `Go down` when the cell has an open link that way, the
@@ -1842,6 +2536,7 @@ export class World {
     const own = x === p.x && y === p.y && z === p.z;
     return this.pure(() => {
       const out: Interaction[] = [];
+      for (const e of this.entitiesNear(x, y, z, 0)) if (e !== p && e.archetype.dialogue !== null) out.push(this.talkInteraction(e));
       const tile = grid.cells[grid.index(x, y, z)]!;
       if (tile !== EMPTY_TILE) {
         for (const s of this.actionSources) {
@@ -1915,11 +2610,18 @@ export class World {
    * already in reach or needs none (`self` acts, recipes without a station
    * or cell, `use`, `drop`, and actions on unknown targets: the shell queues
    * those directly). Otherwise a goto to the target cell (adjacent when it
-   * is not walkable; next to the edge for an edge target) that queues the
-   * action on arrival.
+   * is not walkable; next to the edge for an edge target; next to the NPC's
+   * current cell for a `talk`) that queues the action on arrival. An NPC
+   * that moves away meanwhile is not followed: the talk then fails with
+   * `out_of_reach`.
    */
   approachIntent(action: Action): GotoIntent | null {
     const p = this.player;
+    if (action.kind === 'talk') {
+      const npc = Number.isInteger(action.entity) ? this.entities[action.entity] : undefined;
+      if (!npc || npc === p || npc.archetype.dialogue === null || this.grid.reaches(p.x, p.y, p.z, npc.x, npc.y, npc.z)) return null;
+      return { kind: 'goto', x: npc.x, y: npc.y, z: npc.z, adjacent: true, then: action };
+    }
     let x: number;
     let y: number;
     let z: number;

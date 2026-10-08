@@ -1,11 +1,12 @@
 /**
- * Crafting panel and transfer window for the browser. The views are pure
- * functions of `availableRecipes` and `hudModel` (`transfer.ts`), so they
- * are testable without a DOM; the `Panels` class only renders them and turns
- * button clicks into `world.queueAction`. Pack actions live in the context menu (`menu.ts`).
+ * Crafting panel, journal panel and transfer window for the browser. The
+ * views are pure functions of `availableRecipes`, `world.journal()` and
+ * `hudModel` (`transfer.ts`), so they are testable without a DOM; the
+ * `Panels` class only renders them and turns button clicks into
+ * `world.queueAction`. Pack actions live in the context menu (`menu.ts`).
  */
 
-import { recipeHint, stationLabel, type Action, type GotoIntent, type World } from '../core/index.ts';
+import { journalSections, recipeHint, standingRows, stationLabel, STANDING_TITLE, type Action, type GotoIntent, type JournalSection, type StandingRow, type World } from '../core/index.ts';
 import { TransferWindow } from './transfer-dom.ts';
 import type { ItemIconUrls } from './transfer.ts';
 
@@ -85,6 +86,33 @@ export function craftingRowText(r: CraftingRow): string {
 }
 
 /**
+ * Journal panel: `Active` and `Done` quests, then one section per entry
+ * category (`journalSections`), then the Standing section (label, tier and a
+ * bar from -100 to 100 per faction).
+ */
+export interface JournalPanelView {
+  readonly sections: readonly JournalSection[];
+  /** Title of the Standing section (shown only when `standing` is not empty). */
+  readonly standingTitle: string;
+  readonly standing: readonly StandingRow[];
+  /** Shown when there is nothing yet. */
+  readonly empty: string | null;
+}
+
+/** The journal panel's view, a pure function of `world.journal()` (read-only: it has no buttons). */
+export function journalView(world: World): JournalPanelView {
+  const view = world.journal();
+  const sections = journalSections(view);
+  const standing = standingRows(view);
+  return { sections, standingTitle: STANDING_TITLE, standing, empty: sections.length || standing.length ? null : 'Nothing yet.' };
+}
+
+/** Whether the packs have anything for the journal (quests, journal entries or factions that are not hidden). */
+export function hasJournal(world: World): boolean {
+  return world.def.quests.length > 0 || world.def.journal.length > 0 || world.def.factions.some((f) => !f.hidden);
+}
+
+/**
  * Click-to-move to (x, y) on floor `z` (default the player's): a
  * non-walkable container tile is approached (`adjacent: true`) instead of
  * entered.
@@ -99,6 +127,9 @@ export class Panels {
   private readonly craft: HTMLDivElement;
   private readonly transfer: TransferWindow;
   private readonly toggle: HTMLButtonElement | null = null;
+  private readonly journal: HTMLDivElement;
+  private readonly journalToggle: HTMLButtonElement | null = null;
+  private journalShown = -1;
   private craftKey = '';
   private lastTick = -1;
   private lastVersion = -1;
@@ -123,12 +154,31 @@ export class Panels {
       toggle.addEventListener('click', () => this.toggleCrafting());
       parent.append(toggle);
     }
+    this.journal = document.createElement('div');
+    this.journal.id = 'journal';
+    this.journal.className = 'panel';
+    this.journal.hidden = true;
+    parent.append(this.journal);
+    if (hasJournal(world)) {
+      const toggle = (this.journalToggle = document.createElement('button'));
+      toggle.id = 'journal-toggle';
+      toggle.textContent = 'Journal [J]';
+      toggle.addEventListener('click', () => this.toggleJournal());
+      parent.append(toggle);
+    }
+  }
+
+  /** `J` or the HUD button: show or hide the journal panel. */
+  toggleJournal(): void {
+    if (!hasJournal(this.world)) return;
+    this.journal.hidden = !this.journal.hidden;
+    this.journalShown = -1;
   }
 
   /** Remove the panels' elements (the world is being replaced). */
   dispose(): void {
     this.transfer.dispose();
-    for (const el of [this.craft, this.toggle]) el?.remove();
+    for (const el of [this.craft, this.toggle, this.journal, this.journalToggle]) el?.remove();
   }
 
   /** `C` or the HUD button: show or hide the crafting panel (showing it closes the transfer window). */
@@ -158,6 +208,23 @@ export class Panels {
   update(): void {
     this.transfer.update();
     const w = this.world;
+    if (!this.journal.hidden && w.journalVersion !== this.journalShown) {
+      this.journalShown = w.journalVersion;
+      const jv = journalView(w);
+      const parts: HTMLElement[] = [heading('Journal')];
+      for (const s of jv.sections) {
+        const h = heading(s.title);
+        h.className = 'panel-subtitle';
+        parts.push(h, ...s.rows.map(line));
+      }
+      if (jv.standing.length) {
+        const h = heading(jv.standingTitle);
+        h.className = 'panel-subtitle';
+        parts.push(h, ...jv.standing.map(standingLine));
+      }
+      if (jv.empty) parts.push(line(jv.empty));
+      this.journal.replaceChildren(...parts);
+    }
     if (w.tick === this.lastTick && w.containerVersion === this.lastVersion && w.tileVersion === this.lastTileVersion) return;
     this.lastTick = w.tick;
     this.lastVersion = w.containerVersion;
@@ -209,6 +276,23 @@ function heading(text: string): HTMLDivElement {
 function line(text: string): HTMLDivElement {
   const d = document.createElement('div');
   d.textContent = text;
+  return d;
+}
+
+/** A Standing row: `Police: Wary (-22)` and a bar from -100 to 100 with a mark at 0. */
+function standingLine(r: StandingRow): HTMLDivElement {
+  const d = line(r.text);
+  d.className = 'standing-row';
+  const bar = document.createElement('div');
+  bar.className = 'standing-bar';
+  const fill = document.createElement('div');
+  fill.className = r.value < 0 ? 'standing-fill standing-low' : 'standing-fill';
+  // The fill runs from the middle (0) to the value.
+  const at = r.fraction * 100;
+  fill.style.left = `${Math.min(at, 50)}%`;
+  fill.style.width = `${Math.abs(at - 50)}%`;
+  bar.append(fill);
+  d.append(bar);
   return d;
 }
 

@@ -312,6 +312,10 @@ export interface ArchetypeDef {
   readonly inventory: InventorySpec | null;
   /** Behavior index driving non-player entities of this archetype, or null. */
   readonly behavior: number | null;
+  /** Dialogue index of the archetype's conversation (`talk`), or null; ignored on the player. */
+  readonly dialogue: number | null;
+  /** Faction index the archetype belongs to, or null. */
+  readonly faction: number | null;
 }
 
 /** Built-in activity of a behavior state. */
@@ -447,11 +451,13 @@ export interface NumberTerm {
   readonly fn: Compiled | null;
 }
 
-/** A measurement effect; always acts on `self`. */
+/** A measurement effect; acts on `self`, or on the NPC being talked to with `on: npc` (dialogues only). */
 export interface MeasurementEffectDef extends NumberTerm {
   /** `apply` adds the value, `set` replaces the measurement's value. */
   readonly type: 'apply' | 'set';
   readonly measurement: number;
+  /** Set (`'npc'`) when the effect acts on the NPC of the open conversation instead of `self`. */
+  readonly on?: 'npc';
 }
 
 /** Emits a noise at `self`'s cell; the term is the hearing radius in tiles. */
@@ -466,8 +472,221 @@ export interface SetTileEffectDef {
   readonly tile: number;
 }
 
-/** One effect of a system, item use or action. */
-export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef;
+/**
+ * Writes a world var (`set_var`) or adds to it (`add_var`), clamped to the
+ * var's range. Touches no entity: `self` matters only inside the term.
+ */
+export interface VarEffectDef extends NumberTerm {
+  readonly type: 'set_var' | 'add_var';
+  /** Var index. */
+  readonly var: number;
+}
+
+/** Moves a quest forward to a stage (a no-op for an earlier or equal stage, or an ended quest). */
+export interface QuestEffectDef {
+  readonly type: 'quest';
+  /** Quest index. */
+  readonly quest: number;
+  /** Stage index within the quest. */
+  readonly stage: number;
+}
+
+/** Adds a journal entry (a no-op when it is already there). */
+export interface JournalEffectDef {
+  readonly type: 'journal';
+  /** Journal entry index. */
+  readonly entry: number;
+}
+
+/**
+ * Changes the player's standing with a faction by the term (clamped to
+ * [-100, 100]); optionally only when a member sees `self`, and optionally
+ * spreading to the factions that have a relation to it.
+ */
+export interface ReputationEffectDef extends NumberTerm {
+  readonly type: 'reputation';
+  /** Faction index. */
+  readonly faction: number;
+  /** Euclidean range (tiles, > 0) within which a member must see `self`; null = always applies. */
+  readonly witnessed: number | null;
+  /** Also change every faction G with `G.relations[faction] = r ≠ 0` by `delta × r / 100` (one step). */
+  readonly spread: boolean;
+}
+
+/** One effect of a system, item use, action, recipe, quest stage or dialogue. */
+export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef | VarEffectDef | QuestEffectDef | JournalEffectDef | ReputationEffectDef;
+
+/** Lowest and highest standing and relation. */
+export const REPUTATION_MIN = -100;
+export const REPUTATION_MAX = 100;
+
+/** A named band of standing: from `from` up to the next tier's `from`. */
+export interface FactionTierDef {
+  readonly from: number;
+  readonly label: string;
+}
+
+/** Tiers of a faction without `tiers`. */
+export const DEFAULT_TIERS: readonly FactionTierDef[] = [
+  { from: -100, label: 'Hostile' },
+  { from: -50, label: 'Wary' },
+  { from: -10, label: 'Neutral' },
+  { from: 10, label: 'Liked' },
+  { from: 50, label: 'Trusted' },
+];
+
+/** A faction a spread reaches: faction index and its relation to the changed faction. */
+export interface SpreadTarget {
+  readonly faction: number;
+  readonly relation: number;
+}
+
+/** A group of archetypes sharing an opinion of the player (`factions` domain). */
+export interface FactionDef {
+  readonly id: string;
+  readonly index: number;
+  readonly label: string;
+  /** The player's starting standing, in [-100, 100]. */
+  readonly reputation: number;
+  /**
+   * How this faction regards each faction, by faction index (0 when unset;
+   * the entry for itself is unused: members regard each other at 100).
+   */
+  readonly relations: readonly number[];
+  /** `hostile` holds below this attitude. */
+  readonly hostileBelow: number;
+  /** `friendly` holds from this attitude (> `hostileBelow`). */
+  readonly friendlyFrom: number;
+  /** Ascending `from`; the first is -100. */
+  readonly tiers: readonly FactionTierDef[];
+  /** Not shown in the journal's Standing section (and no tier events). */
+  readonly hidden: boolean;
+  /** Whether any archetype belongs to it (a faction without members never witnesses). */
+  readonly members: boolean;
+  /** Factions with a non-zero relation to this one, ascending index: where a `spread` change goes. */
+  readonly spread: readonly SpreadTarget[];
+}
+
+/** Label of the tier `value` falls in. */
+export function tierOf(f: FactionDef, value: number): string {
+  const tiers = f.tiers;
+  let k = 0;
+  while (k + 1 < tiers.length && tiers[k + 1]!.from <= value) k++;
+  return tiers[k]!.label;
+}
+
+/** A world-level number (`vars` domain): one value per world, clamped to `[min, max]` on every write. */
+export interface VarDef {
+  readonly id: string;
+  readonly index: number;
+  /** For tools and debugging only; never shown to players. */
+  readonly label: string;
+  readonly initial: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** A one-time journal entry (`journal` domain). */
+export interface JournalEntryDef {
+  readonly id: string;
+  readonly index: number;
+  readonly text: string;
+  /** Grouping in the journal view (default `Notes`). */
+  readonly category: string;
+}
+
+/** One stage of a quest. */
+export interface QuestStageDef {
+  /** Stage id, unique within the quest. */
+  readonly name: string;
+  readonly index: number;
+  /** What the journal shows while the quest is at this stage. */
+  readonly journal: string;
+  /** Enters the stage automatically (quest phase), with `self` = the player; null = only by a `quest` effect. */
+  readonly whenFn: Compiled | null;
+  /** Entering this stage ends the quest. */
+  readonly end: 'success' | 'failure' | null;
+  /** Run once on entering, with `self` = the player. */
+  readonly effects: readonly EffectDef[];
+}
+
+/** A quest (`quests` domain): ordered stages that only move forward. */
+export interface QuestDef {
+  readonly id: string;
+  readonly index: number;
+  readonly title: string;
+  /** Not shown in the journal view until it ends. */
+  readonly hidden: boolean;
+  /** Non-empty; order is also priority order for the quest phase. */
+  readonly stages: readonly QuestStageDef[];
+  /** Indices of the stages with a `when`, ascending (the quest phase's work list). */
+  readonly watched: readonly number[];
+}
+
+/** Node index of a dialogue choice's `to: end`: the choice ends the conversation. */
+export const DIALOGUE_END = -1;
+
+/** Most choices a dialogue node can show (they are numbered 1–9). */
+export const MAX_DIALOGUE_CHOICES = 9;
+
+/** One choice of a dialogue node. Expressions run with `self` = `player` = the player and `npc` = the NPC. */
+export interface DialogueChoiceDef {
+  readonly text: string;
+  /** Node index, or `DIALOGUE_END`. */
+  readonly to: number;
+  /** Null means always. */
+  readonly whenFn: Compiled | null;
+  /** Shown (disabled) when `when` is falsy; null hides the choice instead. */
+  readonly unavailable: string | null;
+  /** Removed from the player when chosen; missing items disable the choice. */
+  readonly consume: readonly ItemCount[];
+  /** Added to the player when chosen (overflow goes to the ground pile at the player's cell). */
+  readonly give: readonly ItemCount[];
+  /** Run when chosen, after `consume` and `give`. */
+  readonly effects: readonly EffectDef[];
+  /** Hidden for good once chosen (world-level, recorded by `id`). */
+  readonly once: boolean;
+  /** Choice id, unique within the dialogue; `''` when none. */
+  readonly id: string;
+  /** Synthesized from a node's `next`: choosing it is not a player choice for the loop guard. */
+  readonly auto: boolean;
+}
+
+/** Who a node's line is from: the NPC's or player's archetype label, or a fixed name. */
+export type DialogueSpeaker = { readonly kind: 'npc' | 'player' } | { readonly kind: 'name'; readonly name: string };
+
+/** One node of a dialogue: a line and the choices that answer it. */
+export interface DialogueNodeDef {
+  readonly name: string;
+  readonly index: number;
+  readonly speaker: DialogueSpeaker;
+  readonly text: string;
+  /** Run each time the node is entered. */
+  readonly effects: readonly EffectDef[];
+  /** Non-empty (`next` and a node without choices are synthesized choices), at most `MAX_DIALOGUE_CHOICES`. */
+  readonly choices: readonly DialogueChoiceDef[];
+  /** False forbids leaving (Escape) at this node. */
+  readonly leave: boolean;
+}
+
+/** An entry of a dialogue's `start` list: the first one whose `when` holds picks the opening node. */
+export interface DialogueStartDef {
+  /** Null means always. */
+  readonly whenFn: Compiled | null;
+  readonly node: number;
+}
+
+/** A conversation tree (`dialogues` domain), attached to archetypes with `dialogue`. */
+export interface DialogueDef {
+  readonly id: string;
+  readonly index: number;
+  /** Whether the NPC will talk at all; null means always. */
+  readonly whenFn: Compiled | null;
+  /** Shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
+  readonly start: readonly DialogueStartDef[];
+  readonly nodes: readonly DialogueNodeDef[];
+}
 
 /** A periodic rule (`systems` domain), run once per matching entity. */
 export interface SystemDef {
@@ -556,6 +775,11 @@ export type PatchDomain =
   | 'behaviors'
   | 'actions'
   | 'recipes'
+  | 'vars'
+  | 'quests'
+  | 'journal'
+  | 'dialogues'
+  | 'factions'
   | 'start'
   | 'clock'
   | 'lighting';
@@ -587,6 +811,11 @@ export interface Definition {
   readonly behaviors: readonly BehaviorDef[];
   readonly actions: readonly ActionDef[];
   readonly recipes: readonly RecipeDef[];
+  readonly vars: readonly VarDef[];
+  readonly quests: readonly QuestDef[];
+  readonly journal: readonly JournalEntryDef[];
+  readonly dialogues: readonly DialogueDef[];
+  readonly factions: readonly FactionDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -620,5 +849,10 @@ export interface Definition {
     readonly behaviors: Readonly<Record<string, number>>;
     readonly actions: Readonly<Record<string, number>>;
     readonly recipes: Readonly<Record<string, number>>;
+    readonly vars: Readonly<Record<string, number>>;
+    readonly quests: Readonly<Record<string, number>>;
+    readonly journal: Readonly<Record<string, number>>;
+    readonly dialogues: Readonly<Record<string, number>>;
+    readonly factions: Readonly<Record<string, number>>;
   };
 }

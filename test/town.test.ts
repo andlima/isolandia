@@ -189,7 +189,11 @@ test('mods: zombie and vampire are mods of town; hardship is a genre-free balanc
   assert.deepEqual(own(def.behaviors), ['zmb:shambler']);
   assert.deepEqual(own(def.statuses), ['zmb:alert']);
   assert.deepEqual(own(def.assets), ['zmb:shambler_img', 'zmb:crawler_img']);
-  for (const xs of [def.tiles, def.items, def.loot, def.recipes, def.actions, def.systems, def.maps]) assert.deepEqual(own(xs), []);
+  // M8: the escape quest, and a survival tip added by a system.
+  assert.deepEqual(own(def.systems), ['zmb:survival_tip']);
+  assert.deepEqual(own(def.quests), ['zmb:escape']);
+  assert.deepEqual(own(def.journal), ['zmb:travel_light']);
+  for (const xs of [def.tiles, def.items, def.loot, def.recipes, def.actions, def.maps]) assert.deepEqual(own(xs), []);
   // The vampire's window is the town's, wherever it was used.
   const v = load('vampire').def;
   assert.equal(v.ids.tiles['vamp:window'], undefined);

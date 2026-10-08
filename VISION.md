@@ -522,6 +522,67 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     (`Interaction.duration` / `uses`, filled purely by the core).
   - Hover (mouse and pen) outlines the target and shows a tooltip with
     what a click will do; touch has no hover.
+- ~~How does the world remember story facts, and what are goals beyond
+  one `victory` expression?~~ **Decided (spec `m8-flags-quests`, M8):**
+  - **Vars are world-level declared numbers**: a `vars` domain (`initial`,
+    `min`, `max`; booleans stored as `1`/`0`), one value per world,
+    clamped on every write by `set_var` / `add_var` effects and read with
+    `var("id")`. No string vars, per-entity vars (use measurements) or
+    collections.
+  - **Quests are ordered stages that only move forward**, entered by a
+    stage's `when` (a quest phase after statuses and before the outcome
+    check takes the last truthy stage, at most one change per quest per
+    tick) or by `quest` effects; `end: success` / `end: failure` stages
+    end them, and stage `effects` run on entering. No branching
+    objectives, markers or timers; rewards are stage effects.
+  - **Journal entries are one-time domain entries, not free text**: a
+    `journal` domain of texts with a category, added once by the `journal`
+    effect and tested with `in_journal("id")`; never removed and not
+    templated.
+  - All of it is in snapshots, hashes and saves (version 4; version 3
+    saves load with fresh story state). Shells show `world.journal()` (a
+    `J` panel and terminal screen) and toast `world.journalEvents`.
+- ~~How does the player talk to NPCs?~~ **Decided (spec `m8-dialogues`,
+  M8):**
+  - **Dialogues are declarative trees on archetypes**: a `dialogues`
+    domain (conditional `start` entries, named nodes with a speaker, text
+    and effects, up to 9 choices gated by `when` with `consume` / `give` /
+    `effects` / `to`), attached with archetype `dialogue`. Expressions see
+    the NPC as `npc`, and `apply` / `set` take `on: npc`. No templating,
+    skill-check fields, barter screens or NPC-to-NPC talk.
+  - **The world pauses while a conversation is open**, as in most RPGs:
+    `step()` is a no-op, and `choose(n)` / `leaveConversation()` are
+    synchronous inputs (not activities: nothing ticks). Effects apply at
+    once; outcomes, statuses and the quest phase follow on the first tick
+    after the conversation ends.
+  - **`once` choices are world-level**, not per NPC entity, and are saved
+    by choice id (version 5, with the open conversation).
+  - **NPCs are reached like containers and are not followed**: `talk`
+    needs Chebyshev 1 on the player's floor with no wall edge between;
+    walk-then-talk walks to the NPC's cell at the time of the click, and
+    the talk fails with `out_of_reach` if the NPC has moved away.
+- ~~How do groups of NPCs remember what the player did?~~ **Decided (spec
+  `m8-factions`, M8):**
+  - **Membership is per archetype**: a `factions` domain, joined with
+    archetype `faction`. No ranks, disguises or joining in play; a mod
+    enlists residents by overriding their archetype's `faction`.
+  - **The player's standing is world state per faction** (one number in
+    [-100, 100] each, in snapshots, hashes and saves version 6), not a
+    memory per NPC. `attitude` ignores the player's own faction.
+  - **Relations are fixed data and can be asymmetric**: how F regards G
+    is a number on F, unset is 0, members always regard each other at 100.
+    Nothing changes relations at run time.
+  - **Crimes count when a member sees them**: the `reputation` effect's
+    `witnessed` range applies it only if a member other than `self` and the
+    player sees `self` (`can_see` within a euclidean range, same floor). No
+    witnesses who report later.
+  - **Spread is one step and opt-in**: with `spread: true` a change of F
+    also moves every faction G by `delta × G.relations[F] / 100` (2
+    decimals), without chaining.
+  - **NPC-to-NPC hostility is readable but not yet acted upon**:
+    `attitude`, `hostile` and `friendly` work between NPCs, but nothing
+    seeks out enemies until a `nearest(...)`-style target and combat are
+    decided.
 
 ## 8. Next step
 

@@ -62,6 +62,7 @@ string in arithmetic is a load error.
 | `player` | entity | The player entity                                             |
 | `tile`   | tile   | The tile under `self`, on `self`'s floor: `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
 | `world`  | —      | World time; see the fields below                              |
+| `npc`    | entity | The NPC being talked to. Only in the expressions of a [dialogue](packs.md#dialogues) (its `when`, `start` and choice `when`s, effect values), where `self` and `player` are the player; anywhere else it is a load error |
 
 World fields (all derived from the current tick; see the
 [`clock`](packs.md#clock) domain for the calendar):
@@ -76,7 +77,8 @@ World fields (all derived from the current tick; see the
 | `world.time_of_day` | number  | In-game hours since midnight as a float in `[0, 24)`, e.g. `8.5` at 08:30 |
 | `world.is_day`      | boolean | `dawn <= time_of_day < dusk`; `1`/`0` in arithmetic, e.g. `-0.8 - 1.2 * world.is_day` |
 
-Entity members:
+Entity members (the same on `self`, `player` and `npc`, e.g. `npc.hp`,
+`npc.has_tag("guard")`, `count_item(npc, "coin")`):
 
 - `self.x`, `self.y` — grid position; `self.z` — the entity's floor (`0`
   on one-floor maps, see [floors](packs.md#floors)).
@@ -121,6 +123,15 @@ sets.
 | `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
 | `busy(entity)`                           | Whether the entity has an in-progress [activity](packs.md#actions) (same as `entity.busy`) |
 | `doing(entity, "action")`                | Whether the entity's activity is that pack action |
+| `var("id")`                              | The world [var](packs.md#vars)'s current value (a number) |
+| `in_journal("id")`                       | Whether the [journal entry](packs.md#journal) has been added |
+| `quest_active("q")`                      | Whether the [quest](packs.md#quests) has started and not ended |
+| `quest_reached("q", "stage")`            | Whether the quest's current stage is that stage or a later one |
+| `quest_succeeded("q")`, `quest_failed("q")` | Whether the quest ended in an `end: success` / `end: failure` stage |
+| `in_faction(entity, "f")`                | Whether the entity's archetype belongs to the [faction](packs.md#factions) (method form `self.in_faction("f")`) |
+| `reputation("f")`                        | The player's current standing with the faction, in [-100, 100] |
+| `attitude(a, b)`                         | How entity `a` regards entity `b`, in [-100, 100] (see [factions](#factions)) |
+| `hostile(a, b)`, `friendly(a, b)`        | `attitude(a, b)` below the regarding faction's `hostile_below` / at or above its `friendly_from` |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 With two entities or tiles they include the floors, one floor counting as
@@ -205,6 +216,68 @@ while resting:
 statuses:
   - { id: focused, label: Focused, when: 'doing(self, "rest")' }
 ```
+
+### World state
+
+`var`, `in_journal` and the `quest_*` built-ins read world-level story
+state (see [vars, journal and quests](packs.md#vars)). Every id argument
+is a **string literal**, short or qualified, resolved at load time like
+`has_status`: an unknown var, entry, quest or stage is a load error with a
+*did you mean* suggestion, and the runtime check is one array read. They
+take no entity and have no method form, and they work in every
+expression: systems, statuses, behaviors, actions, recipes, item uses,
+quest stages, `start.defeat` and `start.victory`.
+
+- `var("id")` is a number; a var written as `true`/`false` reads `1`/`0`.
+- `quest_reached("q", "stage")` is **positional**: the quest's current
+  stage index is that stage's index or higher. An ended quest keeps its
+  final stage, so a quest that ended in `solved` has also "reached" every
+  stage before it. Test endings with `quest_succeeded` / `quest_failed`,
+  which hold once the quest has entered a stage with `end: success` /
+  `end: failure`.
+- `quest_active("q")` is false before the quest starts and after it ends.
+
+```yaml
+when: 'var("clues_found") >= 3 and not in_journal("confession")'
+victory: { when: 'quest_succeeded("escape")' }
+when: 'quest_reached("first_dawn", "night") and world.is_day'
+```
+
+### Factions
+
+`in_faction`, `reputation`, `attitude`, `hostile` and `friendly` read
+[factions](packs.md#factions). Faction ids are **string literals**,
+resolved at load (an unknown id is a load error with *did you mean*).
+Entity arguments are entities (`self`, `player`, `npc`), checked at load
+as for `can_see`; a tile is a load error. `in_faction` is one read of the
+archetype's faction and `attitude` at most two array reads.
+
+**`attitude(a, b)`**, from `a`'s point of view:
+
+| `a`                    | `b`                          | Value |
+|------------------------|------------------------------|-------|
+| the same entity as `b` |                              | `100` |
+| an NPC without a faction | anyone                     | `0` |
+| an NPC of faction F    | the player                   | `reputation(F)` |
+| an NPC of F            | an NPC of F                  | `100` |
+| an NPC of F            | an NPC of G                  | `F.relations[G]`, or `0` when unset |
+| an NPC of F            | an NPC without a faction     | `0` |
+| the player             | an NPC of G                  | `reputation(G)`: the player's view mirrors the faction's view of them |
+| the player             | an NPC without a faction     | `0` |
+
+The **regarding faction** whose thresholds `hostile` and `friendly` use
+is `a`'s faction, or `b`'s when `a` is the player. With no faction on
+either side, both are false. The player's own `faction` plays no part in
+any of these rules (only `in_faction` reads it).
+
+```yaml
+on: [{ when: 'hostile(self, player) and can_see(self, player, 8)', to: chase }]
+when: 'reputation("police") >= 10'          # a dialogue choice for friends of the police
+for: 'self.in_faction("mob")'
+```
+
+Attitudes between NPCs can be read, but no built-in finds other NPCs yet:
+behaviors still target expressions such as `player`.
 
 **`tile` in tile-targeted actions.** In the `when`, `interrupt`,
 `duration` and `effects` of an action whose `target` is a tile filter,

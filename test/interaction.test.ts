@@ -388,6 +388,8 @@ test('reasonText: every reason', () => {
     cancelled: 'Cancelled',
     interrupted: 'Interrupted',
     unreachable: "Can't get there",
+    unknown_entity: 'Nobody there',
+    no_dialogue: 'Nothing to say',
   };
   for (const [reason, text] of Object.entries(expected)) assert.equal(reasonText({ reason: reason as ActionFailure }), text, reason);
   assert.equal(reasonText({}), '');

@@ -5,7 +5,7 @@
  * container creation and loot rolls; nothing is rolled or re-clamped.
  */
 
-import { EMPTY_TILE, type ArchetypeDef, type Definition, type EdgeSide } from '../definition.ts';
+import { EMPTY_TILE, REPUTATION_MAX, REPUTATION_MIN, type ArchetypeDef, type Definition, type EdgeSide } from '../definition.ts';
 import { FACINGS, type Facing } from '../facing.ts';
 import { nearMiss } from '../expr/index.ts';
 import type { Activity } from './activity.ts';
@@ -22,13 +22,18 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 6;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
- * edge walls (their maps had wall cells) and are refused.
+ * edge walls (their maps had wall cells) and are refused. Version 3 predates
+ * vars, quests and the journal: it loads with every var at its `initial`, no
+ * quest started and an empty journal. Versions 3 and 4 predate dialogues:
+ * they load with no open conversation and no `once` choice chosen.
+ * Versions 3 to 5 predate factions: every faction takes its starting
+ * `reputation`.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -99,11 +104,11 @@ function show(v: unknown): string {
   }
 }
 
-const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft'] as const;
+const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft', 'talk'] as const;
 const CONTAINER_KINDS: readonly ContainerKind[] = ['tile', 'inventory', 'ground'];
 
 /** Id tables of a definition, by the name used in messages. */
-type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe';
+type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry' | 'dialogue' | 'faction';
 
 /** Collects errors (with JSON paths) and warnings in one pass. */
 class Checker {
@@ -180,6 +185,16 @@ class Checker {
         return ids.actions;
       case 'recipe':
         return ids.recipes;
+      case 'var':
+        return ids.vars;
+      case 'quest':
+        return ids.quests;
+      case 'journal entry':
+        return ids.journal;
+      case 'dialogue':
+        return ids.dialogues;
+      case 'faction':
+        return ids.factions;
     }
   }
 
@@ -253,6 +268,9 @@ class Checker {
         this.id('recipe', o['recipe'], `${path}.recipe`);
         xy();
         break;
+      case 'talk':
+        this.int(o['entity'], `${path}.entity`, 0);
+        break;
     }
     return this.errors.length === n ? (o as unknown as Action) : null;
   }
@@ -299,6 +317,7 @@ class Checker {
     if (item) this.id('item', item, `${path}.item`);
     this.opt(o, 'action', path, (c, q) => this.id('action', c, q));
     this.opt(o, 'recipe', path, (c, q) => this.id('recipe', c, q));
+    this.opt(o, 'entity', path, (c, q) => this.int(c, q, 0));
     this.opt(o, 'side', path, (c, q) => this.side(c, q));
     this.num(o['moved'], `${path}.moved`);
     this.opt(o, 'dropped', path, (c, q) => this.num(c, q));
@@ -374,7 +393,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     headerOk = false;
   }
   if (root['version'] === 1 || root['version'] === 2) {
-    c.err('version', `save version ${root['version']} predates edge walls (version ${SAVE_VERSION}): its map had walls in cells, so it cannot be restored; start a new game`);
+    c.err('version', `save version ${root['version']} predates edge walls (version 3): its map had walls in cells, so it cannot be restored; start a new game`);
     headerOk = false;
   } else if (!SUPPORTED_SAVE_VERSIONS.includes(root['version'] as number)) {
     c.err('version', `unsupported save version ${show(root['version'])} (supported: ${SUPPORTED_SAVE_VERSIONS.join(', ')})`);
@@ -526,6 +545,13 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     if (p?.archetype.inventory && !owners.has(i)) c.err(`state.entities[${i}]`, `archetype '${p.archetype.id}' has an inventory, but the save has no inventory container for entity ${i}`);
   });
 
+  // ── Vars, quests and journal (version 4; a version 3 save starts them fresh) ──
+  const story = root['version'] === 3 ? null : checkStory(c, s);
+  // ── Conversation and `once` choices (version 5; older saves have neither) ──
+  const talk = root['version'] === 3 || root['version'] === 4 ? null : checkTalk(c, s, rawEntities.length, player);
+  // ── Reputation (version 6; older saves start every faction at its `reputation`) ──
+  const standing = (root['version'] as number) < 6 ? null : checkReputation(c, s);
+
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -579,11 +605,167 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       }
       e.then = p.then;
     });
+    if (story) {
+      for (const [k, v] of story.vars) w.vars[k] = v;
+      for (const q of story.quests) {
+        w.questStage[q.quest] = q.stage;
+        w.questSince[q.quest] = q.since;
+        const end = def.quests[q.quest]!.stages[q.stage]!.end;
+        w.questEnd[q.quest] = end === 'success' ? 1 : end === 'failure' ? 2 : 0;
+      }
+      for (const j of story.journal) {
+        w.journalHas[j.entry] = 1;
+        w.journalLog.push(j);
+      }
+    }
+    if (talk) {
+      for (const [d, id] of talk.once) w.dialogueOnce[d]!.add(id);
+      const cv = talk.conversation;
+      if (cv) w.conversation = { npc: w.entities[cv.npc]!, dialogue: def.dialogues[cv.dialogue]!, node: cv.node, entries: cv.entries };
+    }
+    if (standing) for (const [k, v] of standing) w.reputation[k] = v;
     host.setNextContainer(nextContainer!);
     host.setActions(actions);
     return w.entities[player!]!;
   });
   return { ok: true, world, warnings: c.warnings };
+}
+
+/** Checked vars (index, value), started quests and journal entries of a version 4 save. */
+interface StoryPlan {
+  vars: [number, number][];
+  quests: { quest: number; stage: number; since: number }[];
+  journal: { entry: number; tick: number }[];
+}
+
+/** Check `state.vars`, `state.quests` and `state.journal`. */
+function checkStory(c: Checker, s: Record<string, unknown>): StoryPlan {
+  const { def } = c;
+  const plan: StoryPlan = { vars: [], quests: [], journal: [] };
+  const vars = c.obj(s['vars'], 'state.vars');
+  if (vars) {
+    const saved = new Set<number>();
+    for (const [key, value] of Object.entries(vars)) {
+      const vp = `state.vars[${JSON.stringify(key)}]`;
+      const k = c.id('var', key, vp);
+      const v = c.num(value, vp);
+      if (k === null || v === null) continue;
+      saved.add(k);
+      const d = def.vars[k]!;
+      if (v < d.min || v > d.max) c.warn(vp, `${v} is outside [${d.min}, ${d.max}]; clamped`);
+      plan.vars.push([k, Math.min(Math.max(v, d.min), d.max)]);
+    }
+    for (const d of def.vars) if (!saved.has(d.index)) c.warn('state.vars', `var '${d.id}' is missing; it starts at ${d.initial}`);
+  }
+  const seenQuests = new Set<number>();
+  c.arr(s['quests'], 'state.quests')?.forEach((v, i) => {
+    const path = `state.quests[${i}]`;
+    const o = c.obj(v, path);
+    if (!o) return;
+    const q = c.id('quest', o['quest'], `${path}.quest`);
+    const since = c.int(o['since'], `${path}.since`, 0);
+    const ended = c.bool(o['ended'], `${path}.ended`);
+    const name = c.str(o['stage'], `${path}.stage`);
+    if (q === null || name === null) return;
+    if (seenQuests.has(q)) return void c.err(`${path}.quest`, `quest '${def.quests[q]!.id}' is listed twice`);
+    seenQuests.add(q);
+    const quest = def.quests[q]!;
+    const k = quest.stages.findIndex((st) => st.name === name);
+    if (k < 0) {
+      const near = nearMiss(name, quest.stages.map((st) => st.name));
+      return void c.err(`${path}.stage`, `quest '${quest.id}' has no stage '${name}'${near ? ` (did you mean '${near}'?)` : ''}`);
+    }
+    if (ended !== null && ended !== (quest.stages[k]!.end !== null)) {
+      c.warn(`${path}.ended`, `stage '${name}' of quest '${quest.id}' ${ended ? 'no longer ends' : 'now ends'} the quest; the packs decide`);
+    }
+    if (since !== null && ended !== null) plan.quests.push({ quest: q, stage: k, since });
+  });
+  const seenEntries = new Set<number>();
+  c.arr(s['journal'], 'state.journal')?.forEach((v, i) => {
+    const path = `state.journal[${i}]`;
+    const o = c.obj(v, path);
+    if (!o) return;
+    const entry = c.id('journal entry', o['entry'], `${path}.entry`);
+    const tick = c.int(o['tick'], `${path}.tick`, 0);
+    if (entry === null || tick === null) return;
+    if (seenEntries.has(entry)) return void c.err(`${path}.entry`, `journal entry '${def.journal[entry]!.id}' is listed twice`);
+    seenEntries.add(entry);
+    plan.journal.push({ entry, tick });
+  });
+  return plan;
+}
+
+/** Check `state.reputation`: (faction index, value) pairs; a missing faction keeps its start with a warning. */
+function checkReputation(c: Checker, s: Record<string, unknown>): [number, number][] {
+  const { def } = c;
+  const out: [number, number][] = [];
+  const o = c.obj(s['reputation'], 'state.reputation');
+  if (!o) return out;
+  const saved = new Set<number>();
+  for (const [key, value] of Object.entries(o)) {
+    const path = `state.reputation[${JSON.stringify(key)}]`;
+    const k = c.id('faction', key, path);
+    const v = c.num(value, path);
+    if (k === null || v === null) continue;
+    saved.add(k);
+    if (v < REPUTATION_MIN || v > REPUTATION_MAX) c.warn(path, `${v} is outside [${REPUTATION_MIN}, ${REPUTATION_MAX}]; clamped`);
+    out.push([k, Math.min(Math.max(v, REPUTATION_MIN), REPUTATION_MAX)]);
+  }
+  for (const f of def.factions) if (!saved.has(f.index)) c.warn('state.reputation', `faction '${f.id}' is missing; it starts at ${f.reputation}`);
+  return out;
+}
+
+/** Checked conversation (entity id, dialogue and node indices) and `once` choices of a version 5 save. */
+interface TalkPlan {
+  conversation: { npc: number; dialogue: number; node: number; entries: number } | null;
+  once: [number, string][];
+}
+
+/** Check `state.conversation` and `state.dialogueOnce`. */
+function checkTalk(c: Checker, s: Record<string, unknown>, entityCount: number, player: number | null): TalkPlan {
+  const { def } = c;
+  const plan: TalkPlan = { conversation: null, once: [] };
+  if (s['conversation'] !== null) {
+    const path = 'state.conversation';
+    const o = c.obj(s['conversation'], path);
+    if (o) {
+      const n = c.errors.length;
+      const npc = c.int(o['npc'], `${path}.npc`, 0);
+      if (npc !== null && npc >= entityCount) c.err(`${path}.npc`, `npc ${npc} is not one of the ${entityCount} entities`);
+      else if (npc !== null && npc === player) c.err(`${path}.npc`, `the player cannot be the NPC of a conversation`);
+      const d = c.id('dialogue', o['dialogue'], `${path}.dialogue`);
+      const name = c.str(o['node'], `${path}.node`);
+      const entries = c.int(o['entries'], `${path}.entries`, 0);
+      let node = -1;
+      if (d !== null && name !== null) {
+        const dialogue = def.dialogues[d]!;
+        node = dialogue.nodes.findIndex((x) => x.name === name);
+        if (node < 0) {
+          const near = nearMiss(name, dialogue.nodes.map((x) => x.name));
+          c.err(`${path}.node`, `dialogue '${dialogue.id}' has no node '${name}'${near ? ` (did you mean '${near}'?)` : ''}`);
+        }
+      }
+      if (c.errors.length === n) plan.conversation = { npc: npc!, dialogue: d!, node, entries: entries! };
+    }
+  }
+  const seen = new Set<string>();
+  c.arr(s['dialogueOnce'], 'state.dialogueOnce')?.forEach((t, i) => {
+    const path = `state.dialogueOnce[${i}]`;
+    if (!Array.isArray(t) || t.length !== 2) return void c.err(path, `expected [dialogue id, choice id], got ${show(t)}`);
+    const d = c.id('dialogue', t[0], `${path}[0]`);
+    const id = c.str(t[1], `${path}[1]`);
+    if (d === null || id === null) return;
+    const dialogue = def.dialogues[d]!;
+    const ids = dialogue.nodes.flatMap((x) => x.choices.filter((ch) => ch.once).map((ch) => ch.id));
+    if (!ids.includes(id)) {
+      const near = nearMiss(id, ids);
+      return void c.err(`${path}[1]`, `dialogue '${dialogue.id}' has no 'once' choice '${id}'${near ? ` (did you mean '${near}'?)` : ''}`);
+    }
+    if (seen.has(`${d}:${id}`)) return void c.err(path, `choice '${id}' of dialogue '${dialogue.id}' is listed twice`);
+    seen.add(`${d}:${id}`);
+    plan.once.push([d, id]);
+  });
+  return plan;
 }
 
 /** Check one saved entity; null when it has errors. */

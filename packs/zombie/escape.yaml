@@ -1,0 +1,31 @@
+# The way out of town, as a quest (docs/packs.md#quests): the journal (`J`)
+# shows the current stage, and `start.victory` (outbreak.yaml) is its success.
+quests:
+  - id: escape
+    title: Get out of town
+    stages:
+      - id: find_battery
+        when: "true"                # entered on the first tick
+        journal: The wrecks on the road might run with a fresh battery.
+      - id: battery
+        when: 'self.has_item("car_battery")'
+        journal: You have a car battery. Get it to a wreck in a garage.
+      # The old victory condition: a battery in hand, standing in a garage.
+      - id: escaped
+        end: success
+        when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+        journal: The engine coughed into life. You got out of town.
+
+journal:
+  - id: travel_light
+    category: Notes
+    text: "Eat before hunger bites, and carry only what you need: a heavy pack wears you out."
+
+systems:
+  # The tip is added the first time the survivor is burdened or hungry.
+  - id: survival_tip
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'not in_journal("travel_light") and (self.has_status("burdened") or self.has_status("hungry"))'
+    effects:
+      - { type: journal, entry: travel_light }

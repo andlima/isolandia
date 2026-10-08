@@ -8,7 +8,7 @@
 
 import type { World } from '../core/index.ts';
 import type { PickTarget } from '../iso/pick.ts';
-import { clampMenu, hoverInfo, type HoverInfo } from './menu.ts';
+import { clampMenu, hoverInfo, hoverTitleLine, type HoverInfo } from './menu.ts';
 
 /** How long the pointer rests on a target before its tooltip shows. */
 export const TOOLTIP_DELAY_MS = 150;
@@ -19,6 +19,8 @@ const OFFSET_Y = 18;
 export class Hover {
   private readonly el: HTMLDivElement;
   private readonly titleEl: HTMLDivElement;
+  private readonly labelEl: HTMLSpanElement;
+  private readonly standingEl: HTMLSpanElement;
   private readonly hintEl: HTMLDivElement;
   private point: { sx: number; sy: number } | null = null;
   /** The hovered target's identity, when it became hovered, and its cached info (with the world versions it is for). */
@@ -36,6 +38,9 @@ export class Hover {
     this.el.id = 'tooltip';
     this.el.hidden = true;
     this.titleEl = document.createElement('div');
+    this.labelEl = document.createElement('span');
+    this.standingEl = document.createElement('span');
+    this.titleEl.append(this.labelEl, this.standingEl);
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'tooltip-hint';
     this.el.append(this.titleEl, this.hintEl);
@@ -66,21 +71,24 @@ export class Hover {
       this.targetKey = key;
       this.since = now;
     }
-    const infoKey = `${key}:${world.tick}:${world.containerVersion}:${world.tileVersion}`;
+    const infoKey = `${key}:${world.tick}:${world.containerVersion}:${world.tileVersion}:${world.journalVersion}`;
     if (infoKey !== this.infoKey || !this.info) {
       this.infoKey = infoKey;
       this.info = hoverInfo(world, t);
     }
     const info = this.info;
     this.canvas.style.cursor = info.cursor;
-    if (!tooltip || now - this.since < TOOLTIP_DELAY_MS || (!info.title && !info.hint)) {
+    if (!tooltip || now - this.since < TOOLTIP_DELAY_MS || (!info.title && !info.hint && !info.standing)) {
       this.el.hidden = true;
       return t;
     }
-    const text = `${info.title}\n${info.hint}`;
+    const text = `${hoverTitleLine(info)}\n${info.hint}\n${info.hostile === true}`;
     if (text !== this.shown) {
       this.shown = text;
-      this.titleEl.textContent = info.title;
+      this.labelEl.textContent = info.title;
+      // A hostile faction's tier shows in the danger colour.
+      this.standingEl.textContent = info.standing ? ` · ${info.standing}` : '';
+      this.standingEl.className = info.hostile === true ? 'tooltip-danger' : '';
       this.hintEl.textContent = info.hint;
       this.hintEl.hidden = info.hint === '';
     }

@@ -81,6 +81,22 @@
         #transfer .transfer-panes { flex-direction: column; }
       }
       #crafting { left: 8px; right: auto; bottom: 40px; }
+      #journal { top: 36px; right: 8px; max-width: 380px; }
+      #journal-toggle {
+        position: fixed; top: 8px; right: 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: #333a44; border: 1px solid #556; border-radius: 3px; padding: 2px 8px; cursor: pointer;
+      }
+      #journal-toast {
+        position: fixed; top: 44px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90vw); padding: 4px 10px;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ffe9a8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        background: rgba(0, 0, 0, 0.75); border: 1px solid #c9a25a; border-radius: 4px; pointer-events: none;
+      }
+      #journal-toast[hidden] { display: none; }
+      .standing-bar { position: relative; height: 4px; margin: 1px 0 4px; background: #333a44; border-radius: 2px; }
+      .standing-bar::after { content: ''; position: absolute; left: 50%; top: -1px; width: 1px; height: 6px; background: #889; }
+      .standing-fill { position: absolute; top: 0; height: 100%; background: #7fbf7f; border-radius: 2px; }
+      .standing-fill.standing-low { background: #d0605a; }
+      .tooltip-danger { color: #ff6b5e; }
       .panel-subtitle { color: #c9a25a; margin-top: 4px; }
       .panel-hint { font-size: 11px; color: #c9a25a; }
       #craft-toggle {
@@ -129,6 +145,26 @@
       #menu .menu-click { margin-left: 6px; font-size: 11px; color: #8fd3ff; }
       #menu .menu-detail { font-size: 11px; color: #a8adb7; }
       #menu .menu-fold { color: #a8adb7; }
+      #dialogue {
+        top: auto; left: 50%; right: auto; bottom: 40px; transform: translateX(-50%); z-index: 4;
+        width: min(640px, calc(100vw - 16px)); max-width: none; box-sizing: border-box; padding: 8px 10px; background: rgba(15, 17, 22, 0.94); border: 1px solid #556;
+      }
+      #dialogue .dialogue-text { margin: 4px 0 8px; font-size: 14px; white-space: pre-wrap; }
+      #dialogue .dialogue-choice {
+        display: block; width: 100%; text-align: left; font-size: 13px; padding: 4px 8px; margin: 0;
+        background: transparent; border: 1px solid transparent;
+      }
+      #dialogue .dialogue-choice.selected { background: #333a44; border-color: #556; }
+      #dialogue .dialogue-choice.disabled { color: #8a8f99; cursor: default; }
+      #dialogue .menu-hint { display: block; font-size: 11px; color: #c9a25a; }
+      #dialogue .menu-key { display: inline-block; width: 1.4em; color: #8a8f99; }
+      #dialogue .dialogue-note { color: #ff8a8a; font-size: 12px; margin-top: 4px; }
+      #dialogue.shake { animation: dialogue-shake 0.3s; }
+      @keyframes dialogue-shake {
+        0%, 100% { transform: translateX(-50%); }
+        25% { transform: translateX(calc(-50% - 6px)); }
+        75% { transform: translateX(calc(-50% + 6px)); }
+      }
       #tooltip {
         position: fixed; z-index: 9; pointer-events: none; padding: 3px 6px; max-width: 260px;
         font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
