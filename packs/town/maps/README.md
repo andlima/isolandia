@@ -6,6 +6,15 @@ maps in `parts/` (Tiled, isometric 64×32, one tileset per part). See
 `populate`, and [Tiled maps](../../../docs/packs.md#tiled-maps) for the
 conventions. Edit a part in Tiled and every placement changes.
 
+Walls, doors, windows and the park hedges are [edge walls](../../../docs/packs.md#edge-walls):
+each part has its cells on a `ground` layer (one per `floor N` group on
+the two-floor parts) and its walls on an `edges n` and an `edges w` layer
+(tile layers with the property `edge` = `n` / `w`): the tile on the north
+or west side of each cell. Paint walls on those layers, never on
+`ground`. The parts were converted from wall cells with `npm run
+map:edges`, which kept each part's size and the coordinates of its
+furniture, so rooms gained the row and column the walls used to take.
+
 The base town has **no inhabitants**: no `spawn` objects in the parts and no
 `populate` entries. Mods add them with map overrides (`spawns` on a part,
 `populate` on a part or the city; see

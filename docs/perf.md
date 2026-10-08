@@ -44,6 +44,27 @@ cross wider rooms and yards). The max rose with the map: the first region
 labelling covers 1.8× the cells. Load (parse, compose, validate) takes
 ~220–260 ms and `World.create` ~80–100 ms.
 
+## Edge walls
+
+Since `edge-walls`, walls, doors, windows and fences are thin edges between
+cells instead of cells (`specs/tasks/edge-walls.md`). Steps, A* and sight
+read the edge arrays (`blockN`/`blockW`, `opaqueN`/`opaqueW`) next to the
+cell arrays. Same machine, route and seed, 3000 ticks:
+
+| Game | Map | Entities | Active radius | Tick avg | Tick p95 | Tick max | Active avg (min–max) | Dormant avg | A* expanded/tick avg | max | Searches | Region rejects | Budget hits |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| zombie | city 343×343×2 | 961 | 64 | 0.27 ms | 0.56 ms | 30.4 ms | 146 (73–254) | 815 | 25.2 | 3662 | 7491 | 0 | 0 |
+| zombie | city 343×343×2 | 961 | none | 0.39 ms | 0.62 ms | 22.9 ms | 961 | 0 | 21.4 | 3662 | 6081 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | 64 | 0.09 ms | 0.18 ms | 7.4 ms | 138 (42–154) | 16 | 8.0 | 4333 | 371 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | none | 0.09 ms | 0.16 ms | 9.9 ms | 154 | 0 | 9.1 | 4334 | 408 | 0 | 0 |
+| garden | garden 24×16 | 7 | 64 | 0.01 ms | 0.03 ms | 2.0 ms | 7 | 0 | 0.3 | 140 | 97 | 0 | 0 |
+
+The city's steady p95 went from 0.46 to 0.56 ms (1.2×), still ~18× under
+the 10 ms target; no figure rose above 2×. Rooms grew by a row and a
+column when the wall cells became edges, so NPCs search a little more
+(A* expansions per tick 17.5 → 25.2 on the city, more searches on the
+estate), which accounts for the rise.
+
 ## Steps
 
 The spec's order, with what each step did to the numbers (the 256×256
