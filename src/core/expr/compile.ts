@@ -25,6 +25,8 @@ export interface ExprEntity {
   readonly heardTick: number;
   /** In-progress activity (`action` = action index, -1 for an item use); null or absent when idle. */
   readonly activity?: { readonly action: number } | null;
+  /** Faction index of the entity's archetype; -1 or absent for none. */
+  readonly faction?: number;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -37,6 +39,41 @@ export interface TileRef {
 }
 
 export type Value = number | boolean | string | ExprEntity | TileRef;
+
+/** Faction state as seen by expressions (`reputation`, `attitude`, `hostile`, `friendly`). */
+export interface FactionTable {
+  /** Number of factions. */
+  readonly n: number;
+  /** The player's standing per faction. */
+  readonly rep: Float64Array;
+  /** Relations, row = the regarding faction: `rel[f * n + g]` is how f regards g (0 when unset). */
+  readonly rel: Float64Array;
+  /** Per faction: `hostile` threshold. */
+  readonly hostileBelow: Float64Array;
+  /** Per faction: `friendly` threshold. */
+  readonly friendlyFrom: Float64Array;
+}
+
+/** A table with no factions. */
+export const NO_FACTIONS: FactionTable = { n: 0, rep: new Float64Array(0), rel: new Float64Array(0), hostileBelow: new Float64Array(0), friendlyFrom: new Float64Array(0) };
+
+/** How `a` regards `b`, in [-100, 100] (the rules of `attitude(a, b)`; the player's own faction plays no part). */
+export function attitude(t: FactionTable, player: ExprEntity, a: ExprEntity, b: ExprEntity): number {
+  if (a === b) return 100;
+  const fb = b.faction ?? -1;
+  if (a === player) return fb < 0 ? 0 : t.rep[fb]!;
+  const fa = a.faction ?? -1;
+  if (fa < 0) return 0;
+  if (b === player) return t.rep[fa]!;
+  if (fb < 0) return 0;
+  return fa === fb ? 100 : t.rel[fa * t.n + fb]!;
+}
+
+/** The faction whose thresholds `hostile(a, b)` / `friendly(a, b)` use: `a`'s, or `b`'s when `a` is the player; -1 for none. */
+export function regardingFaction(player: ExprEntity, a: ExprEntity, b: ExprEntity): number {
+  if (a !== player) return a.faction ?? -1;
+  return b === player ? -1 : (b.faction ?? -1);
+}
 
 /**
  * Evaluation context. The simulation owns one of these and mutates `self`
@@ -79,6 +116,8 @@ export interface ExprContext {
   questEnd: Uint8Array;
   /** 1 at each journal entry index that has been added. */
   journalHas: Uint8Array;
+  /** Standings, relations and thresholds of the factions. */
+  factions: FactionTable;
 }
 
 export type Compiled = (ctx: ExprContext) => Value;
@@ -119,6 +158,8 @@ export interface CompileSymbols {
   resolveQuest?(ref: string): { index: number } | { error: string };
   /** Resolve a stage id of a quest (by quest index) to its stage index. */
   resolveStage?(quest: number, stage: string): { index: number } | { error: string };
+  /** Resolve a faction reference to its index; without it, the faction built-ins are errors. */
+  resolveFaction?(ref: string): { index: number } | { error: string };
   /** Whether `npc` (the NPC being talked to) is in scope: dialogue expressions only. */
   npc?: boolean;
 }
@@ -263,10 +304,15 @@ const SPECIAL_NAMES = [
   'quest_reached',
   'quest_succeeded',
   'quest_failed',
+  'in_faction',
+  'reputation',
+  'attitude',
+  'hostile',
+  'friendly',
 ];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing', 'in_faction']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
@@ -424,11 +470,14 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'heard') return heard(argNodes, node.pos);
     if (name === 'busy') return busy(argNodes, node.pos);
     if (name === 'doing') return doing(argNodes, node.pos);
+    if (name === 'in_faction') return inFaction(argNodes, node.pos);
     if (node.callee.kind === 'ident') {
       if (name === 'var') return worldVar(argNodes, node.pos);
       if (name === 'in_journal') return inJournal(argNodes, node.pos);
       if (name === 'quest_active' || name === 'quest_succeeded' || name === 'quest_failed') return questState(name, argNodes, node.pos);
       if (name === 'quest_reached') return questReached(argNodes, node.pos);
+      if (name === 'reputation') return reputation(argNodes, node.pos);
+      if (name === 'attitude' || name === 'hostile' || name === 'friendly') return regard(name, argNodes, node.pos);
     }
     if (name === 'has_tag' && argNodes.length === 2) {
       const fast = hasTagFast(argNodes[0]!, argNodes[1]!);
@@ -622,6 +671,46 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const s = literalId('quest_reached', argNodes[1]!, 'stage', 'quest_reached("escape", "battery")', resolveStage && ((ref) => resolveStage(q, ref)));
     if (s === null) return fail;
     return { type: 'boolean', fn: (c) => c.questStage[q]! >= s };
+  }
+
+  /** `in_faction(entity, "f")` / `self.in_faction("f")`: one read of the archetype's faction index. */
+  function inFaction(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`in_faction() takes 2 arguments, got ${argNodes.length}`, pos);
+    const k = literalId('in_faction', argNodes[1]!, 'faction', 'in_faction(self, "police")', symbols.resolveFaction);
+    if (k === null) return fail;
+    const target = entityArg('in_faction', argNodes[0]!, pos, 'entity, faction');
+    if (!target) return fail;
+    return { type: 'boolean', fn: (c) => target(c).faction === k };
+  }
+
+  /** `reputation("f")`: the player's standing with the faction; one array read. */
+  function reputation(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`reputation() takes 1 argument, got ${argNodes.length}`, pos);
+    const k = literalId('reputation', argNodes[0]!, 'faction', 'reputation("police")', symbols.resolveFaction);
+    if (k === null) return fail;
+    return { type: 'number', fn: (c) => c.factions.rep[k]! };
+  }
+
+  /** `attitude(a, b)`, `hostile(a, b)`, `friendly(a, b)`: entity arguments, at most two array reads. */
+  function regard(name: 'attitude' | 'hostile' | 'friendly', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`${name}() takes 2 arguments, got ${argNodes.length}`, pos);
+    const before = errors.length;
+    const A = entityArg(name, argNodes[0]!, pos, 'a, b');
+    const B = entityArg(name, argNodes[1]!, pos, 'a, b');
+    if (errors.length > before || !A || !B) return fail;
+    if (name === 'attitude') return { type: 'number', fn: (c) => attitude(c.factions, c.player, A(c), B(c)) };
+    const hostile = name === 'hostile';
+    return {
+      type: 'boolean',
+      fn: (c) => {
+        const a = A(c);
+        const b = B(c);
+        const f = regardingFaction(c.player, a, b);
+        if (f < 0) return false;
+        const v = attitude(c.factions, c.player, a, b);
+        return hostile ? v < c.factions.hostileBelow[f]! : v >= c.factions.friendlyFrom[f]!;
+      },
+    };
   }
 
   /** `in_room(tile, "tag")` / `tile.in_room("tag")`: room tags of the cell `tile` refers to. */

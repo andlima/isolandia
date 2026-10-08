@@ -92,6 +92,11 @@
         background: rgba(0, 0, 0, 0.75); border: 1px solid #c9a25a; border-radius: 4px; pointer-events: none;
       }
       #journal-toast[hidden] { display: none; }
+      .standing-bar { position: relative; height: 4px; margin: 1px 0 4px; background: #333a44; border-radius: 2px; }
+      .standing-bar::after { content: ''; position: absolute; left: 50%; top: -1px; width: 1px; height: 6px; background: #889; }
+      .standing-fill { position: absolute; top: 0; height: 100%; background: #7fbf7f; border-radius: 2px; }
+      .standing-fill.standing-low { background: #d0605a; }
+      .tooltip-danger { color: #ff6b5e; }
       .panel-subtitle { color: #c9a25a; margin-top: 4px; }
       .panel-hint { font-size: 11px; color: #c9a25a; }
       #craft-toggle {

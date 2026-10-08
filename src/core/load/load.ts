@@ -29,6 +29,11 @@ import {
   type OutcomeDef,
   type DistributionDef,
   type DurationDef,
+  DEFAULT_TIERS,
+  type FactionDef,
+  type FactionTierDef,
+  REPUTATION_MAX,
+  REPUTATION_MIN,
   type InventorySpec,
   type ItemCount,
   type ItemDef,
@@ -97,8 +102,11 @@ const EFFECT_FIELDS: Record<EffectDef['type'], string> = {
   add_var: 'delta',
   quest: 'stage',
   journal: 'entry',
+  reputation: 'delta',
 };
 const DEFAULT_JOURNAL_CATEGORY = 'Notes';
+const DEFAULT_HOSTILE_BELOW = -50;
+const DEFAULT_FRIENDLY_FROM = 50;
 const QUEST_ENDS = ['success', 'failure'] as const;
 const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
@@ -155,6 +163,7 @@ class Loader {
     const tiles = this.defined.tiles.map((d) => this.tile(d));
     this.tileDefs = tiles;
     const archetypes = this.defined.archetypes.map((d) => this.archetype(d, measurements, items));
+    const factions = this.factions(archetypes);
     // Composites read their parts, so every plain map is built first.
     const maps: MapDef[] = [];
     for (const d of this.defined.maps) if (!isComposite(d.entry.value)) maps[d.index] = this.map(d);
@@ -208,6 +217,7 @@ class Loader {
       quests,
       journal,
       dialogues,
+      factions,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -231,6 +241,7 @@ class Loader {
         quests: ids(quests),
         journal: ids(journal),
         dialogues: ids(dialogues),
+        factions: ids(factions),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -316,7 +327,7 @@ class Loader {
 
   /** Compile an expression of any type; reports and returns null on error. */
   private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
-    const resolver = (kind: 'measurement' | 'status' | 'item' | 'action' | 'var' | 'journal entry' | 'quest') => (ref: string) => {
+    const resolver = (kind: 'measurement' | 'status' | 'item' | 'action' | 'var' | 'journal entry' | 'quest' | 'faction') => (ref: string) => {
       const r = this.symbols.resolve(kind, ref, scope);
       return 'error' in r ? r : { index: r.index };
     };
@@ -330,6 +341,7 @@ class Loader {
       resolveEntry: resolver('journal entry'),
       resolveQuest: resolver('quest'),
       resolveStage: (q, stage) => this.stage(q, stage),
+      resolveFaction: resolver('faction'),
       npc: this.inDialogue,
     });
     if (errors.length) {
@@ -613,7 +625,7 @@ class Loader {
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
     const f = this.fields(
       d,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -656,7 +668,8 @@ class Loader {
     const inventory = this.inventory(f, d, items);
     const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scopeOf('behavior'), f.at('behavior'), this.sink)?.index ?? null) : null;
     const dialogue = f.has('dialogue') ? (this.symbols.ref('dialogue', f.raw('dialogue'), d.scopeOf('dialogue'), f.at('dialogue'), this.sink)?.index ?? null) : null;
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue };
+    const faction = f.has('faction') ? (this.symbols.ref('faction', f.raw('faction'), d.scopeOf('faction'), f.at('faction'), this.sink)?.index ?? null) : null;
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction };
   }
 
   private inventory(f: Fields, d: Defined, items: readonly ItemDef[]): InventorySpec | null {
@@ -1748,6 +1761,19 @@ class Loader {
         if (r) effects.push({ type: t, entry: r.index });
         return;
       }
+      if (t === 'reputation') {
+        const rf = new Fields(this.sink, src, raw, ['type', 'faction', valueKey, 'witnessed', 'spread'], `'reputation' effect`);
+        const r = rf.present('faction') ? this.symbols.ref('faction', rf.raw('faction'), scope, rf.at('faction'), this.sink) : null;
+        const term = rf.present(valueKey) ? this.numberTerm(rf.raw(valueKey), valueKey, scope, rf.at(valueKey)) : null;
+        const witnessed = rf.number('witnessed', false) ?? null;
+        if (witnessed !== null && !(witnessed > 0 && Number.isFinite(witnessed))) {
+          this.sink.add(rf.at('witnessed'), `field 'witnessed' must be a number of tiles > 0, got ${witnessed}`);
+          return;
+        }
+        const spread = rf.boolean('spread', false) ?? false;
+        if (r && term) effects.push({ type: t, faction: r.index, ...term, witnessed, spread });
+        return;
+      }
       if (t === 'noise') {
         const nf = new Fields(this.sink, src, raw, ['type', valueKey], `'noise' effect`);
         const term = nf.present(valueKey) ? this.numberTerm(nf.raw(valueKey), valueKey, scope, nf.at(valueKey)) : null;
@@ -1767,6 +1793,86 @@ class Loader {
       if (m && term) effects.push({ type: t, measurement: m.index, ...term, ...(onNpc ? { on: 'npc' as const } : {}) });
     });
     return effects;
+  }
+
+  // ── Factions ──────────────────────────────────────────────────────────
+
+  /** Every faction, then what needs them all: relations by index, members and spread targets. */
+  private factions(archetypes: readonly ArchetypeDef[]): FactionDef[] {
+    const n = this.defined.factions.length;
+    const base = this.defined.factions.map((d) => this.faction(d, n));
+    return base.map((f) => ({
+      ...f,
+      members: archetypes.some((a) => a.faction === f.index),
+      spread: base.filter((g) => g.index !== f.index && g.relations[f.index] !== 0).map((g) => ({ faction: g.index, relation: g.relations[f.index]! })),
+    }));
+  }
+
+  /** A standing or relation: a number in [-100, 100]; null after reporting. */
+  private standing(v: Json | undefined, src: Src, what: string): number | null {
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      this.sink.add(src, `${what} must be a number in [${REPUTATION_MIN}, ${REPUTATION_MAX}], got ${JSON.stringify(v)}`);
+      return null;
+    }
+    if (v < REPUTATION_MIN || v > REPUTATION_MAX) {
+      this.sink.add(src, `${what} (${v}) is outside [${REPUTATION_MIN}, ${REPUTATION_MAX}]`);
+      return null;
+    }
+    return v;
+  }
+
+  private faction(d: Defined, n: number): Omit<FactionDef, 'members' | 'spread'> {
+    const f = this.fields(d, ['id', 'label', 'reputation', 'relations', 'hostile_below', 'friendly_from', 'tiers', 'hidden'], 'faction');
+    const label = f.string('label') ?? d.id;
+    const reputation = f.has('reputation') ? (this.standing(f.raw('reputation'), f.at('reputation'), `field 'reputation'`) ?? 0) : 0;
+    const relations = new Array<number>(n).fill(0);
+    for (const [ref, value] of Object.entries(f.mapping('relations') ?? {})) {
+      const src = f.at('relations', ref);
+      const r = this.symbols.ref('faction', ref, d.scopeOf('relations'), src, this.sink);
+      if (!r) continue;
+      if (r.index === d.index) {
+        this.sink.add(src, `faction '${d.id}' cannot have a relation to itself: members always regard each other at 100`);
+        continue;
+      }
+      const v = this.standing(value, src, `relation to '${r.id}'`);
+      if (v !== null) relations[r.index] = v;
+    }
+    const hostileBelow = f.number('hostile_below', false) ?? DEFAULT_HOSTILE_BELOW;
+    const friendlyFrom = f.number('friendly_from', false) ?? DEFAULT_FRIENDLY_FROM;
+    if (!(friendlyFrom > hostileBelow)) {
+      this.sink.add(f.has('friendly_from') ? f.at('friendly_from') : f.at('hostile_below'), `friendly_from (${friendlyFrom}) must be greater than hostile_below (${hostileBelow})`);
+    }
+    const tiers = f.has('tiers') ? this.tiers(f) : DEFAULT_TIERS;
+    const hidden = f.boolean('hidden', false) ?? false;
+    return { id: d.id, index: d.index, label, reputation, relations, hostileBelow, friendlyFrom, tiers, hidden };
+  }
+
+  /** `tiers`: a non-empty list of `{ from, label }`, ascending `from`, the first at -100. */
+  private tiers(f: Fields): FactionTierDef[] {
+    const list = f.list('tiers');
+    if (!list) return [...DEFAULT_TIERS];
+    if (list.length === 0) {
+      this.sink.add(f.at('tiers'), `field 'tiers' must list at least one tier`);
+      return [...DEFAULT_TIERS];
+    }
+    const out: FactionTierDef[] = [];
+    list.forEach((raw, i) => {
+      const src = f.at('tiers', i);
+      if (!isObject(raw)) {
+        this.sink.add(src, `tiers must be mappings like { from: -100, label: Hostile }`);
+        return;
+      }
+      const tf = new Fields(this.sink, src, raw, ['from', 'label'], 'tier');
+      const from = tf.present('from') ? this.standing(tf.raw('from'), tf.at('from'), `tier 'from'`) : null;
+      const label = tf.string('label');
+      if (label !== undefined && label.trim() === '') this.sink.add(tf.at('label'), `field 'label' must not be empty`);
+      if (from === null || label === undefined) return;
+      if (i === 0 && from !== REPUTATION_MIN) this.sink.add(tf.at('from'), `the first tier must start at ${REPUTATION_MIN}, got ${from}`);
+      const prev = out[out.length - 1];
+      if (prev && from <= prev.from) this.sink.add(tf.at('from'), `tiers must have ascending 'from': ${from} is not above ${prev.from}`);
+      out.push({ from, label });
+    });
+    return out.length ? out : [...DEFAULT_TIERS];
   }
 
   // ── Vars, journal and quests ──────────────────────────────────────────

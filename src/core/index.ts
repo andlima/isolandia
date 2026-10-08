@@ -48,10 +48,12 @@ export {
   type JournalQuest,
   type JournalItem,
   type JournalView,
+  type JournalStanding,
+  type AttitudeView,
   type QuestSnapshot,
   MAX_QUEST_DEPTH,
 } from './sim/world.ts';
-export { journalSections, journalLines, journalToast, oneLine, QUEST_MARK, TOAST_MAX, type JournalSection } from './journal.ts';
+export { journalSections, journalLines, journalToast, oneLine, standingRows, standingToast, QUEST_MARK, STANDING_TITLE, TOAST_MAX, type JournalSection, type StandingRow } from './journal.ts';
 export { SAVE_VERSION, SUPPORTED_SAVE_VERSIONS, saveMeta, wrapSave, unwrapSave, type SaveMeta, type SaveWrapper } from './sim/save.ts';
 export { type Activity, type ActivitySource, type ActivityStage, type CompletionStep } from './sim/activity.ts';
 export { add, remove, fits, load, countOf, createContainer, type Container, type ContainerKind, type Stack } from './sim/containers.ts';
@@ -79,7 +81,7 @@ export {
   type HudContainer,
   type HudActivity,
 } from './hud.ts';
-export { nearMiss } from './expr/index.ts';
+export { nearMiss, attitude, regardingFaction, NO_FACTIONS, type FactionTable } from './expr/index.ts';
 export { edgeKey, Grid } from './sim/grid.ts';
 export { lineOfSight } from './sim/sight.ts';
 export { Rng } from './sim/rng.ts';

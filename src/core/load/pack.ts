@@ -20,7 +20,7 @@ export interface PackSource {
   readonly otherFiles?: readonly string[];
 }
 
-export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions', 'recipes', 'vars', 'quests', 'journal', 'dialogues'] as const;
+export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions', 'recipes', 'vars', 'quests', 'journal', 'dialogues', 'factions'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
 export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting'];
 
@@ -178,7 +178,7 @@ function parseManifest(source: PackSource, sink: ErrorSink): RawPack | null {
     ...m,
     otherFiles: new Set(source.otherFiles ?? []),
     tiledFiles: Object.fromEntries(Object.entries(source.files).filter(([f]) => TILED_FILE_RE.test(f))),
-    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [], recipes: [], vars: [], quests: [], journal: [], dialogues: [] },
+    entries: { measurements: [], assets: [], tiles: [], archetypes: [], maps: [], systems: [], statuses: [], items: [], loot: [], behaviors: [], actions: [], recipes: [], vars: [], quests: [], journal: [], dialogues: [], factions: [] },
     distributions: [],
     starts: [],
     clocks: [],

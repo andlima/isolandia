@@ -619,7 +619,7 @@ test('save v4: a round trip with set vars, quests at several stages (one ended) 
     { entry: 't:rumour', tick: 1 },
     { entry: 't:letter', tick: 5 },
   ]);
-  assert.equal(w.save().version, 5);
+  assert.equal(w.save().version, 6);
   const copy = assertRoundTrip(w, () => {}, 30);
   assert.equal(stageOf(copy, 't:main'), 'c');
   assert.equal(stageOf(copy, 't:later'), 'a');
@@ -647,7 +647,7 @@ test('save v3: loads with every var at its initial, no quest started and an empt
   old.step();
   assert.equal(stageOf(old, 't:main'), 'a');
   assert.equal(stageOf(old, 't:side'), 'done');
-  assert.equal(old.save().version, 5);
+  assert.equal(old.save().version, 6);
 });
 
 test('save v4: unknown ids are restore errors with JSON paths and did-you-mean; missing vars warn', () => {
@@ -751,7 +751,7 @@ ${at(1, '{ type: journal, entry: clue1 }, { type: journal, entry: tip }, { type:
 
 test('journal panel view: Active, Done (✓/✗), then categories in order of first use', () => {
   const w = world({ 'q.yaml': UI });
-  assert.deepEqual(journalView(w), { sections: [], empty: 'Nothing yet.' });
+  assert.deepEqual(journalView(w), { sections: [], standingTitle: 'Standing', standing: [], empty: 'Nothing yet.' });
   steps(w, 5);
   assert.deepEqual(journalView(w), {
     sections: [
@@ -760,6 +760,8 @@ test('journal panel view: Active, Done (✓/✗), then categories in order of fi
       { title: 'Clues', rows: ['A muddy boot print.', w.def.journal[2]!.text] },
       { title: 'Notes', rows: ['Drink water.'] },
     ],
+    standingTitle: 'Standing',
+    standing: [],
     empty: null,
   });
   assert.deepEqual(journalLines(w.journal()).slice(0, 6), ['Journal', '', 'Active', '  The case: Find the culprit.', '', 'Done']);

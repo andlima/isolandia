@@ -32,7 +32,7 @@ if (!r.ok) {
       `${def.systems.length} systems, ${def.statuses.length} statuses, ` +
       `${def.items.length} items, ${def.loot.length} loot tables, ${def.distributions.length} distributions, ` +
       `${def.behaviors.length} behaviors, ${def.actions.length} actions, ${def.recipes.length} recipes, ` +
-      `${def.vars.length} vars, ${def.quests.length} quests, ${def.journal.length} journal entries, ${def.dialogues.length} dialogues`,
+      `${def.vars.length} vars, ${def.quests.length} quests, ${def.journal.length} journal entries, ${def.dialogues.length} dialogues, ${def.factions.length} factions`,
   );
   for (const line of overrides ? formatOverrides(def) : patchSummary(def)) console.log(line);
   if (save !== null) {
