@@ -40,6 +40,10 @@ function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings
     inRoom: () => false,
     los: () => true,
     warn: (m) => warnings.push(m),
+    vars: new Float64Array(0),
+    questStage: new Int32Array(0),
+    questEnd: new Uint8Array(0),
+    journalHas: new Uint8Array(0),
     warnings,
     ...overrides,
   };

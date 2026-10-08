@@ -6,7 +6,7 @@
  */
 
 import { Application, type Container } from 'pixi.js';
-import { loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
+import { journalToast, loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
@@ -144,8 +144,12 @@ async function main(): Promise<void> {
     () => {
       input.beforeTick();
       const t0 = performance.now();
-      session.world.step();
+      const world = session.world;
+      world.step();
       perf.tick(performance.now() - t0);
+      // `journalEvents` holds only the last tick's events: read them right after each step.
+      const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
+      if (toast) session.hud.toast(toast);
     },
     { ticksPerSecond: def.ticksPerSecond, maxTicksPerFrame: 5 },
   );
@@ -237,6 +241,7 @@ async function main(): Promise<void> {
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
+      if (code === 'KeyJ') panels.toggleJournal();
       if (code === 'Escape') panels.closeTransfer();
       if (code === 'KeyO') {
         game.toggle();

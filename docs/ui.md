@@ -169,6 +169,34 @@ to walk there and craft). The view is the pure function
 or `tileVersion` changes. Recipes without a station live only here, not in
 the context menu.
 
+## Journal
+
+`J` or the **Journal [J]** button (top right; shown when the packs define
+quests or journal entries) toggles the **Journal** panel. It shows:
+
+- **Active**: each started quest's title and its current stage's text;
+- **Done**: ended quests, marked ✓ (success) or ✗ (failure), with their
+  last stage's text;
+- one section per entry `category`, in order of first use, listing that
+  category's entries in the order added.
+
+Hidden quests appear only once they end. The panel is the pure
+`journalView(world)` (`src/web/panels.ts`, over `world.journal()` and the
+shared `journalSections`), re-rendered only when `world.journalVersion`
+changes. It has no buttons, so it stays as it is after defeat or victory.
+
+**Toasts.** When a tick changes a quest's stage or adds an entry, the HUD
+shows `Journal: <quest title>: <stage text>` or `Journal: <entry text>` for
+about 4 s, under the top edge. Several events in one tick show the last
+one plus `(+N)`; the text is one line, cut with `…`. It is the pure
+`journalToast(events, world)` (`src/core/journal.ts`), read from
+`world.journalEvents` right after each step. A hidden quest's stages make
+no toast until it ends.
+
+The terminal has the same journal: `J` (uppercase; lowercase `j` still
+moves) shows it as text in the same layout until any key, and a stage
+change or entry puts the same `Journal: …` text on the message line.
+
 ## Saving and loading
 
 The browser keeps a **quicksave** and **three slots** per pack list in
@@ -213,6 +241,7 @@ the browser, `MemoryStore` in tests).
 | `Escape` | Close the transfer window (or the menu, when open) |
 | Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
+| `J` | [Journal](#journal) panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
 | `H` | Toggle the HUD text (and hover tooltips) |
@@ -225,7 +254,7 @@ with more than one floor the HUD shows `Floor N` (your floor `z`, the
 ground floor being `Floor 0`).
 
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
-loads it; lowercase `s` and `l` still move. `<` / `>` climb (with no link
+loads it, and `J` shows the journal; lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add

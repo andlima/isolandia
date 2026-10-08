@@ -26,6 +26,10 @@ import {
   type ItemCount,
   type ItemDef,
   type ItemUseDef,
+  type JournalEntryDef,
+  type QuestDef,
+  type QuestStageDef,
+  type VarDef,
   type LootEntryDef,
   type LootTableDef,
   type Definition,
@@ -77,7 +81,18 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
 const DEFAULT_VICTORY_MESSAGE = 'Victory';
-const EFFECT_FIELDS: Record<EffectDef['type'], string> = { apply: 'delta', set: 'value', noise: 'radius', set_tile: 'tile' };
+const EFFECT_FIELDS: Record<EffectDef['type'], string> = {
+  apply: 'delta',
+  set: 'value',
+  noise: 'radius',
+  set_tile: 'tile',
+  set_var: 'value',
+  add_var: 'delta',
+  quest: 'stage',
+  journal: 'entry',
+};
+const DEFAULT_JOURNAL_CATEGORY = 'Notes';
+const QUEST_ENDS = ['success', 'failure'] as const;
 const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
 const DEFAULT_RECIPE_VERB = 'Craft';
@@ -110,12 +125,17 @@ class Loader {
   private readonly lootEntrySrc: Src[][] = [];
   /** Built tiles (for `set_tile` checks), set before any effect list is read. */
   private tileDefs: readonly TileDef[] = [];
+  /** Stage ids per quest index, read from the (merged) entries before any expression compiles. */
+  private stageNames: string[][] = [];
+  /** Quest indices that some `quest` effect names (a quest without `when` stages needs one). */
+  private readonly questTargets = new Set<number>();
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
     this.applyPatches();
     this.readTiledMaps();
     this.collectRoomTags();
+    this.collectStageNames();
     const measurements = this.defined.measurements.map((d) => this.measurement(d));
     const assets = this.defined.assets.map((d) => this.asset(d));
     const items = this.defined.items.map((d) => this.item(d));
@@ -134,7 +154,11 @@ class Loader {
     const behaviors = this.defined.behaviors.map((d) => this.behavior(d));
     const actions = this.defined.actions.map((d) => this.action(d, tiles));
     const recipes = this.defined.recipes.map((d) => this.recipe(d, tiles));
+    const vars = this.defined.vars.map((d) => this.worldVar(d));
+    const journal = this.defined.journal.map((d) => this.journalEntry(d));
+    const quests = this.defined.quests.map((d) => this.quest(d));
     const start = this.start(maps);
+    this.checkQuestStarts(quests);
     const clock = this.clock();
     const lighting = this.lighting();
     this.checkKinds();
@@ -166,6 +190,9 @@ class Loader {
       behaviors,
       actions,
       recipes,
+      vars,
+      quests,
+      journal,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -185,6 +212,9 @@ class Loader {
         behaviors: ids(behaviors),
         actions: ids(actions),
         recipes: ids(recipes),
+        vars: ids(vars),
+        quests: ids(quests),
+        journal: ids(journal),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -270,7 +300,7 @@ class Loader {
 
   /** Compile an expression of any type; reports and returns null on error. */
   private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
-    const resolver = (kind: 'measurement' | 'status' | 'item' | 'action') => (ref: string) => {
+    const resolver = (kind: 'measurement' | 'status' | 'item' | 'action' | 'var' | 'journal entry' | 'quest') => (ref: string) => {
       const r = this.symbols.resolve(kind, ref, scope);
       return 'error' in r ? r : { index: r.index };
     };
@@ -280,6 +310,10 @@ class Loader {
       resolveItem: resolver('item'),
       resolveRoomTag: (tag) => this.roomTag(tag),
       resolveAction: resolver('action'),
+      resolveVar: resolver('var'),
+      resolveEntry: resolver('journal entry'),
+      resolveQuest: resolver('quest'),
+      resolveStage: (q, stage) => this.stage(q, stage),
     });
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
@@ -1666,6 +1700,36 @@ class Loader {
         effects.push({ type: t, tile: r.index });
         return;
       }
+      if (t === 'set_var' || t === 'add_var') {
+        const vf = new Fields(this.sink, src, raw, ['type', 'var', valueKey], `'${t}' effect`);
+        const v = vf.present('var') ? this.symbols.ref('var', vf.raw('var'), scope, vf.at('var'), this.sink) : null;
+        const term = vf.present(valueKey) ? this.numberTerm(vf.raw(valueKey), valueKey, scope, vf.at(valueKey)) : null;
+        if (v && term) effects.push({ type: t, var: v.index, ...term });
+        return;
+      }
+      if (t === 'quest') {
+        const qf = new Fields(this.sink, src, raw, ['type', 'quest', 'stage'], `'quest' effect`);
+        const q = qf.present('quest') ? this.symbols.ref('quest', qf.raw('quest'), scope, qf.at('quest'), this.sink) : null;
+        const hasStage = qf.present('stage');
+        if (!q) return;
+        this.questTargets.add(q.index);
+        if (!hasStage) return;
+        const stage = qf.raw('stage');
+        if (typeof stage !== 'string') {
+          this.sink.add(qf.at('stage'), `expected a stage id (string), got ${JSON.stringify(stage)}`);
+          return;
+        }
+        const r = this.stage(q.index, stage);
+        if ('error' in r) this.sink.add(qf.at('stage'), r.error);
+        else effects.push({ type: t, quest: q.index, stage: r.index });
+        return;
+      }
+      if (t === 'journal') {
+        const jf = new Fields(this.sink, src, raw, ['type', 'entry'], `'journal' effect`);
+        const r = jf.present('entry') ? this.symbols.ref('journal entry', jf.raw('entry'), scope, jf.at('entry'), this.sink) : null;
+        if (r) effects.push({ type: t, entry: r.index });
+        return;
+      }
       if (t === 'noise') {
         const nf = new Fields(this.sink, src, raw, ['type', valueKey], `'noise' effect`);
         const term = nf.present(valueKey) ? this.numberTerm(nf.raw(valueKey), valueKey, scope, nf.at(valueKey)) : null;
@@ -1678,6 +1742,96 @@ class Loader {
       if (m && term) effects.push({ type: t, measurement: m.index, ...term });
     });
     return effects;
+  }
+
+  // ── Vars, journal and quests ──────────────────────────────────────────
+
+  /** Stage ids of every quest, from the raw (merged) entries: `quest` effects and `quest_reached` resolve against them. */
+  private collectStageNames(): void {
+    this.stageNames = this.defined.quests.map((d) => {
+      const stages = d.entry.value['stages'];
+      return Array.isArray(stages) ? stages.map((s) => (isObject(s) && typeof s['id'] === 'string' ? s['id'] : '')) : [];
+    });
+  }
+
+  /** A stage id of quest `q` → its stage index, or an error with a did-you-mean. */
+  private stage(q: number, name: string): { index: number } | { error: string } {
+    const names = this.stageNames[q] ?? [];
+    const k = names.indexOf(name);
+    if (k >= 0 && name !== '') return { index: k };
+    const s = nearMiss(name, names.filter((n) => n !== ''));
+    return { error: `unknown stage '${name}' of quest '${this.defined.quests[q]?.id}'${s ? ` (did you mean '${s}'?)` : ''}` };
+  }
+
+  private worldVar(d: Defined): VarDef {
+    const f = this.fields(d, ['id', 'label', 'initial', 'min', 'max'], 'var');
+    const label = f.string('label', false) ?? d.id;
+    const min = f.number('min', false) ?? -Infinity;
+    const max = f.number('max', false) ?? Infinity;
+    let initial = 0;
+    const iv = f.raw('initial');
+    if (typeof iv === 'boolean') initial = iv ? 1 : 0;
+    else if (typeof iv === 'number' && Number.isFinite(iv)) initial = iv;
+    else if (iv !== undefined && iv !== null) this.sink.add(f.at('initial'), `field 'initial' must be a number or true/false, got ${JSON.stringify(iv)}`);
+    if (min > max) this.sink.add(f.at('max'), `max (${max}) is less than min (${min})`);
+    else if (initial < min || initial > max) this.sink.add(f.has('initial') ? f.at('initial') : f.src, `initial (${initial}) is outside [${min}, ${max}]`);
+    return { id: d.id, index: d.index, label, initial, min, max };
+  }
+
+  private journalEntry(d: Defined): JournalEntryDef {
+    const f = this.fields(d, ['id', 'text', 'category'], 'journal entry');
+    const text = f.string('text') ?? '';
+    if (f.has('text') && text.trim() === '') this.sink.add(f.at('text'), `field 'text' must not be empty`);
+    const category = f.string('category', false) ?? DEFAULT_JOURNAL_CATEGORY;
+    return { id: d.id, index: d.index, text, category };
+  }
+
+  private quest(d: Defined): QuestDef {
+    const f = this.fields(d, ['id', 'title', 'hidden', 'stages'], 'quest');
+    const title = f.string('title') ?? d.id;
+    const hidden = f.boolean('hidden', false) ?? false;
+    const list = f.list('stages');
+    if (!list) {
+      if (!f.has('stages')) f.present('stages');
+    } else if (list.length === 0) this.sink.add(f.at('stages'), `field 'stages' must list at least one stage`);
+    const scope = d.scopeOf('stages');
+    const seen = new Set<string>();
+    const stages: QuestStageDef[] = (list ?? []).map((raw, index) => {
+      const src = f.at('stages', index);
+      const stage: QuestStageDef = { name: '', index, journal: '', whenFn: null, end: null, effects: [] };
+      if (!isObject(raw)) {
+        this.sink.add(src, `stages must be mappings like { id: started, journal: "…", when: "true" }`);
+        return stage;
+      }
+      const sf = new Fields(this.sink, src, raw, ['id', 'journal', 'when', 'end', 'effects'], 'stage');
+      const name = sf.string('id') ?? '';
+      if (sf.has('id') && typeof raw['id'] === 'string') {
+        if (!ID_RE.test(name)) this.sink.add(sf.at('id'), `invalid stage id '${name}': stage ids must match [a-z][a-z0-9_]*`);
+        else if (seen.has(name)) this.sink.add(sf.at('id'), `duplicate stage id '${name}' in quest '${d.id}'`);
+        seen.add(name);
+      }
+      const journal = sf.string('journal') ?? '';
+      const whenFn = this.condition(sf, 'when', scope) ?? null;
+      let end: QuestStageDef['end'] = null;
+      const ev = sf.raw('end');
+      if (ev !== undefined && ev !== null) {
+        if (typeof ev === 'string' && (QUEST_ENDS as readonly string[]).includes(ev)) end = ev as QuestStageDef['end'];
+        else this.sink.add(sf.at('end'), `field 'end' must be 'success' or 'failure', got ${JSON.stringify(ev)}`);
+      }
+      const effects = this.effects(sf, scope, { optional: true });
+      return { name, index, journal, whenFn, end, effects };
+    });
+    const watched = stages.filter((s) => s.whenFn !== null).map((s) => s.index);
+    return { id: d.id, index: d.index, title, hidden, stages, watched };
+  }
+
+  /** A quest that no `when` and no `quest` effect can ever start is a pack mistake. */
+  private checkQuestStarts(quests: readonly QuestDef[]): void {
+    for (const q of quests) {
+      if (q.stages.length === 0 || q.watched.length > 0 || this.questTargets.has(q.index)) continue;
+      const d = this.defined.quests[q.index]!;
+      this.sink.add(at(d.srcOf('stages'), 'stages'), `quest '${q.id}' can never start: none of its stages has a 'when', and no 'quest' effect names it`);
+    }
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────

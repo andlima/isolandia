@@ -121,6 +121,11 @@ sets.
 | `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
 | `busy(entity)`                           | Whether the entity has an in-progress [activity](packs.md#actions) (same as `entity.busy`) |
 | `doing(entity, "action")`                | Whether the entity's activity is that pack action |
+| `var("id")`                              | The world [var](packs.md#vars)'s current value (a number) |
+| `in_journal("id")`                       | Whether the [journal entry](packs.md#journal) has been added |
+| `quest_active("q")`                      | Whether the [quest](packs.md#quests) has started and not ended |
+| `quest_reached("q", "stage")`            | Whether the quest's current stage is that stage or a later one |
+| `quest_succeeded("q")`, `quest_failed("q")` | Whether the quest ended in an `end: success` / `end: failure` stage |
 
 The distance functions also accept four numbers: `manhattan(x1, y1, x2, y2)`.
 With two entities or tiles they include the floors, one floor counting as
@@ -204,6 +209,32 @@ while resting:
 ```yaml
 statuses:
   - { id: focused, label: Focused, when: 'doing(self, "rest")' }
+```
+
+### World state
+
+`var`, `in_journal` and the `quest_*` built-ins read world-level story
+state (see [vars, journal and quests](packs.md#vars)). Every id argument
+is a **string literal**, short or qualified, resolved at load time like
+`has_status`: an unknown var, entry, quest or stage is a load error with a
+*did you mean* suggestion, and the runtime check is one array read. They
+take no entity and have no method form, and they work in every
+expression: systems, statuses, behaviors, actions, recipes, item uses,
+quest stages, `start.defeat` and `start.victory`.
+
+- `var("id")` is a number; a var written as `true`/`false` reads `1`/`0`.
+- `quest_reached("q", "stage")` is **positional**: the quest's current
+  stage index is that stage's index or higher. An ended quest keeps its
+  final stage, so a quest that ended in `solved` has also "reached" every
+  stage before it. Test endings with `quest_succeeded` / `quest_failed`,
+  which hold once the quest has entered a stage with `end: success` /
+  `end: failure`.
+- `quest_active("q")` is false before the quest starts and after it ends.
+
+```yaml
+when: 'var("clues_found") >= 3 and not in_journal("confession")'
+victory: { when: 'quest_succeeded("escape")' }
+when: 'quest_reached("first_dawn", "night") and world.is_day'
 ```
 
 **`tile` in tile-targeted actions.** In the `when`, `interrupt`,

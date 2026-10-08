@@ -522,6 +522,26 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     (`Interaction.duration` / `uses`, filled purely by the core).
   - Hover (mouse and pen) outlines the target and shows a tooltip with
     what a click will do; touch has no hover.
+- ~~How does the world remember story facts, and what are goals beyond
+  one `victory` expression?~~ **Decided (spec `m8-flags-quests`, M8):**
+  - **Vars are world-level declared numbers**: a `vars` domain (`initial`,
+    `min`, `max`; booleans stored as `1`/`0`), one value per world,
+    clamped on every write by `set_var` / `add_var` effects and read with
+    `var("id")`. No string vars, per-entity vars (use measurements) or
+    collections.
+  - **Quests are ordered stages that only move forward**, entered by a
+    stage's `when` (a quest phase after statuses and before the outcome
+    check takes the last truthy stage, at most one change per quest per
+    tick) or by `quest` effects; `end: success` / `end: failure` stages
+    end them, and stage `effects` run on entering. No branching
+    objectives, markers or timers; rewards are stage effects.
+  - **Journal entries are one-time domain entries, not free text**: a
+    `journal` domain of texts with a category, added once by the `journal`
+    effect and tested with `in_journal("id")`; never removed and not
+    templated.
+  - All of it is in snapshots, hashes and saves (version 4; version 3
+    saves load with fresh story state). Shells show `world.journal()` (a
+    `J` panel and terminal screen) and toast `world.journalEvents`.
 
 ## 8. Next step
 

@@ -71,7 +71,8 @@ start:
   defeat:
     when: "self.hp <= 0"
     message: "You did not survive the outbreak."
-  # A car battery from a garage gets one of the wrecks running.
+  # A car battery from a garage gets one of the wrecks running: the `escape`
+  # quest (escape.yaml) tracks it, and its success is the win.
   victory:
-    when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+    when: 'quest_succeeded("escape")'
     message: "You got the car running!"
