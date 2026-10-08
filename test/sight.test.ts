@@ -164,18 +164,19 @@ test('vampire: the window is see-through, and a bat spots the vampire through it
   const window = w.def.tiles.find((t) => t.id === 'town:window')!;
   assert.equal(window.walkable, false);
   assert.equal(window.opaque, false);
-  assert.equal(w.grid.tileAt(...M(4, 12))!.id, 'town:window');
+  // The window is the edge between (4, 11) and (4, 12): the north edge of (4, 12).
+  assert.equal(w.grid.edgeAt(...M(4, 12), 0, 'n')!.id, 'town:window');
   const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(4, 9)[0] && e.y === M(4, 9)[1])!;
   assert.ok(bat);
   assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
-  // The only cell between (4,11) and (4,13) is the window.
+  // Between (4,11) and (4,13): the window edge, then the open cell (4,12).
   place(bat, ...M(4, 11));
   place(w.player, ...M(4, 13));
   w.step();
   assert.equal(w.hasStatus(bat, 'vamp:alert'), true);
   assert.equal(w.hasStatus(w.player, 'vamp:alert'), false);
-  // The same shape through a wall is blocked.
-  assert.equal(w.grid.tileAt(...M(2, 12))!.id, 'std:wall');
+  // The same shape through a wall edge is blocked.
+  assert.equal(w.grid.edgeAt(...M(2, 12), 0, 'n')!.id, 'std:wall');
   assert.equal(lineOfSight(w.grid, ...M(2, 11), ...M(2, 13)), false);
 });
 

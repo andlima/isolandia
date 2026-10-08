@@ -835,29 +835,31 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   }
   assert.deepEqual(needed(), []);
 
-  // The bedroom window of the north-west house, from inside.
+  // The bedroom window of the north-west house, from inside: the west edge of (22, 3), next to (21, 3).
   const T = (x: number, y: number) => genreCell('zombie', x, y);
   const [wx, wy] = T(22, 3);
   const [ix, iy] = T(21, 3);
-  assert.equal(cell(w, wx, wy), 'town:window');
+  const edge = () => w.grid.edgeAt(wx, wy, 0, 'w')?.id;
+  assert.equal(edge(), 'town:window');
   walk(w, ix, iy);
-  const offered = w.availableActions().find((a) => a.action === 'town:barricade' && a.x === wx && a.y === wy);
+  const offered = w.availableActions().find((a) => a.action === 'town:barricade' && a.x === wx && a.y === wy && a.side === 'w');
   assert.equal(offered?.ok, true);
   const planks = have('town:plank');
   const nails = have('town:nails');
   const shambler = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && Math.hypot(e.x - ix, e.y - iy) <= 14);
-  w.queueAction({ kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0 });
+  w.queueAction({ kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0, side: 'w' });
   w.step();
   const start = w.lastAction!;
   assert.equal(start.stage, 'start');
+  assert.equal(start.side, 'w');
   assert.equal(hudModel(w).activity!.label, 'Barricading');
   assert.equal(hudModel(w).lastAction, 'You start barricading.');
   steps(w, 59);
-  assert.equal(cell(w, wx, wy), 'town:window');
+  assert.equal(edge(), 'town:window');
   w.step();
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
   assert.equal(w.lastAction!.tick, start.tick + 60);
-  assert.equal(cell(w, wx, wy), 'town:barricaded_window');
+  assert.equal(edge(), 'town:barricaded_window');
   assert.equal(have('town:plank'), planks - 2);
   assert.equal(have('town:nails'), nails - 4);
   assert.equal(have('town:hammer'), 1);
@@ -893,14 +895,14 @@ test('vampire: shutter a window, then rest by a coffin until a bat screech wakes
   const w = game('vampire', 1);
   const hp = () => w.value(w.player, 'std:hp')!;
   const M = (x: number, y: number) => genreCell('vampire', x, y);
-  // Shutters on the west room's north window.
-  walk(w, ...M(4, 1));
-  assert.equal(cell(w, ...M(4, 0)), 'town:window');
-  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(4, 0)[0], y: M(4, 0)[1], z: 0 });
+  // Shutters on the west room's north window: the north edge of (4, 0), from inside.
+  walk(w, ...M(4, 0));
+  assert.equal(w.grid.edgeAt(...M(4, 0), 0, 'n')?.id, 'town:window');
+  w.queueAction({ kind: 'act', action: 'vamp:shutter', x: M(4, 0)[0], y: M(4, 0)[1], z: 0, side: 'n' });
   steps(w, 21);
   assert.equal(w.lastAction!.ok, true, JSON.stringify(w.lastAction));
-  assert.equal(cell(w, ...M(4, 0)), 'vamp:shuttered_window');
-  assert.equal(w.grid.opaque[w.grid.index(...M(4, 0))], 1);
+  assert.equal(w.grid.edgeAt(...M(4, 0), 0, 'n')?.id, 'vamp:shuttered_window');
+  assert.equal(w.grid.opaqueN[w.grid.index(...M(4, 0))], 1);
 
   // Rest is only offered on the crypt floor.
   assert.equal(w.availableActions().find((a) => a.action === 'vamp:rest')!.reason, 'cannot_act');

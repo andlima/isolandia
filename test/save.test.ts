@@ -381,7 +381,7 @@ function midActivity(def: Definition, kind: 'act' | 'use' | 'craft'): World | nu
         requires: [...a.tools.map((item) => ({ item, count: 1 })), ...a.consume],
         find: (w) => {
           const e = w.availableActions().find((x) => x.kind === 'act' && x.action === a.id && x.ok);
-          return e ? (e.x !== undefined ? { kind: 'act', action: a.id, x: e.x, y: e.y! } : { kind: 'act', action: a.id }) : null;
+          return e ? (e.x !== undefined ? { kind: 'act', action: a.id, x: e.x, y: e.y!, ...(e.side ? { side: e.side } : {}) } : { kind: 'act', action: a.id }) : null;
         },
       });
     }
@@ -469,7 +469,9 @@ for (const name of Object.keys(GAMES) as (keyof typeof GAMES)[]) {
     assert.deepEqual(kinds, expected);
     if (def.actions.some((a) => a.effects.some((x) => x.type === 'set_tile'))) {
       const w = midActivity(def, 'act')!;
-      stepUntil(w, () => w.snapshot().tiles.length > 0);
+      // The shipped set_tile actions (barricade, shutter) change window edges.
+      stepUntil(w, () => w.snapshot().tiles.length + w.snapshot().edges.length > 0);
+      assert.ok(w.snapshot().edges.length > 0);
       assertRoundTrip(w, undefined, 60);
     }
   });

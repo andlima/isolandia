@@ -6,7 +6,7 @@
  * and runs items.
  */
 
-import { GROUND_LABEL, reasonText, type Action, type GotoIntent, type Interaction, type World } from '../core/index.ts';
+import { GROUND_LABEL, reasonText, type Action, type EdgeSide, type GotoIntent, type Interaction, type World } from '../core/index.ts';
 import type { PickTarget } from '../iso/pick.ts';
 import { clickIntent } from './panels.ts';
 
@@ -53,7 +53,7 @@ export type ClickPlan =
   | { readonly kind: 'run'; readonly entry: Interaction; readonly item: MenuItem }
   /** Open the menu (`contextMenu(…, 'click')`). */
   | { readonly kind: 'menu' }
-  /** Nothing to do there: walk (next to it when it is not walkable). */
+  /** Nothing to do there: walk (next to it when it is not walkable; to its front cell for an edge). */
   | { readonly kind: 'walk'; readonly intent: GotoIntent }
   /** The player's own cell with nothing to do. */
   | { readonly kind: 'none' };
@@ -66,7 +66,20 @@ export interface HoverInfo {
   readonly cursor: 'pointer' | 'default' | 'not-allowed';
 }
 
-type Cell = { readonly x: number; readonly y: number; readonly z: number };
+/** A cell, or with `side` the edge on that side of it. */
+type Cell = { readonly x: number; readonly y: number; readonly z: number; readonly side?: EdgeSide };
+
+/**
+ * Click-to-move next to the edge on `side` of (x, y, z), on its clicked
+ * side: the iso view shows an edge's south (`n`) or east (`w`) face, which
+ * belongs to (x, y), so the walk ends on (x, y) — or on the cell across the
+ * edge when (x, y) is not walkable.
+ */
+export function edgeWalkIntent(world: World, x: number, y: number, z: number, side: EdgeSide): GotoIntent {
+  if (world.grid.walkable(x, y, z)) return { kind: 'goto', x, y, z };
+  const [bx, by] = side === 'n' ? [x, y - 1] : [x - 1, y];
+  return world.grid.walkable(bx, by, z) ? { kind: 'goto', x: bx, y: by, z } : { kind: 'goto', x, y, z, side };
+}
 
 /** `8s`, `1m 20s` (sim seconds, rounded to whole seconds; at least `1s`). */
 export function formatDuration(seconds: number): string {
@@ -138,16 +151,19 @@ function safeEntry(entries: readonly Interaction[]): Interaction | undefined {
 }
 
 /**
- * What a plain left click on `target`'s cell does: `run` the safe default
- * (open a container, the only climb, walk) when the cell has no enabled
- * action or recipe; `menu` when it has one, or has entries but no safe one;
- * `walk` (next to it when not walkable) when it has no entries at all;
- * `none` on the player's own cell with nothing to do.
+ * What a plain left click on `target`'s cell (or edge, with `side`) does:
+ * `run` the safe default (open a container, the only climb, walk) when the
+ * cell has no enabled action or recipe; `menu` when it has one, or has
+ * entries but no safe one (an edge with actions always menus); `walk` (next
+ * to it when not walkable, `edgeWalkIntent` for an edge) when it has no
+ * entries at all; `none` on the player's own cell with nothing to do.
  */
 export function clickPlan(world: World, target: Cell): ClickPlan {
   const { x, y, z } = target;
-  const entries = world.interactionsAt(x, y, z);
+  const side = target.side ?? null;
+  const entries = world.interactionsAt(x, y, z, side);
   if (entries.length === 0) {
+    if (side) return { kind: 'walk', intent: edgeWalkIntent(world, x, y, z, side) };
     const p = world.player;
     return x === p.x && y === p.y && z === p.z ? { kind: 'none' } : { kind: 'walk', intent: clickIntent(world, x, y, z) };
   }
@@ -158,13 +174,14 @@ export function clickPlan(world: World, target: Cell): ClickPlan {
 }
 
 /**
- * The menu for (x, y) on floor `z` (default the player's): the default (the
- * click plan's safe entry unless it is `walk`) first, the other enabled
- * entries in `interactionsAt` order, `Walk here` (context menu only), and
- * the disabled entries (with their reason as `hint`) for the fold row.
+ * The menu for (x, y) on floor `z` (default the player's), or for its edge
+ * on `side`: the default (the click plan's safe entry unless it is `walk`)
+ * first, the other enabled entries in `interactionsAt` order, `Walk here`
+ * (context menu only, cells only), and the disabled entries (with their
+ * reason as `hint`) for the fold row.
  */
-export function contextMenu(world: World, x: number, y: number, z: number = world.player.z, opening: MenuOpening = 'context'): Menu {
-  const entries = world.interactionsAt(x, y, z);
+export function contextMenu(world: World, x: number, y: number, z: number = world.player.z, opening: MenuOpening = 'context', side: EdgeSide | null = null): Menu {
+  const entries = world.interactionsAt(x, y, z, side);
   const safe = safeEntry(entries);
   const first = safe && safe.kind !== 'walk' ? safe : undefined;
   const items: MenuItem[] = [];
@@ -206,8 +223,13 @@ export function shortcutOf(code: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-/** Menu title: the cell's tile label, plus its room tags (`Window · hall`); empty out of bounds or on an empty cell. */
-export function menuTitle(world: World, x: number, y: number, z: number = world.player.z): string {
+/**
+ * Menu title: the cell's tile label, plus its room tags (`Bed · bedroom`);
+ * with `side`, the edge's tile label (`Window`). Empty out of bounds or where
+ * there is no tile.
+ */
+export function menuTitle(world: World, x: number, y: number, z: number = world.player.z, side: EdgeSide | null = null): string {
+  if (side) return world.grid.edgeAt(x, y, z, side)?.label ?? '';
   const tile = world.grid.tileAt(x, y, z);
   if (!tile) return '';
   const rooms = world.roomTagsAt(x, y, z).map((t) => world.def.roomTags[t]!);
@@ -222,7 +244,7 @@ function hoverTitle(world: World, target: PickTarget): string {
     const more = target.container.stacks.length > 3 ? ', …' : '';
     return labels.length ? `${GROUND_LABEL} · ${labels.join(', ')}${more}` : GROUND_LABEL;
   }
-  return menuTitle(world, target.x, target.y, target.z);
+  return menuTitle(world, target.x, target.y, target.z, target.kind === 'edge' ? target.side : null);
 }
 
 /** What hovering `target` shows: its title, what a click does there, and the pointer's cursor. */
@@ -236,7 +258,7 @@ export function hoverInfo(world: World, target: PickTarget): HoverInfo {
       return { title, hint: `Click: ${e.kind === 'open' ? 'Open' : e.label}`, cursor: 'pointer' };
     }
     case 'menu': {
-      const n = contextMenu(world, target.x, target.y, target.z, 'click').items.length;
+      const n = contextMenu(world, target.x, target.y, target.z, 'click', target.kind === 'edge' ? target.side : null).items.length;
       return { title, hint: n === 0 ? "Click: Can't do now" : `Click: ${n} action${n === 1 ? '' : 's'}`, cursor: 'pointer' };
     }
     case 'walk':

@@ -12,13 +12,14 @@
  * behind them.
  */
 
-import type { Container as Pile, Entity, Grid } from '../core/index.ts';
+import type { Container as Pile, EdgeSide, Entity, Grid } from '../core/index.ts';
 import { hits, type Candidate, type Reach } from './hit.ts';
 import { FLOOR_H, floorCamera, pickTile, screenToIso, TILE_H, TILE_W, type CameraState } from './projection.ts';
 
-/** What a pick found. Every target carries a cell; an entity's is its simulation cell. */
+/** What a pick found. Every target carries a cell; an entity's is its simulation cell, an edge's the cell it belongs to. */
 export type PickTarget =
   | { readonly kind: 'ground' | 'tile'; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly kind: 'edge'; readonly x: number; readonly y: number; readonly z: number; readonly side: EdgeSide }
   | { readonly kind: 'pile'; readonly x: number; readonly y: number; readonly z: number; readonly container: Pile }
   | { readonly kind: 'entity'; readonly x: number; readonly y: number; readonly z: number; readonly entity: Entity };
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
-import { add, buildCatalog, formatError, loadPacks, resolveStack, World, type Action, type Catalog, type Definition, type LoadError } from '../src/core/index.ts';
+import { add, buildCatalog, EDGE_SIDES, formatError, loadPacks, resolveStack, World, type Action, type Catalog, type Definition, type EdgeSide, type LoadError } from '../src/core/index.ts';
 import { formatOverrides } from '../src/cli/overrides.ts';
 import { readPack } from '../src/node/read-pack.ts';
 
@@ -128,6 +128,12 @@ test('town: the resident loots, eats, cooks, sleeps and barricades in the empty 
     else w.queueAction(a);
   };
   const tileIs = (id: string) => (x: number, y: number, z: number) => w.grid.tileAt(x, y, z)?.id === id;
+  /** The nearest edge holding tile `id`, as [x, y, z, side]. */
+  const nearestEdge = (id: string): [number, number, number, EdgeSide] => {
+    const sides = (x: number, y: number, z: number) => EDGE_SIDES.filter((s) => w.grid.edgeAt(x, y, z, s)?.id === id);
+    const [x, y, z] = nearest((x, y, z) => sides(x, y, z).length > 0);
+    return [x, y, z, sides(x, y, z)[0]!];
+  };
 
   // Loot: walk to the nearest stocked container and take from it.
   const box = [...w.containers.values()]
@@ -163,9 +169,9 @@ test('town: the resident loots, eats, cooks, sleeps and barricades in the empty 
   give('town:hammer', 1);
   give('town:plank', 2);
   give('town:nails', 4);
-  const [wx, wy, wz] = nearest(tileIs('town:window'));
-  go({ kind: 'act', action: 'town:barricade', x: wx, y: wy, z: wz });
-  until(() => w.grid.tileAt(wx, wy, wz)!.id === 'town:barricaded_window');
+  const [wx, wy, wz, side] = nearestEdge('town:window');
+  go({ kind: 'act', action: 'town:barricade', x: wx, y: wy, z: wz, side });
+  until(() => w.grid.edgeAt(wx, wy, wz, side)!.id === 'town:barricaded_window');
   assert.equal(w.entities.length, 1, 'still alone in town');
 });
 
