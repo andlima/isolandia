@@ -3,22 +3,23 @@
  * drawn sprites as `PickSource`).
  *
  * Floors are tried from the view floor down. On each floor the frontmost
- * raised block, ground pile or entity sprite whose hit mask contains the
+ * edge slab, raised block, ground pile or entity sprite whose hit mask contains the
  * point wins; otherwise the floor's ground pick (`pickTile`) is used if that
  * cell is filled, since a floor's ground covers everything below it. When
  * every floor misses, the view floor's ground pick is returned: without a
- * sprite hit this is exactly `pickCell`. Blocks faded by the cutaway are
- * neither hit nor picked by their top face, so the pointer reaches what is
- * behind them.
+ * sprite hit this is exactly `pickCell`. Blocks and edges faded by the
+ * cutaway are not hit (and faded blocks not picked by their top face), so
+ * the pointer reaches what is behind them.
  */
 
-import type { Container as Pile, Entity, Grid } from '../core/index.ts';
+import type { Container as Pile, EdgeSide, Entity, Grid } from '../core/index.ts';
 import { hits, type Candidate, type Reach } from './hit.ts';
 import { FLOOR_H, floorCamera, pickTile, screenToIso, TILE_H, TILE_W, type CameraState } from './projection.ts';
 
-/** What a pick found. Every target carries a cell; an entity's is its simulation cell. */
+/** What a pick found. Every target carries a cell; an entity's is its simulation cell, an edge's the cell it belongs to. */
 export type PickTarget =
   | { readonly kind: 'ground' | 'tile'; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly kind: 'edge'; readonly x: number; readonly y: number; readonly z: number; readonly side: EdgeSide }
   | { readonly kind: 'pile'; readonly x: number; readonly y: number; readonly z: number; readonly container: Pile }
   | { readonly kind: 'entity'; readonly x: number; readonly y: number; readonly z: number; readonly entity: Entity };
 
@@ -35,6 +36,8 @@ export interface PickSource {
   readonly reach: Reach;
   /** The raised block drawn at a cell (in a built, visible chunk and not faded), or null. */
   block(x: number, y: number, z: number): Drawn | null;
+  /** The edge slab drawn on a cell's `side` (in a built, visible chunk and not faded), or null. */
+  edge(x: number, y: number, z: number, side: EdgeSide): Drawn | null;
   /** Whether the block at a cell is faded by the cutaway. */
   faded(x: number, y: number, z: number): boolean;
   /** Every live ground-pile and entity sprite. */
@@ -52,10 +55,11 @@ export function pickTarget(sx: number, sy: number, cam: CameraState, view: numbe
   let first: PickTarget | null = null;
   for (let z = Math.min(view, grid.floors - 1); z >= 0; z--) {
     let best: Drawn | null = null;
-    // A block's anchor is its diamond's bottom vertex, iso ((x − y)·HW, (x + y + 2)·HH) on its floor.
+    // A block's anchor is its diamond's bottom vertex, iso ((x − y)·HW, (x + y + 2)·HH) on its floor;
+    // an edge's is the top vertex, two diagonals further on for the same anchor height.
     const py = p.y + z * FLOOR_H;
     const s0 = Math.ceil((py - reach.down) / HH) - 2;
-    const s1 = Math.floor((py + reach.up) / HH) - 2;
+    const s1 = Math.floor((py + reach.up) / HH);
     const u0 = Math.ceil((p.x - reach.side) / HW);
     const u1 = Math.floor((p.x + reach.side) / HW);
     for (let s = s0; s <= s1; s++) {
@@ -64,8 +68,9 @@ export function pickTarget(sx: number, sy: number, cam: CameraState, view: numbe
         const x = (s + u) / 2;
         const y = (s - u) / 2;
         if (!grid.inBounds(x, y, z)) continue;
-        const c = src.block(x, y, z);
-        if (c && (best === null || c.order > best.order) && hits(c, p.x, p.y)) best = c;
+        for (const c of [src.block(x, y, z), src.edge(x, y, z, 'n'), src.edge(x, y, z, 'w')]) {
+          if (c && (best === null || c.order > best.order) && hits(c, p.x, p.y)) best = c;
+        }
       }
     }
     for (const c of src.objects()) {

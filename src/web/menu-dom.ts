@@ -4,7 +4,7 @@
  * so a stale menu is harmless.
  */
 
-import type { World } from '../core/index.ts';
+import type { EdgeSide, World } from '../core/index.ts';
 import { clampMenu, contextMenu, menuRows, menuTitle, moveSelection, runMenuItem, shortcutOf, type Menu, type MenuItem, type MenuOpening, type MenuRow } from './menu.ts';
 
 export class ContextMenu {
@@ -14,8 +14,8 @@ export class ContextMenu {
   private rows: MenuRow[] = [];
   private buttons: HTMLButtonElement[] = [];
   private selected = -1;
-  /** Target cell while open, or null. */
-  target: { x: number; y: number; z: number } | null = null;
+  /** Target cell (or edge, with `side`) while open, or null. */
+  target: { x: number; y: number; z: number; side: EdgeSide | null } | null = null;
   /** Set by a pointer press outside the open menu (which closes it): the shell skips that press's click. */
   dismissed = false;
   private readonly onPointerDown = (ev: PointerEvent) => {
@@ -56,17 +56,18 @@ export class ContextMenu {
   }
 
   /**
-   * Open the menu for cell (x, y) on floor z at screen point (sx, sy);
-   * replaces any open menu. A left click's menu (`click`) has no `Walk here`.
+   * Open the menu for cell (x, y) on floor z (or its edge on `side`) at
+   * screen point (sx, sy); replaces any open menu. A left click's menu
+   * (`click`) has no `Walk here`.
    */
-  open(x: number, y: number, z: number, sx: number, sy: number, opening: MenuOpening = 'context'): void {
+  open(x: number, y: number, z: number, sx: number, sy: number, opening: MenuOpening = 'context', side: EdgeSide | null = null): void {
     this.close();
     if (this.world.ended) return;
-    const menu = contextMenu(this.world, x, y, z, opening);
+    const menu = contextMenu(this.world, x, y, z, opening, side);
     if (menu.items.length === 0 && menu.disabled.length === 0) return;
     this.menu = menu;
     this.expanded = menu.expanded;
-    this.target = { x, y, z };
+    this.target = { x, y, z, side };
     this.render();
     const r = this.el.getBoundingClientRect();
     const p = clampMenu(sx, sy, r.width, r.height, window.innerWidth, window.innerHeight);
@@ -83,10 +84,10 @@ export class ContextMenu {
 
   /** (Re)build the rows, keeping the menu's position. */
   private render(): void {
-    const { x, y, z } = this.target!;
+    const { x, y, z, side } = this.target!;
     const title = document.createElement('div');
     title.className = 'panel-title';
-    title.textContent = menuTitle(this.world, x, y, z);
+    title.textContent = menuTitle(this.world, x, y, z, side);
     this.rows = menuRows(this.menu!, this.expanded);
     this.buttons = this.rows.map((row) => {
       const b = document.createElement('button');

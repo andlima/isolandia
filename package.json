@@ -15,7 +15,8 @@
     "play": "node --import tsx src/cli/play.ts",
     "check": "node --import tsx src/cli/check.ts",
     "packs": "node --import tsx src/cli/packs.ts",
-    "map:export": "node --import tsx scripts/map-export.ts"
+    "map:export": "node --import tsx scripts/map-export.ts",
+    "map:edges": "node --import tsx scripts/map-edges.ts"
   },
   "dependencies": {
     "pixi.js": "^8.21.0",

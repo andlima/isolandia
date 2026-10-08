@@ -108,6 +108,21 @@ code.
    - When possible, validate with a very different third genre (noir with
      no combat, a space station with oxygen instead of food) to expose
      assumptions that zombie and vampire share.
+9. **Thin walls on cell edges**, as in *Project Zomboid* (task
+   `edge-walls`). Walls, doors, windows and fences are edge tiles
+   (`edge: true`) on the `n` or `w` side of a cell, not cells: a full-cell
+   wall took a whole cell of floor and drew as a 64×64 block, which made
+   small rooms cramped and hid the player behind every wall. Each cell
+   owns its north and west edge (the south and east sides are the
+   neighbours'), so storage is two typed arrays beside the cells and the
+   hot paths (steps, A\*, sight) stay array reads. A diagonal step needs
+   both L routes clear (no corner cutting); a diagonal line of sight is
+   blocked only when both are blocked; reach does not cross a
+   non-walkable edge. In iso an edge is a thin slab, one image mirrored
+   for the two sides. Maps were converted mechanically (`npm run
+   map:edges`, kept for modders), keeping sizes and coordinates; saves
+   from before (version ≤ 2) are refused. Floors stay cells, doors stay
+   always open, and walls do not muffle noise.
 
 ## 4. Target schema primitives (sketch, not final)
 

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Grid, lineOfSight, loadPacksOrThrow, Rng, World, type MapDef, type TileDef } from '../src/core/index.ts';
+import { EMPTY_TILE, Grid, lineOfSight, loadPacksOrThrow, Rng, World, type MapDef, type TileDef } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES, genreCell, loadFixture } from './helpers.ts';
 
 function tileDef(index: number, id: string, walkable: boolean, opaque: boolean): TileDef {
-  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null };
+  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null, edge: false };
 }
 
 /** `.` floor, `#` wall, `+` door, `"` window (not walkable, not opaque). */
@@ -14,7 +14,8 @@ const CODES: Record<string, number> = { '.': 0, '#': 1, '+': 2, '"': 3 };
 
 function grid(rows: string[]): Grid {
   const cells = rows.flatMap((r) => [...r].map((ch) => CODES[ch]!));
-  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, floors: 1, cells } as unknown as MapDef;
+  const none = cells.map(() => EMPTY_TILE);
+  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, floors: 1, cells, edgeN: none, edgeW: none } as unknown as MapDef;
   return new Grid(map, TILES);
 }
 
@@ -163,18 +164,19 @@ test('vampire: the window is see-through, and a bat spots the vampire through it
   const window = w.def.tiles.find((t) => t.id === 'town:window')!;
   assert.equal(window.walkable, false);
   assert.equal(window.opaque, false);
-  assert.equal(w.grid.tileAt(...M(4, 12))!.id, 'town:window');
+  // The window is the edge between (4, 11) and (4, 12): the north edge of (4, 12).
+  assert.equal(w.grid.edgeAt(...M(4, 12), 0, 'n')!.id, 'town:window');
   const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(4, 9)[0] && e.y === M(4, 9)[1])!;
   assert.ok(bat);
   assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
-  // The only cell between (4,11) and (4,13) is the window.
+  // Between (4,11) and (4,13): the window edge, then the open cell (4,12).
   place(bat, ...M(4, 11));
   place(w.player, ...M(4, 13));
   w.step();
   assert.equal(w.hasStatus(bat, 'vamp:alert'), true);
   assert.equal(w.hasStatus(w.player, 'vamp:alert'), false);
-  // The same shape through a wall is blocked.
-  assert.equal(w.grid.tileAt(...M(2, 12))!.id, 'std:wall');
+  // The same shape through a wall edge is blocked.
+  assert.equal(w.grid.edgeAt(...M(2, 12), 0, 'n')!.id, 'std:wall');
   assert.equal(lineOfSight(w.grid, ...M(2, 11), ...M(2, 13)), false);
 });
 

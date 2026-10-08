@@ -122,3 +122,11 @@ export function assertRoundTrip(world: World, script: Script = () => {}, ticks =
   }
   return copy;
 }
+
+/**
+ * The cell characters of an ASCII frame (`renderAscii`, double resolution):
+ * its odd lines, odd columns — one string per viewport row.
+ */
+export function cellRows(frame: { readonly lines: readonly string[] }): string[] {
+  return frame.lines.filter((_, r) => r % 2 === 1).map((l) => [...l].filter((_, c) => c % 2 === 1).join(''));
+}

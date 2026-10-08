@@ -2,6 +2,11 @@
 
 `mansion.tmj` (Tiled, isometric 64×32) with its tileset `mansion.tsj`. See
 [docs/packs.md](../../../docs/packs.md#tiled-maps) for the conventions.
+Walls, the door and the windows are [edge walls](../../../docs/packs.md#edge-walls)
+on each floor's `edges n` and `edges w` layers (property `edge` = `n` /
+`w`); the ground and furniture are on `ground`. The ASCII parts in
+`estate.yaml` (graveyards, cottages) use the `edges: true` notation. All
+were converted from wall cells with `npm run map:edges`.
 
 - **Layout** (30×20): the great hall (carpet, a crypt-floored coffin, the
   font, two coffins by its south wall) in the middle of the upper floor

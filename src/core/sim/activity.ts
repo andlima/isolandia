@@ -7,7 +7,7 @@
  * only at completion, after every check has passed again.
  */
 
-import { EMPTY_TILE, secondsToTicks, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
+import { EMPTY_TILE, secondsToTicks, type EdgeSide, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
 import type { Compiled, ExprContext } from '../expr/index.ts';
 import { countOf, type Container } from './containers.ts';
 import type { Grid } from './grid.ts';
@@ -30,7 +30,7 @@ export interface ActivitySource {
   readonly label: string;
   /** Text shown while in progress. */
   readonly progress: string;
-  /** Tile filter (1 per matching tile index) of the target cell; null targets the actor. */
+  /** Tile filter (1 per matching tile index) of the target cell or edge; null targets the actor. */
   readonly filter: readonly number[] | null;
   readonly whenFn: Compiled | null;
   /** Reason recorded when `when` is falsy. */
@@ -59,6 +59,8 @@ export interface Activity {
   readonly x: number;
   readonly y: number;
   readonly z: number;
+  /** The target is the edge on this side of the cell; null for a cell (and for `self` targets). */
+  readonly side: EdgeSide | null;
   readonly startTick: number;
   /** Tick whose work step completes the activity. */
   readonly endTick: number;
@@ -73,8 +75,8 @@ export interface ActivityHost {
   readonly ctx: ExprContext;
   readonly entities: readonly Entity[];
   readonly ticksPerSecond: number;
-  /** Run effects on `e` (= `ctx.self`); `set_tile` acts on `target`. */
-  runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number } | null): void;
+  /** Run effects on `e` (= `ctx.self`); `set_tile` acts on `target` (its edge on `side` when set). */
+  runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number; side: EdgeSide | null } | null): void;
   /** Remove up to `count` units from `inv`; returns units removed. */
   removeItem(inv: Container, item: number, count: number): number;
   /** Add `count` units to `e`'s inventory, the rest to the ground pile on its cell; returns units dropped. */
@@ -82,9 +84,10 @@ export interface ActivityHost {
   /**
    * Called whenever an activity starts, ends, or fails to start. `moved` is
    * the units produced (sources that produce) or consumed; `dropped` the
-   * produced units that went to the ground.
+   * produced units that went to the ground; `side` the edge side of the
+   * target (null for a cell or `self`).
    */
-  record(e: Entity, source: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number): void;
+  record(e: Entity, source: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number, side: EdgeSide | null): void;
 }
 
 function setTilesOf(effects: readonly EffectDef[]): number[] {
@@ -175,19 +178,20 @@ export function isTimed(s: ActivitySource): boolean {
 }
 
 export class ActivityRunner {
-  /** The target cell `tile` is bound to while a tile-targeted source is evaluated. */
-  private readonly point = { x: 0, y: 0, z: 0 };
+  /** The target cell (or edge) `tile` is bound to while a tile-targeted source is evaluated. */
+  private readonly point: { x: number; y: number; z: number; side: EdgeSide | null } = { x: 0, y: 0, z: 0, side: null };
 
   constructor(private readonly host: ActivityHost) {}
 
-  /** Point `ctx.self` at the actor and `tile` at the target cell (tile targets only). */
-  private bind(s: ActivitySource, e: Entity, x: number, y: number, z: number): ExprContext {
+  /** Point `ctx.self` at the actor and `tile` at the target cell or edge (tile targets only). */
+  private bind(s: ActivitySource, e: Entity, x: number, y: number, z: number, side: EdgeSide | null): ExprContext {
     const ctx = this.host.ctx;
     ctx.self = e;
     if (s.filter) {
       this.point.x = x;
       this.point.y = y;
       this.point.z = z;
+      this.point.side = side;
       ctx.target = this.point;
     } else ctx.target = null;
     return ctx;
@@ -199,24 +203,30 @@ export class ActivityRunner {
 
   /**
    * Checks 2–5 (inventory, reach and filter, held items, `when`) for `e`
-   * acting on (x, y, z). Returns the first failure, or null when all pass.
-   * Reach is the same floor and Chebyshev ≤ 1 on (x, y). `skipReach` leaves
-   * out the reach check (the cell must still be in bounds). An empty cell
-   * matches no filter.
+   * acting on (x, y, z), or on its edge on `side`. Returns the first
+   * failure, or null when all pass. A cell is in reach on the same floor at
+   * Chebyshev ≤ 1 with no non-walkable edge between (`Grid.reaches`); an
+   * edge from either cell it separates (`Grid.reachesEdge`). `skipReach`
+   * leaves out the reach check (the cell must still be in bounds). An empty
+   * cell (or a side without an edge) matches no filter, and `set_tile`
+   * sources only take targets of the kind (cell or edge) they place.
    */
-  check(s: ActivitySource, e: Entity, x: number, y: number, z: number, skipReach = false): ActionFailure | null {
+  check(s: ActivitySource, e: Entity, x: number, y: number, z: number, skipReach = false, side: EdgeSide | null = null): ActionFailure | null {
     if (s.requires.length > 0 && !e.inv) return 'no_inventory';
     if (s.filter) {
-      const { grid } = this.host;
-      if (!grid.inBounds(x, y, z) || (!skipReach && (z !== e.z || Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) > 1))) return 'out_of_reach';
-      const tile = grid.cells[grid.index(x, y, z)]!;
+      const { grid, tiles } = this.host;
+      if (!grid.inBounds(x, y, z)) return 'out_of_reach';
+      if (!skipReach && !(side ? grid.reachesEdge(e.x, e.y, e.z, x, y, z, side) : grid.reaches(e.x, e.y, e.z, x, y, z))) return 'out_of_reach';
+      const i = grid.index(x, y, z);
+      const tile = side === 'n' ? grid.edgeN[i]! : side === 'w' ? grid.edgeW[i]! : grid.cells[i]!;
       if (tile === EMPTY_TILE || s.filter[tile] !== 1) return 'invalid_target';
-      if (s.setTiles.length > 0 && this.host.tiles[tile]!.container) return 'invalid_target';
+      if (s.setTiles.length > 0 && tiles[tile]!.container) return 'invalid_target';
+      for (const t of s.setTiles) if (tiles[t]!.edge !== (side !== null)) return 'invalid_target';
     }
     const inv = e.inv;
     if (inv) for (const r of s.requires) if (countOf(inv, r.item) < r.count) return 'missing';
     if (s.whenFn) {
-      const ok = s.whenFn(this.bind(s, e, x, y, z));
+      const ok = s.whenFn(this.bind(s, e, x, y, z, side));
       this.unbind();
       if (!ok) return s.whenFailure;
     }
@@ -227,10 +237,10 @@ export class ActivityRunner {
    * Ticks `s` would take if `e` started it on (x, y, z) now (the duration as
    * `start` evaluates it), or null when the expression throws or gives no number.
    */
-  durationTicks(s: ActivitySource, e: Entity, x: number, y: number, z: number): number | null {
+  durationTicks(s: ActivitySource, e: Entity, x: number, y: number, z: number, side: EdgeSide | null = null): number | null {
     if (!s.duration.fn) return s.duration.ticks;
     try {
-      const v = Number(s.duration.fn(this.bind(s, e, x, y, z)));
+      const v = Number(s.duration.fn(this.bind(s, e, x, y, z, side)));
       return Number.isFinite(v) ? secondsToTicks(v, this.host.ticksPerSecond) : null;
     } catch {
       return null;
@@ -240,25 +250,26 @@ export class ActivityRunner {
   }
 
   /**
-   * Start `s` for `e` on (x, y, z) at `tick`: check, evaluate the duration once,
-   * then complete at once (0 ticks) or begin an activity, which clears the
-   * entity's path (and its pending `then`) and pending intent. Records the outcome.
+   * Start `s` for `e` on (x, y, z) (its edge on `side` when set) at `tick`:
+   * check, evaluate the duration once, then complete at once (0 ticks) or
+   * begin an activity, which clears the entity's path (and its pending
+   * `then`) and pending intent. Records the outcome.
    */
-  start(s: ActivitySource, e: Entity, x: number, y: number, z: number, tick: number): void {
-    const failure = this.check(s, e, x, y, z);
-    if (failure) return this.host.record(e, s, isTimed(s) ? 'start' : 'complete', false, failure, 0, 0);
+  start(s: ActivitySource, e: Entity, x: number, y: number, z: number, tick: number, side: EdgeSide | null = null): void {
+    const failure = this.check(s, e, x, y, z, false, side);
+    if (failure) return this.host.record(e, s, isTimed(s) ? 'start' : 'complete', false, failure, 0, 0, side);
     let n = s.duration.ticks;
     if (s.duration.fn) {
-      n = secondsToTicks(Number(s.duration.fn(this.bind(s, e, x, y, z))), this.host.ticksPerSecond);
+      n = secondsToTicks(Number(s.duration.fn(this.bind(s, e, x, y, z, side))), this.host.ticksPerSecond);
       this.unbind();
     }
-    if (n === 0) return this.finish(e, s, x, y, z);
-    e.activity = { source: s, action: s.action, x, y, z, startTick: tick, endTick: tick + n };
+    if (n === 0) return this.finish(e, s, x, y, z, side);
+    e.activity = { source: s, action: s.action, x, y, z, side, startTick: tick, endTick: tick + n };
     e.path = null;
     e.pathPos = 0;
     e.then = null;
     e.intent = null;
-    this.host.record(e, s, 'start', true, null, 0, 0);
+    this.host.record(e, s, 'start', true, null, 0, 0, side);
   }
 
   /** End `e`'s activity without effects (`cancelled` or `interrupted`). */
@@ -266,7 +277,7 @@ export class ActivityRunner {
     const a = e.activity;
     if (!a) return;
     e.activity = null;
-    this.host.record(e, a.source, 'complete', false, reason, 0, 0);
+    this.host.record(e, a.source, 'complete', false, reason, 0, 0, a.side);
   }
 
   /**
@@ -278,23 +289,23 @@ export class ActivityRunner {
     if (!a || tick <= a.startTick) return;
     const s = a.source;
     if (s.interruptFn) {
-      const hit = s.interruptFn(this.bind(s, e, a.x, a.y, a.z));
+      const hit = s.interruptFn(this.bind(s, e, a.x, a.y, a.z, a.side));
       this.unbind();
       if (hit) return this.end(e, 'interrupted');
     }
     if (tick < a.endTick) return;
     e.activity = null;
-    const failure = this.check(s, e, a.x, a.y, a.z);
-    if (failure) return this.host.record(e, s, 'complete', false, failure, 0, 0);
-    this.finish(e, s, a.x, a.y, a.z);
+    const failure = this.check(s, e, a.x, a.y, a.z, false, a.side);
+    if (failure) return this.host.record(e, s, 'complete', false, failure, 0, 0, a.side);
+    this.finish(e, s, a.x, a.y, a.z, a.side);
   }
 
-  /** Completion after the checks: `occupied`, then the source's completion steps in order. */
-  private finish(e: Entity, s: ActivitySource, x: number, y: number, z: number): void {
+  /** Completion after the checks: `occupied` (cells only: nobody stands on an edge), then the source's completion steps in order. */
+  private finish(e: Entity, s: ActivitySource, x: number, y: number, z: number, side: EdgeSide | null): void {
     const { tiles, entities } = this.host;
     for (const t of s.setTiles) {
-      if (tiles[t]!.walkable) continue;
-      for (const o of entities) if (o.x === x && o.y === y && o.z === z) return this.host.record(e, s, 'complete', false, 'occupied', 0, 0);
+      if (tiles[t]!.walkable || side) continue;
+      for (const o of entities) if (o.x === x && o.y === y && o.z === z) return this.host.record(e, s, 'complete', false, 'occupied', 0, 0, side);
     }
     let consumed = 0;
     let produced = 0;
@@ -302,7 +313,7 @@ export class ActivityRunner {
     const inv = e.inv;
     for (const step of s.completion) {
       if (step === 'effects') {
-        this.bind(s, e, x, y, z);
+        this.bind(s, e, x, y, z, side);
         this.host.runEffects(e, s.effects, s.filter ? this.point : null);
         this.unbind();
       } else if (step === 'consume') {
@@ -314,7 +325,7 @@ export class ActivityRunner {
         }
       }
     }
-    this.host.record(e, s, 'complete', true, null, s.produce.length > 0 ? produced : consumed, dropped);
+    this.host.record(e, s, 'complete', true, null, s.produce.length > 0 ? produced : consumed, dropped, side);
   }
 
   /** Fraction of `e`'s activity done at `tick`, in [0, 1], or null when idle. */

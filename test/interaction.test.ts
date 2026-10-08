@@ -453,8 +453,9 @@ function game(name: keyof typeof GAMES, seed = 1): World {
 
 test('menu: zombie window from afar, without and with materials', () => {
   const w = game('zombie');
+  // The window is the west edge of (22, 3).
   const [wx, wy] = genreCell('zombie', 22, 3);
-  assert.equal(w.grid.tileAt(wx, wy)!.id, 'town:window');
+  assert.equal(w.grid.edgeAt(wx, wy, 0, 'w')!.id, 'town:window');
   assert.ok(Math.max(Math.abs(w.player.x - wx), Math.abs(w.player.y - wy)) > 1);
   const ids = w.def.ids.items;
   const inv = w.player.inv!;
@@ -462,13 +463,13 @@ test('menu: zombie window from afar, without and with materials', () => {
     const k = inv.stacks.findIndex((s) => s.item === ids[id]);
     if (k >= 0) inv.stacks.splice(k, 1);
   }
-  const without = contextMenu(w, wx, wy).disabled.find((i) => i.label === 'Barricade')!;
+  const without = contextMenu(w, wx, wy, 0, 'context', 'w').disabled.find((i) => i.label === 'Barricade')!;
   assert.equal(without.disabled, true);
   assert.equal(without.hint, 'Needs: Hammer, 2× Plank, 4× Nails');
   inv.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
-  const item = contextMenu(w, wx, wy).items.find((i) => i.label === 'Barricade')!;
-  const act: Action = { kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0 };
-  assert.deepEqual(item, { label: 'Barricade', disabled: false, detail: item.detail, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, adjacent: true, then: act } } });
+  const item = contextMenu(w, wx, wy, 0, 'context', 'w').items.find((i) => i.label === 'Barricade')!;
+  const act: Action = { kind: 'act', action: 'town:barricade', x: wx, y: wy, z: 0, side: 'w' };
+  assert.deepEqual(item, { label: 'Barricade', disabled: false, detail: item.detail, run: { intent: { kind: 'goto', x: wx, y: wy, z: 0, side: 'w', then: act } } });
   // The survivor walks up and starts hammering.
   runMenuItem(w, item);
   for (let i = 0; i < 2000 && !w.player.activity; i++) w.step();
@@ -478,9 +479,10 @@ test('menu: zombie window from afar, without and with materials', () => {
 
 test('menu: vampire shutters from afar, and rest on your own cell', () => {
   const w = game('vampire');
+  // The window is the north edge of (4, 0).
   const [sx, sy] = genreCell('vampire', 4, 0);
-  const shutter = contextMenu(w, sx, sy).items.find((i) => i.label === 'Close shutters')!;
-  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: sx, y: sy, z: 0, adjacent: true, then: { kind: 'act', action: 'vamp:shutter', x: sx, y: sy, z: 0 } } });
+  const shutter = contextMenu(w, sx, sy, 0, 'context', 'n').items.find((i) => i.label === 'Close shutters')!;
+  assert.deepEqual(shutter.run, { intent: { kind: 'goto', x: sx, y: sy, z: 0, side: 'n', then: { kind: 'act', action: 'vamp:shutter', x: sx, y: sy, z: 0, side: 'n' } } });
   assert.equal(shutter.disabled, false);
   const { x, y } = w.player;
   const rest = contextMenu(w, x, y).disabled.find((i) => i.label === 'Rest')!;
@@ -493,7 +495,7 @@ test('menu: vampire shutters from afar, and rest on your own cell', () => {
   const ok = contextMenu(w, cx, cy).items.find((i) => i.label === 'Rest')!;
   assert.deepEqual(ok, { label: 'Rest', disabled: false, detail: '10s', run: { actions: [{ kind: 'act', action: 'vamp:rest' }] } });
   assert.equal(menuTitle(w, cx, cy), `${w.grid.tileAt(cx, cy)!.label} · hall`);
-  assert.equal(menuTitle(w, sx, sy), w.grid.tileAt(sx, sy)!.label);
+  assert.equal(menuTitle(w, sx, sy, 0, 'n'), 'Window');
   assert.equal(menuTitle(w, -1, 0), '');
 });
 
@@ -530,16 +532,17 @@ test('clickPlan: zombie fridge opens from afar and near; window always menus; wa
   const rng = w.rng.state;
   // The window: Barricade needs a hammer (disabled), nothing safe → menu; with materials too.
   const [wx, wy] = genreCell('zombie', 22, 3);
-  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0 }).kind, 'menu');
+  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0, side: 'w' }).kind, 'menu');
   const ids = w.def.ids.items;
   const inv = w.player.inv!;
   inv.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
-  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0 }).kind, 'menu');
+  assert.equal(clickPlan(w, { x: wx, y: wy, z: 0, side: 'w' }).kind, 'menu');
   inv.stacks.splice(-3, 3);
-  // A plain wall (between the north-west house's bathroom and bedroom): walk (today's clickIntent).
+  // A plain wall edge (between the north-west house's bathroom and bedroom): walk next to it, on its
+  // clicked (east, front) side.
   const wall = genreCell('zombie', 13, 3);
-  assert.equal(w.grid.tileAt(wall[0], wall[1])!.id, 'std:wall');
-  assert.deepEqual(clickPlan(w, { x: wall[0], y: wall[1], z: 0 }), { kind: 'walk', intent: clickIntent(w, wall[0], wall[1]) });
+  assert.equal(w.grid.edgeAt(wall[0], wall[1], 0, 'w')!.id, 'std:wall');
+  assert.deepEqual(clickPlan(w, { x: wall[0], y: wall[1], z: 0, side: 'w' }), { kind: 'walk', intent: { kind: 'goto', x: wall[0], y: wall[1], z: 0 } });
   // The player's own road cell: nothing to do.
   const { x: px, y: py } = w.player;
   assert.deepEqual(clickPlan(w, { x: px, y: py, z: 0 }), { kind: 'none' });
@@ -563,7 +566,7 @@ test('clickPlan: zombie fridge opens from afar and near; window always menus; wa
 test('clickPlan: vampire shutters menu; own cell with only Rest menus', () => {
   const w = game('vampire');
   const [sx, sy] = genreCell('vampire', 4, 0);
-  assert.equal(clickPlan(w, { x: sx, y: sy, z: 0 }).kind, 'menu');
+  assert.equal(clickPlan(w, { x: sx, y: sy, z: 0, side: 'n' }).kind, 'menu');
   const { x, y } = w.player;
   assert.equal(clickPlan(w, { x, y, z: 0 }).kind, 'menu');
   const own = contextMenu(w, x, y, 0, 'click');
@@ -648,7 +651,7 @@ test('menu details: duration and uses on interactionsAt; formatted on enabled ac
   const [wx, wy] = genreCell('zombie', 22, 3);
   const hash = w.hash();
   const rng = w.rng.state;
-  const e = w.interactionsAt(wx, wy).find((i) => i.id === 'act:town:barricade')!;
+  const e = w.interactionsAt(wx, wy, 0, 'w').find((i) => i.id === 'act:town:barricade')!;
   assert.equal(w.hash(), hash);
   assert.equal(w.rng.state, rng);
   const action = w.def.actions[w.def.ids.actions['town:barricade']!]!;
@@ -658,10 +661,10 @@ test('menu details: duration and uses on interactionsAt; formatted on enabled ac
     action.consume.map((c) => ({ item: w.def.items[c.item]!.id, label: w.def.items[c.item]!.label, count: c.count })),
   );
   // Disabled: no detail, only the reason.
-  assert.equal(contextMenu(w, wx, wy).disabled[0]!.detail, undefined);
+  assert.equal(contextMenu(w, wx, wy, 0, 'context', 'w').disabled[0]!.detail, undefined);
   const ids = w.def.ids.items;
   w.player.inv!.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
-  const item = contextMenu(w, wx, wy, 0, 'click').items[0]!;
+  const item = contextMenu(w, wx, wy, 0, 'click', 'w').items[0]!;
   assert.equal(item.label, 'Barricade');
   assert.equal(item.detail, `${formatDuration(e.duration!)} · uses 2× Plank, 4× Nails`);
   // Open and climb entries carry neither.
@@ -705,11 +708,11 @@ test('hoverInfo: titles, hints and cursors', () => {
   const fridge = [...w.containers.values()].find((c) => c.kind === 'tile' && w.def.tiles[c.tile]!.id === 'town:fridge')!;
   assert.deepEqual(hoverInfo(w, { kind: 'tile', x: fridge.x, y: fridge.y, z: 0 }), { title: 'Fridge · kitchen', hint: 'Click: Open', cursor: 'pointer' });
   const [wx, wy] = genreCell('zombie', 22, 3);
-  assert.deepEqual(hoverInfo(w, { kind: 'tile', x: wx, y: wy, z: 0 }), { title: 'Window', hint: "Click: Can't do now", cursor: 'pointer' });
+  assert.deepEqual(hoverInfo(w, { kind: 'edge', x: wx, y: wy, z: 0, side: 'w' }), { title: 'Window', hint: "Click: Can't do now", cursor: 'pointer' });
   const ids = w.def.ids.items;
   w.player.inv!.stacks.push({ item: ids['town:hammer']!, count: 1 }, { item: ids['town:plank']!, count: 2 }, { item: ids['town:nails']!, count: 4 });
-  assert.equal(hoverInfo(w, { kind: 'tile', x: wx, y: wy, z: 0 }).hint, 'Click: 1 action');
-  assert.deepEqual(hoverInfo(w, { kind: 'ground', x: genreCell('zombie', 13, 3)[0], y: genreCell('zombie', 13, 3)[1], z: 0 }), { title: 'Wall', hint: '', cursor: 'default' });
+  assert.equal(hoverInfo(w, { kind: 'edge', x: wx, y: wy, z: 0, side: 'w' }).hint, 'Click: 1 action');
+  assert.deepEqual(hoverInfo(w, { kind: 'edge', x: genreCell('zombie', 13, 3)[0], y: genreCell('zombie', 13, 3)[1], z: 0, side: 'w' }), { title: 'Wall', hint: '', cursor: 'default' });
   const stairs = w.def.ids.tiles['std:stairs']!;
   const i = w.grid.cells.findIndex((t, k) => t === stairs && w.grid.link(k, 1) >= 0);
   const s = w.grid.cellOf(i);

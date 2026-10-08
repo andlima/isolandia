@@ -61,7 +61,7 @@ export class Hover {
       return null;
     }
     const t = pick(p.sx, p.sy);
-    const key = `${t.kind}:${t.x},${t.y},${t.z}:${t.kind === 'entity' ? t.entity.id : t.kind === 'pile' ? t.container.id : ''}`;
+    const key = `${t.kind}:${t.x},${t.y},${t.z}:${t.kind === 'entity' ? t.entity.id : t.kind === 'pile' ? t.container.id : t.kind === 'edge' ? t.side : ''}`;
     if (key !== this.targetKey) {
       this.targetKey = key;
       this.since = now;

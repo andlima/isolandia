@@ -5,7 +5,8 @@ import { readPack } from '../src/node/read-pack.ts';
 import { GAMES } from './helpers.ts';
 
 // The roomy town and estate (specs/tasks/roomier-maps.md): map sizes, doors
-// joined to the start, rooms you can turn around in, and 5-wide roads.
+// joined to the start, rooms you can turn around in, and 5-wide roads. Doors
+// are edges (specs/tasks/edge-walls.md): both cells a door separates join the start.
 
 const STACKS = { town: GAMES.town, vampire: GAMES.vampire } as const;
 const DEFS = Object.fromEntries(Object.entries(STACKS).map(([name, dirs]) => [name, loadPacksOrThrow(dirs.map((d) => readPack(d)))])) as Record<keyof typeof STACKS, Definition>;
@@ -26,17 +27,27 @@ test('maps: the town and the estate have their sizes', () => {
   }
 });
 
-test('maps: every door joins the player start', () => {
+test('maps: every door joins the player start (door edges: both cells they separate)', () => {
   for (const [name, def] of Object.entries(DEFS)) {
     const w = World.create(def, 1);
     const g = w.grid;
     const labels = g.regions();
     const home = labels[g.index(w.player.x, w.player.y, w.player.z)]!;
+    const door = def.ids.tiles['std:door']!;
     let doors = 0;
     for (let i = 0; i < g.cells.length; i++) {
-      if (def.tiles[g.cells[i]!]?.id !== 'std:door') continue;
-      doors++;
-      assert.equal(labels[i], home, `${name}: door at ${JSON.stringify(g.cellOf(i))}`);
+      assert.notEqual(g.cells[i], door, `${name}: a door cell at ${JSON.stringify(g.cellOf(i))}`);
+      const { x, y, z } = g.cellOf(i);
+      for (const [side, other] of [
+        ['n', g.edgeN[i] === door && y > 0 ? i - g.width : -1],
+        ['w', g.edgeW[i] === door && x > 0 ? i - 1 : -1],
+      ] as const) {
+        if (other < 0) continue;
+        doors++;
+        const at = `${name}: door edge ${side} of ${JSON.stringify({ x, y, z })}`;
+        assert.equal(labels[i], home, at);
+        assert.equal(labels[other], home, at);
+      }
     }
     assert.ok(doors > 0, `${name}: no doors`);
   }

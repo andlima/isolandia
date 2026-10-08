@@ -7,8 +7,10 @@
  * Writes `<dir>/<id>.tmj` and `<dir>/<id>.tsj`. Output is stable: the same
  * input gives byte-identical files. Loading the result gives the same
  * `MapDef` as the source map (see the round-trip test). A one-floor map is
- * written as a `ground` tile layer and an `objects` layer; a multi-floor map
- * as one `floor N` group (property `floor: N`) per floor holding those two.
+ * written as a `ground` tile layer, an `edges n` and an `edges w` tile layer
+ * (property `edge: n` / `edge: w`, only when the floor has such edges) and
+ * an `objects` layer; a multi-floor map as one `floor N` group (property
+ * `floor: N`) per floor holding those.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -16,6 +18,7 @@ import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { EMPTY_TILE, FACINGS, formatError, loadPacks, type AssetDef, type Definition, type Facing, type MapDef } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
+import { format, Rows, type Out } from './tiled-json.ts';
 
 export const TILE_WIDTH = 64;
 export const TILE_HEIGHT = 32;
@@ -28,33 +31,6 @@ export interface ExportOptions {
   readonly name: string;
   /** Path of an asset image relative to the `.tsj`; null to leave the tile without an image. */
   readonly image: (asset: AssetDef, file: string) => string | null;
-}
-
-/** A layer's gid list, written one map row per line. */
-class Rows {
-  constructor(
-    readonly values: readonly number[],
-    readonly width: number,
-  ) {}
-}
-
-type Out = null | boolean | number | string | Rows | Out[] | { [k: string]: Out };
-
-/** 2-space JSON with keys in insertion order (written in Tiled's alphabetical order) and a trailing newline. */
-function format(v: Out, indent = ''): string {
-  const inner = indent + '  ';
-  if (v instanceof Rows) {
-    if (!v.values.length) return '[]';
-    const lines: string[] = [];
-    for (let i = 0; i < v.values.length; i += v.width) lines.push(inner + v.values.slice(i, i + v.width).join(', '));
-    return `[\n${lines.join(',\n')}\n${indent}]`;
-  }
-  if (Array.isArray(v)) return v.length ? `[\n${v.map((x) => inner + format(x, inner)).join(',\n')}\n${indent}]` : '[]';
-  if (v !== null && typeof v === 'object') {
-    const entries = Object.entries(v);
-    return entries.length ? `{\n${entries.map(([k, x]) => `${inner}${JSON.stringify(k)}: ${format(x, inner)}`).join(',\n')}\n${indent}}` : '{}';
-  }
-  return JSON.stringify(v);
 }
 
 const prop = (name: string, value: string): Out => ({ name, type: 'string', value });
@@ -86,6 +62,7 @@ export function exportTiledMap(def: Definition, map: MapDef, opts: ExportOptions
   // One tileset tile per used (tile, facing) pair, sorted by tile id then facing.
   const pairs = new Map<string, { tile: number; facing: Facing | null }>();
   map.cells.forEach((tile, i) => tile !== EMPTY_TILE && pairs.set(key(tile, map.facings[i] ?? null), { tile, facing: map.facings[i] ?? null }));
+  for (const edges of [map.edgeN, map.edgeW]) for (const tile of edges) if (tile !== EMPTY_TILE) pairs.set(key(tile, null), { tile, facing: null });
   const sorted = [...pairs.values()].sort((a, b) => {
     const ia = def.tiles[a.tile]!.id;
     const ib = def.tiles[b.tile]!.id;
@@ -156,24 +133,26 @@ export function exportTiledMap(def: Definition, map: MapDef, opts: ExportOptions
   }
 
   let nextLayer = 1;
-  const floorLayers = (z: number): Out[] => [
-    {
-      data: new Rows(
+  const tileLayer = (name: string, gids: number[], props: Out[] | null): Out => {
+    const layer: { [k: string]: Out } = { data: new Rows(gids, width), height, id: nextLayer++, name, opacity: 1 };
+    if (props) layer['properties'] = props;
+    return Object.assign(layer, { type: 'tilelayer', visible: true, width, x: 0, y: 0 });
+  };
+  const floorLayers = (z: number): Out[] => {
+    const out: Out[] = [
+      tileLayer(
+        'ground',
         map.cells.slice(z * area, (z + 1) * area).map((tile, i) => (tile === EMPTY_TILE ? 0 : 1 + localId.get(key(tile, map.facings[z * area + i] ?? null))!)),
-        width,
+        null,
       ),
-      height,
-      id: nextLayer++,
-      name: 'ground',
-      opacity: 1,
-      type: 'tilelayer',
-      visible: true,
-      width,
-      x: 0,
-      y: 0,
-    },
-    { draworder: 'topdown', id: nextLayer++, name: 'objects', objects: objects[z]!, opacity: 1, type: 'objectgroup', visible: true, x: 0, y: 0 },
-  ];
+    ];
+    for (const [side, edges] of [['n', map.edgeN], ['w', map.edgeW]] as const) {
+      const gids = edges.slice(z * area, (z + 1) * area).map((tile) => (tile === EMPTY_TILE ? 0 : 1 + localId.get(key(tile, null))!));
+      if (gids.some((g) => g !== 0)) out.push(tileLayer(`edges ${side}`, gids, [prop('edge', side)]));
+    }
+    out.push({ draworder: 'topdown', id: nextLayer++, name: 'objects', objects: objects[z]!, opacity: 1, type: 'objectgroup', visible: true, x: 0, y: 0 });
+    return out;
+  };
   const layers: Out[] =
     floors === 1
       ? floorLayers(0)

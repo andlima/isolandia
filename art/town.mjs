@@ -2,7 +2,7 @@
 // The zombie mod (art/zombie.mjs) draws its dead with this palette.
 
 import { humanoid, item, FACINGS } from './characters.mjs';
-import { blockTile, flatTile, hash, px } from './lib.mjs';
+import { blockTile, edgeTile, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
   outline: '#1e1c20',
@@ -97,11 +97,11 @@ function crate() {
 }
 
 /**
- * A house wall with a window on both visible faces; `boarded` nails planks
- * over the glass (the `barricade` action's result).
+ * A thin house wall with a window; `boarded` nails planks over the glass
+ * (the `barricade` action's result).
  */
 function windowWall(boarded) {
-  const { c, I } = blockTile();
+  const { c, I } = edgeTile();
   const face = (lit) => (a, z) => {
     const [A, Z] = [px(a), px(z)];
     if (A >= 4 && A <= 11 && Z >= 4 && Z <= 12) {
@@ -118,7 +118,7 @@ function windowWall(boarded) {
     if (Z % 4 === 3 || (A + (Math.floor(Z / 4) % 2) * 4) % 8 === 0) return lit ? 'white_lo' : 'khaki_lo'; // mortar
     return lit ? 'white' : 'white_lo';
   };
-  I.box(0, 0, 1, 1, 0, 1, { left: face(true), right: face(false), top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'white' : 'white_hi') });
+  slab(I, { face: face(true), end: (v, z) => (px(z) % 4 === 3 ? 'khaki_lo' : 'white_lo'), top: 'white_hi' });
   return c;
 }
 
@@ -367,8 +367,8 @@ export function images() {
     { file: 'grass.svg', canvas: grass(), note: 'flat tile' },
     { file: 'glass.svg', canvas: glass(), note: 'flat tile' },
     { file: 'crate.svg', canvas: crate(), note: 'block' },
-    { file: 'window.svg', canvas: windowWall(false), note: 'block' },
-    { file: 'barricaded_window.svg', canvas: windowWall(true), note: 'block' },
+    { file: 'window.svg', canvas: windowWall(false), note: 'edge' },
+    { file: 'barricaded_window.svg', canvas: windowWall(true), note: 'edge' },
     { file: 'stove.svg', canvas: stove(), note: 'block' },
     ...furn('car', (f) => car(f === 's' ? 'v' : 'u')),
     ...furn('bed', bed),

@@ -1,7 +1,7 @@
 // std: genre-neutral floor, wall, door, stairs and landing, and an everyday person.
 
 import { humanoid, FACINGS } from './characters.mjs';
-import { blockTile, flatTile, hash, px } from './lib.mjs';
+import { blockTile, edgeTile, ET, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
   outline: '#2a2420',
@@ -48,33 +48,27 @@ export function bricks(a, z, x, y, face, mortar, spot, seed = 0) {
   return hash(x, y, seed) < 0.05 ? spot : face;
 }
 
+/** A thin brick wall on a cell's edge. */
 function wall() {
-  const { c, I } = blockTile();
-  I.box(0, 0, 1, 1, 0, 1, {
-    left: (u, z, x, y) => bricks(u, z, x, y, 'stone', 'mortar', 'stone_lo', 2),
-    right: (v, z, x, y) => bricks(v, z, x, y, 'stone_lo', 'mortar', 'mortar', 3),
-    top: (u, v, x, y) => (px(u) === 0 || px(v) === 0 ? 'stone' : hash(x, y, 4) < 0.05 ? 'stone' : 'stone_hi'),
+  const { c, I } = edgeTile();
+  slab(I, {
+    face: (u, z, x, y) => bricks(u, z, x, y, 'stone', 'mortar', 'stone_lo', 2),
+    end: (v, z) => (px(z) % 4 === 3 ? 'mortar' : 'stone_lo'),
+    top: (u, v, x, y) => (hash(x, y, 4) < 0.1 ? 'stone' : 'stone_hi'),
   });
   return c;
 }
 
-/** A wooden door in a stone frame on a side face (`a` along the face, `z` up). */
-function doorFace(a, z, lit) {
-  const [A, Z] = [px(a), px(z)];
-  if (A <= 2 || A >= 13 || Z >= 13) return lit ? 'stone' : 'stone_lo'; // frame
-  if (A === 3 || Z === 12) return 'mortar'; // reveal, in shadow
-  if (A === 11 && Z === 6) return 'brass'; // knob
-  if (A === 6 || A === 9) return lit ? 'wood_lo' : 'wood_dk'; // plank gaps
-  return lit ? (A < 6 ? 'wood_hi' : 'wood') : 'wood_lo';
-}
-
+/** A stone door frame on a cell's edge: two posts and a lintel round an open doorway you see through. */
 function door() {
-  const { c, I } = blockTile();
-  I.box(0, 0, 1, 1, 0, 1, {
-    left: (u, z) => doorFace(u, z, true),
-    right: (v, z) => doorFace(v, z, false),
-    top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'stone' : 'stone_hi'),
-  });
+  const { c, I } = edgeTile();
+  const stone = (u, z, x, y) => bricks(u, z, x, y, 'stone', 'mortar', 'stone_lo', 5);
+  // Back to front (left post, lintel, right post), so nearer parts cover farther ones.
+  I.box(-ET, -ET, 0.16, ET, 0, 1, { left: stone, right: 'mortar', top: 'stone_hi' });
+  I.box(0.16, -ET, 0.84, ET, 0.8, 1, { left: (u, z) => (px(z) === 12 ? 'mortar' : 'stone'), right: 'stone_lo', top: 'stone_hi' });
+  I.box(0.84, -ET, 1 + ET, ET, 0, 1, { left: stone, right: 'stone_lo', top: 'stone_hi' });
+  // A worn wooden threshold across the doorway.
+  I.box(0.16, -ET, 0.84, ET, 0, 0.04, { left: 'wood_lo', right: 'wood_dk', top: 'wood_hi' });
   return c;
 }
 
@@ -129,8 +123,8 @@ const person = {
 export function images() {
   return [
     { file: 'floor.svg', canvas: floor(), note: 'flat tile' },
-    { file: 'wall.svg', canvas: wall(), note: 'block' },
-    { file: 'door.svg', canvas: door(), note: 'block: a door on each visible face' },
+    { file: 'wall.svg', canvas: wall(), note: 'edge' },
+    { file: 'door.svg', canvas: door(), note: 'edge: an open doorway in a stone frame' },
     ...['s', 'w'].map((f) => ({ file: `stairs_${f}.svg`, canvas: stairs(f), note: `block, rising toward ${f}` })),
     { file: 'landing.svg', canvas: landing(), note: 'flat tile' },
     ...FACINGS.map((f) => ({ file: `humanoid_${f}.svg`, canvas: humanoid(f, person), note: `facing ${f}` })),

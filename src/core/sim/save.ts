@@ -5,7 +5,7 @@
  * container creation and loot rolls; nothing is rolled or re-clamped.
  */
 
-import { EMPTY_TILE, type ArchetypeDef, type Definition } from '../definition.ts';
+import { EMPTY_TILE, type ArchetypeDef, type Definition, type EdgeSide } from '../definition.ts';
 import { FACINGS, type Facing } from '../facing.ts';
 import { nearMiss } from '../expr/index.ts';
 import type { Activity } from './activity.ts';
@@ -22,10 +22,13 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
-/** Every save `version` that `World.restore` reads (version 1 has no floors: every `z` is 0). */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [1, SAVE_VERSION];
+/**
+ * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
+ * edge walls (their maps had wall cells) and are refused.
+ */
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -198,6 +201,11 @@ class Checker {
     return this.cell(v[0], v[1], v[2], path);
   }
 
+  /** An edge side: `'n'` or `'w'`. */
+  side(v: unknown, path: string): EdgeSide | null {
+    return v === 'n' || v === 'w' ? v : this.err(path, `expected an edge side 'n' or 'w', got ${show(v)}`);
+  }
+
   /** Cell index of an in-bounds cell. */
   index([x, y, z]: readonly [number, number, number]): number {
     return (z * this.height + y) * this.width + x;
@@ -221,6 +229,7 @@ class Checker {
       this.opt(o, 'y', path, (c, q) => this.int(c, q));
       this.opt(o, 'z', path, (c, q) => this.int(c, q));
     };
+    const side = () => this.opt(o, 'side', path, (c, q) => this.side(c, q));
     switch (kind as Action['kind']) {
       case 'take':
       case 'put':
@@ -238,6 +247,7 @@ class Checker {
       case 'act':
         this.id('action', o['action'], `${path}.action`);
         xy();
+        side();
         break;
       case 'craft':
         this.id('recipe', o['recipe'], `${path}.recipe`);
@@ -261,6 +271,7 @@ class Checker {
       this.int(o['y'], `${path}.y`);
       this.opt(o, 'z', path, (c, q) => this.int(c, q));
       this.opt(o, 'adjacent', path, (c, q) => this.bool(c, q));
+      this.opt(o, 'side', path, (c, q) => this.side(c, q));
       if (o['then'] !== undefined) {
         if (!isPlayer) this.err(`${path}.then`, `only the player's goto may carry 'then'`);
         else this.action(o['then'], `${path}.then`);
@@ -288,6 +299,7 @@ class Checker {
     if (item) this.id('item', item, `${path}.item`);
     this.opt(o, 'action', path, (c, q) => this.id('action', c, q));
     this.opt(o, 'recipe', path, (c, q) => this.id('recipe', c, q));
+    this.opt(o, 'side', path, (c, q) => this.side(c, q));
     this.num(o['moved'], `${path}.moved`);
     this.opt(o, 'dropped', path, (c, q) => this.num(c, q));
     this.bool(o['ok'], `${path}.ok`);
@@ -325,7 +337,7 @@ interface EntityPlan {
   plan: [number, number, number, number] | null;
   /** [x, y, z, tick]. */
   heard: [number, number, number, number] | null;
-  activity: { kind: 'act' | 'use' | 'craft'; index: number; x: number; y: number; z: number; startTick: number; endTick: number } | null;
+  activity: { kind: 'act' | 'use' | 'craft'; index: number; x: number; y: number; z: number; side: EdgeSide | null; startTick: number; endTick: number } | null;
   then: Action | null;
 }
 
@@ -361,7 +373,10 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     c.err('format', `expected 'isolandia-save', got ${show(root['format'])}`);
     headerOk = false;
   }
-  if (!SUPPORTED_SAVE_VERSIONS.includes(root['version'] as number)) {
+  if (root['version'] === 1 || root['version'] === 2) {
+    c.err('version', `save version ${root['version']} predates edge walls (version ${SAVE_VERSION}): its map had walls in cells, so it cannot be restored; start a new game`);
+    headerOk = false;
+  } else if (!SUPPORTED_SAVE_VERSIONS.includes(root['version'] as number)) {
     c.err('version', `unsupported save version ${show(root['version'])} (supported: ${SUPPORTED_SAVE_VERSIONS.join(', ')})`);
     headerOk = false;
   }
@@ -382,13 +397,12 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       headerOk = false;
     }
   }
-  const v1 = root['version'] === 1;
   const m = c.obj(root['map'], 'map');
   if (m) {
     const id = c.str(m['id'], 'map.id');
     const w = c.int(m['width'], 'map.width');
     const h = c.int(m['height'], 'map.height');
-    const f = v1 ? 1 : c.int(m['floors'], 'map.floors', 1);
+    const f = c.int(m['floors'], 'map.floors', 1);
     const size = (ww: number, hh: number, ff: number) => `${ww}×${hh}${ff > 1 ? `, ${ff} floors` : ''}`;
     if (id !== null && w !== null && h !== null && f !== null && (id !== map.id || w !== map.width || h !== map.height || f !== map.floors)) {
       c.err('map', `the save is for map '${id}' (${size(w, h, f)}) but the start map is '${map.id}' (${size(map.width, map.height, map.floors)})`);
@@ -397,7 +411,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   }
   // Another format, version, pack list or map: the state's ids and cells would only add noise.
   if (!headerOk) return { ok: false, errors: c.errors };
-  const s = c.obj(v1 ? upgradeV1(root['state']) : root['state'], 'state');
+  const s = c.obj(root['state'], 'state');
   if (!s) return { ok: false, errors: c.errors };
 
   // ── World fields ─────────────────────────────────────────────────────────
@@ -430,6 +444,19 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       tiles.push([at, tile]);
       tileAt.set(at, tile);
     }
+    return null;
+  });
+
+  // ── Changed edges ────────────────────────────────────────────────────────
+  const edges: [number, EdgeSide, number][] = [];
+  c.arr(s['edges'], 'state.edges')?.forEach((t, i) => {
+    const path = `state.edges[${i}]`;
+    if (!Array.isArray(t) || t.length !== 5) return c.err(path, `expected [x, y, z, side, tile id or null], got ${show(t)}`);
+    const cell = c.cell(t[0], t[1], t[2], path);
+    const side = c.side(t[3], `${path}[3]`);
+    const tile = t[4] === null ? EMPTY_TILE : c.id('tile', t[4], `${path}[4]`);
+    if (tile !== null && tile !== EMPTY_TILE && !def.tiles[tile]!.edge) return c.err(`${path}[4]`, `tile '${def.tiles[tile]!.id}' is not an edge tile`);
+    if (cell && side && tile !== null) edges.push([c.index(cell), side, tile]);
     return null;
   });
 
@@ -511,6 +538,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
     w.defeat = defeat ?? null;
     w.victory = victory ?? null;
     for (const [at, tile] of tiles) w.grid.setTile(at, tile);
+    for (const [at, side, tile] of edges) w.grid.setEdge(at, side, tile);
     const invs = new Map<number, Container>();
     for (const p of containers) {
       const cellTile = p.kind === 'tile' ? w.grid.cells[w.grid.index(p.x, p.y, p.z)]! : -1;
@@ -546,7 +574,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       if (p.activity) {
         const a = p.activity;
         const source = a.kind === 'act' ? host.actionSources[a.index]! : a.kind === 'craft' ? host.recipeSources[a.index]! : host.useSources[a.index]!;
-        const activity: Activity = { source, action: source.action, x: a.x, y: a.y, z: a.z, startTick: a.startTick, endTick: a.endTick };
+        const activity: Activity = { source, action: source.action, x: a.x, y: a.y, z: a.z, side: a.side, startTick: a.startTick, endTick: a.endTick };
         e.activity = activity;
       }
       e.then = p.then;
@@ -684,10 +712,11 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
         if (index !== null && !def.items[index]!.use) index = c.err(`${ap}.item`, `item '${def.items[index]!.id}' has no use`);
       } else c.err(`${ap}.kind`, `expected 'act', 'use' or 'craft', got ${show(kind)}`);
       const cell = c.cell(a['x'], a['y'], a['z'], ap);
+      const side = a['side'] === undefined ? null : c.side(a['side'], `${ap}.side`);
       const start = c.int(a['startTick'], `${ap}.startTick`, 0);
       const end = c.int(a['endTick'], `${ap}.endTick`, 0);
       if (start !== null && end !== null && end <= start) c.err(`${ap}.endTick`, `endTick ${end} must be after startTick ${start}`);
-      if (index !== null && cell && start !== null && end !== null) activity = { kind: kind as 'act' | 'use' | 'craft', index, x: cell[0], y: cell[1], z: cell[2], startTick: start, endTick: end };
+      if (index !== null && cell && start !== null && end !== null) activity = { kind: kind as 'act' | 'use' | 'craft', index, x: cell[0], y: cell[1], z: cell[2], side, startTick: start, endTick: end };
     }
   }
 
@@ -723,40 +752,4 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     activity,
     then,
   };
-}
-
-/**
- * A version 1 `state` in the version 2 shape: every cell gains `z = 0`.
- * Only well-formed parts are rewritten; anything else is left for the
- * checks to report.
- */
-function upgradeV1(state: unknown): unknown {
-  if (!isObj(state)) return state;
-  const pair = (v: unknown) => (Array.isArray(v) && v.length === 2 ? [v[0], v[1], 0] : v);
-  // `z` goes right after `y`, as version 2 writes it (records are kept as saved, so key order reaches `hash()`).
-  const xy = (v: unknown) => {
-    if (!isObj(v) || v['z'] !== undefined) return v;
-    const { x, y, ...rest } = v;
-    return { x, y, z: 0, ...rest };
-  };
-  const out: Obj = { ...state };
-  if (Array.isArray(state['tiles'])) out['tiles'] = state['tiles'].map((t: unknown) => (Array.isArray(t) && t.length === 3 ? [t[0], t[1], 0, t[2]] : t));
-  if (Array.isArray(state['containers'])) out['containers'] = state['containers'].map((v: unknown) => (isObj(v) && v['cell'] !== undefined ? { ...v, cell: pair(v['cell']) } : v));
-  if (Array.isArray(state['entities'])) {
-    out['entities'] = state['entities'].map((v: unknown) => {
-      if (!isObj(v)) return v;
-      const e: Obj = { ...v, z: 0, fromZ: 0, home: pair(v['home']) };
-      if (Array.isArray(v['path'])) e['path'] = v['path'].map(pair);
-      if (isObj(v['lastGoto'])) e['lastGoto'] = xy(v['lastGoto']);
-      if (isObj(v['heard'])) e['heard'] = xy(v['heard']);
-      if (isObj(v['activity'])) e['activity'] = xy(v['activity']);
-      const b = v['behavior'];
-      if (isObj(b) && Array.isArray(b['plan']) && b['plan'].length === 3) {
-        const [x, y, tick] = b['plan'] as unknown[];
-        e['behavior'] = { ...b, plan: [x, y, x === -1 && y === -1 ? -1 : 0, tick] };
-      }
-      return e;
-    });
-  }
-  return out;
 }

@@ -8,6 +8,10 @@
  * - On the view floor, a raised block fades when it is in front of the
  *   player and close on screen: its diagonal `x + y` is in
  *   `(px + py, px + py + 3]` and `|(x − y) − (px − py)| ≤ 2`.
+ * - Edges fade by the same rule on the cell they belong to (`n` and `w` of
+ *   a fading cell fade). So the south side of the player's cell (the `n` of
+ *   the cell below) and its east side (the `w` of the cell to the right)
+ *   count as in front, and its own `n` and `w` do not.
  */
 
 /** Alpha of a faded block. */

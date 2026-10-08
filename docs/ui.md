@@ -16,8 +16,8 @@ actions that cost something. The rule is the pure function
 - when it has one (*Barricade* you can do now, *Cook* at a stove), or has
   entries but nothing safe (only disabled actions, stairs that go both
   ways), the click opens the **menu**;
-- a cell with nothing on it (a plain wall) walks there, next to it when it
-  cannot be entered, as before; on your own cell with nothing to do the
+- a cell with nothing on it walks there, next to it when it cannot be
+  entered, as before (a plain wall: see [Clicking walls](#clicking-walls)); on your own cell with nothing to do the
   click does nothing, and with only self actions (*Rest*) it opens the
   menu.
 
@@ -89,6 +89,28 @@ through; empty spots fall back to the ground cell. See
 
 Pack actions are not listed in the transfer window; item uses are its
 *Use* buttons (the item's `use.label`).
+
+### Clicking walls
+
+Walls, doors, windows and fences are [edges](packs.md#edge-walls), thin
+slabs between two cells. In the iso view each slab is its own target
+(`{ kind: 'edge', x, y, z, side }`): the edge on the `n` or `w` side of
+cell `(x, y)`.
+
+- **Hover** shows the edge tile's label (`Window`, `Barricaded window`)
+  and what a click does.
+- **The menu** for an edge lists the actions on it (*Barricade* on a
+  window, *Close shutters* on a vampire window), with the same default, fold row
+  and walk-then-act as a cell. It has no *Walk here*.
+- **A plain left click on a wall** (an edge with nothing to do) walks next
+  to it **on the clicked side**: the iso view shows an edge's south face
+  (`n`) or east face (`w`), which belongs to cell `(x, y)`, so the walk
+  ends there, or on the cell across the edge when `(x, y)` cannot be
+  entered (`edgeWalkIntent`). **Shift + click** does the same.
+- An edge action is in reach from either cell the edge separates, so you
+  can barricade a window from inside or outside.
+- An edge faded in front of you (the south and east sides of your cell
+  and the walls just past them) is clicked through, like a faded block.
 
 ## Transfer window
 

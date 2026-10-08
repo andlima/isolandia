@@ -46,9 +46,10 @@ export interface ExprContext {
   self: ExprEntity;
   /**
    * Cell that `tile` refers to while a tile-targeted action is evaluated;
-   * null or absent means the cell under `self`.
+   * null or absent means the cell under `self`. With a `side`, `tile` is the
+   * edge on that side of the cell (`tile.id` and its tags are the edge's).
    */
-  target?: { readonly x: number; readonly y: number; readonly z: number } | null;
+  target?: { readonly x: number; readonly y: number; readonly z: number; readonly side?: 'n' | 'w' | null } | null;
   player: ExprEntity;
   tick: number;
   ticksPerSecond: number;
@@ -56,10 +57,13 @@ export interface ExprContext {
   clock: ClockDef;
   /** Seeded RNG returning floats in [0, 1). */
   random(): number;
-  /** Qualified id of the tile at (x, y, z); `""` out of bounds or on an empty cell. */
-  tileIdAt(x: number, y: number, z: number): string;
-  /** Tags of the tile at (x, y, z); empty out of bounds or on an empty cell. */
-  tileTagsAt(x: number, y: number, z: number): ReadonlySet<string>;
+  /**
+   * Qualified id of the tile at (x, y, z), or of its edge on `side` when
+   * given; `""` out of bounds or where there is no tile.
+   */
+  tileIdAt(x: number, y: number, z: number, side?: 'n' | 'w' | null): string;
+  /** Tags of the tile at (x, y, z), or of its edge on `side`; empty out of bounds or where there is no tile. */
+  tileTagsAt(x: number, y: number, z: number, side?: 'n' | 'w' | null): ReadonlySet<string>;
   /** Whether the cell at (x, y, z) is in a room with the room tag of that index. */
   inRoom(x: number, y: number, z: number, tag: number): boolean;
   /** Tile line of sight between two cells; false across floors (see `lineOfSight`). */
@@ -237,6 +241,8 @@ const TILE_FIELDS = ['x', 'y', 'z', 'id'];
 const tileX = (c: ExprContext): number => (c.target ? c.target.x : c.self.x);
 const tileY = (c: ExprContext): number => (c.target ? c.target.y : c.self.y);
 const tileZ = (c: ExprContext): number => (c.target ? c.target.z : c.self.z);
+/** Edge side of the target (null for a cell). */
+const tileSide = (c: ExprContext): 'n' | 'w' | null => c.target?.side ?? null;
 const WORLD_FIELDS = ['tick', 'seconds', 'day', 'hour', 'minute', 'time_of_day', 'is_day'];
 
 /** Levenshtein edit distance. */
@@ -317,7 +323,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         if (prop === 'x') return { fn: tileX, type: 'number' };
         if (prop === 'y') return { fn: tileY, type: 'number' };
         if (prop === 'z') return { fn: tileZ, type: 'number' };
-        if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c), tileZ(c)), type: 'string' };
+        if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c), tileZ(c), tileSide(c)), type: 'string' };
         return err(`unknown property 'tile.${prop}'${hint(`tile.${prop}`, TILE_FIELDS.map((f) => `tile.${f}`))}`, node.pos);
       case 'world':
         if (prop === 'tick') return { fn: (c) => c.tick, type: 'number' };
@@ -345,7 +351,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
             const x = tileX(c);
             const y = tileY(c);
             const z = tileZ(c);
-            return { x, y, z, id: c.tileIdAt(x, y, z), tags: c.tileTagsAt(x, y, z) };
+            const side = tileSide(c);
+            return { x, y, z, id: c.tileIdAt(x, y, z, side), tags: c.tileTagsAt(x, y, z, side) };
           },
           type: 'tile',
         };
@@ -413,7 +420,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'player':
         return { type: 'boolean', fn: (c) => c.player.tags.has(tag) };
       case 'tile':
-        return { type: 'boolean', fn: (c) => c.tileTagsAt(tileX(c), tileY(c), tileZ(c)).has(tag) };
+        return { type: 'boolean', fn: (c) => c.tileTagsAt(tileX(c), tileY(c), tileZ(c), tileSide(c)).has(tag) };
       default:
         return null;
     }
