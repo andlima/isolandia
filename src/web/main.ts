@@ -18,7 +18,7 @@ import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
-import { clickPlan } from './menu.ts';
+import { clickPlan, edgeWalkIntent } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
 import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
   /** Right-click, long-press: the menu with `Walk here`. */
   const openMenu = (sx: number, sy: number) => {
     const t = targetAt(sx, sy);
-    session.menu.open(t.x, t.y, t.z, sx, sy);
+    session.menu.open(t.x, t.y, t.z, sx, sy, 'context', t.kind === 'edge' ? t.side : null);
   };
   const hover = new Hover(document.body, app.canvas);
 
@@ -220,10 +220,10 @@ async function main(): Promise<void> {
       }
       const t = targetAt(sx, sy);
       // Shift-click always walks; otherwise the click plan runs the safe default or opens the menu.
-      if (shift) return world.queueIntent(clickIntent(world, t.x, t.y, t.z));
+      if (shift) return world.queueIntent(t.kind === 'edge' ? edgeWalkIntent(world, t.x, t.y, t.z, t.side) : clickIntent(world, t.x, t.y, t.z));
       const plan = clickPlan(world, t);
       if (plan.kind === 'run') menu.run(plan.item);
-      else if (plan.kind === 'menu') menu.open(t.x, t.y, t.z, sx, sy, 'click');
+      else if (plan.kind === 'menu') menu.open(t.x, t.y, t.z, sx, sy, 'click', t.kind === 'edge' ? t.side : null);
       else if (plan.kind === 'walk') world.queueIntent(plan.intent);
     },
     hover: (p) => hover.move(p),

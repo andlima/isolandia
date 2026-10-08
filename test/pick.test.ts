@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EMPTY_TILE, Grid, loadPacksOrThrow, World, type Entity, type MapDef, type TileDef } from '../src/core/index.ts';
+import { EMPTY_TILE, Grid, loadPacksOrThrow, World, type EdgeSide, type Entity, type MapDef, type TileDef } from '../src/core/index.ts';
 import { Layer } from '../src/iso/depth.ts';
 import { drawOrder, hits, hitTest, makeMask, maskFromRgba, spriteBounds, type Candidate, type HitMask } from '../src/iso/hit.ts';
 import { pickTarget, type Drawn, type PickSource, type PickTarget } from '../src/iso/pick.ts';
-import { FLOOR_H, groundCentreIso, isoToScreen, pickCell, tileAnchorIso, type CameraState } from '../src/iso/projection.ts';
+import { edgeAnchorIso, FLOOR_H, groundCentreIso, isoToScreen, pickCell, tileAnchorIso, type CameraState } from '../src/iso/projection.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES } from './helpers.ts';
 
@@ -26,13 +26,39 @@ const FULL = (cols: number, rows: number) => makeMask(cols, rows, () => true);
 
 const FLOOR: TileDef = { raised: false, walkable: true, opaque: false } as TileDef;
 const WALL: TileDef = { raised: true, walkable: false, opaque: true } as TileDef;
+const WALL_EDGE: TileDef = { raised: false, walkable: false, opaque: true, edge: true } as TileDef;
 
-/** A grid from rows per floor: `.` floor, `#` raised, space empty. */
-function grid(floors: string[][]): Grid {
+/** A grid from rows per floor: `.` floor, `#` raised, space empty; `edges` are wall edges as `x,y,z,side`. */
+function grid(floors: string[][], edges: string[] = []): Grid {
   const height = floors[0]!.length;
   const width = floors[0]![0]!.length;
   const cells = floors.flatMap((rows) => rows.flatMap((row) => [...row].map((ch) => (ch === '.' ? 0 : ch === '#' ? 1 : EMPTY_TILE))));
-  return new Grid({ width, height, floors: floors.length, cells, edgeN: cells.map(() => EMPTY_TILE), edgeW: cells.map(() => EMPTY_TILE) } as unknown as MapDef, [FLOOR, WALL]);
+  const edgeN = cells.map(() => EMPTY_TILE);
+  const edgeW = cells.map(() => EMPTY_TILE);
+  for (const e of edges) {
+    const [x, y, z, side] = e.split(',');
+    (side === 'n' ? edgeN : edgeW)[(Number(z) * height + Number(y)) * width + Number(x)] = 2;
+  }
+  return new Grid({ width, height, floors: floors.length, cells, edgeN, edgeW } as unknown as MapDef, [FLOOR, WALL, WALL_EDGE]);
+}
+
+/** A 40×64 edge image on the 20×32 art grid (anchor [0.1, 0.65625], image px (4, 42)): the `n` slab, 32 px tall. */
+const EDGE_MASK = makeMask(20, 32, (c, r) => {
+  const dx = c * 2 + 1 - 4;
+  const ground = 42 + dx / 2;
+  return dx >= -2 && dx <= 34 && r * 2 + 1 <= ground + 2 && r * 2 + 1 >= ground - 34;
+});
+
+function edgeAt(x: number, y: number, z: number, side: EdgeSide): Drawn {
+  const a = edgeAnchorIso(x, y);
+  return {
+    bounds: spriteBounds(a.x, a.y - z * FLOOR_H, 40, 64, 0.1, 0.65625, side === 'w'),
+    mask: EDGE_MASK,
+    mirrored: side === 'w',
+    order: drawOrder(z, x, y, Layer.Edge),
+    target: { kind: 'edge', x, y, z, side },
+    floor: z,
+  };
 }
 
 function blockAt(x: number, y: number, z: number, mask = FULL_BLOCK, mirrored = false): Drawn {
@@ -59,7 +85,7 @@ function entityAt(e: Entity, mask = FULL(16, 24)): Drawn {
   };
 }
 
-/** A source drawing every raised cell with `blockAt` (unless overridden), minus `fadedCells`. */
+/** A source drawing every raised cell with `blockAt` (unless overridden) and every edge with `edgeAt`, minus the faded cells (and their edges). */
 function source(g: Grid, opts: { objects?: Drawn[]; faded?: string[]; blocks?: Map<string, Drawn> } = {}): PickSource {
   const faded = new Set(opts.faded ?? []);
   const cache = new Map<number, Drawn>();
@@ -73,6 +99,7 @@ function source(g: Grid, opts: { objects?: Drawn[]; faded?: string[]; blocks?: M
       if (!d) cache.set(i, (d = opts.blocks?.get(`${x},${y},${z}`) ?? blockAt(x, y, z)));
       return d;
     },
+    edge: (x, y, z, side) => (faded.has(`${x},${y},${z}`) || !g.edgeAt(x, y, z, side) ? null : edgeAt(x, y, z, side)),
     faded: (x, y, z) => faded.has(`${x},${y},${z}`),
     objects: () => opts.objects ?? [],
   };
@@ -199,7 +226,7 @@ test('pick: floors above the view floor are ignored; the ground falls through em
   // Without sprite hits, pickTarget is pickCell, on every floor and camera.
   const isRaised = (x: number, y: number, z: number) => g.tileAt(x, y, z)?.raised ?? false;
   const isFilled = (x: number, y: number, z: number) => g.tileAt(x, y, z) !== undefined;
-  const none: PickSource = { ...src, block: () => null };
+  const none: PickSource = { ...src, block: () => null, edge: () => null };
   for (const cam of CAMS) {
     for (let i = 0; i < 400; i++) {
       const ix = -200 + (i % 20) * 20 + 3.3;
@@ -212,6 +239,41 @@ test('pick: floors above the view floor are ignored; the ground falls through em
       }
     }
   }
+});
+
+const OPEN = ['......', '......', '......', '......', '......', '......'];
+const side = (t: PickTarget) => (t.kind === 'edge' ? t.side : null);
+
+test('pick: a wall edge’s slab picks the edge and its side; the w slab is the mirrored n one', () => {
+  const g = grid([OPEN], ['3,3,0,n', '3,3,0,w']);
+  const src = source(g);
+  // Both slabs start at (3, 3)'s top vertex, iso (0, 96): n runs down-right, w down-left, 32 px tall.
+  for (const cam of CAMS) {
+    const n = at(16, 88, cam);
+    const tn = pickTarget(n.x, n.y, cam, 0, src);
+    assert.deepEqual([...cell(tn), side(tn)], ['edge', 3, 3, 0, 'n']);
+    const w = at(-16, 88, cam);
+    const tw = pickTarget(w.x, w.y, cam, 0, src);
+    assert.deepEqual([...cell(tw), side(tw)], ['edge', 3, 3, 0, 'w']);
+    // Above the slab: the ground behind it.
+    const above = at(16, 60, cam);
+    assert.equal(pickTarget(above.x, above.y, cam, 0, src).kind, 'ground');
+  }
+});
+
+test('pick: an entity in front of an edge hits over it; one behind it is covered', () => {
+  const g = grid([OPEN], ['3,3,0,n']);
+  const front = { x: 3, y: 3, z: 0 } as Entity; // stands at iso (0, 112)
+  const back = { x: 3, y: 2, z: 0 } as Entity; // stands at iso (0, 80), behind the slab
+  const p = at(8, 82, ID); // over both entities and the slab
+  assert.deepEqual(cell(pickTarget(p.x, p.y, ID, 0, source(g, { objects: [entityAt(front)] }))), ['entity', 3, 3, 0]);
+  assert.deepEqual(cell(pickTarget(p.x, p.y, ID, 0, source(g, { objects: [entityAt(back)] }))), ['edge', 3, 3, 0]);
+});
+
+test('pick: an edge faded by the cutaway is clicked through', () => {
+  const g = grid([OPEN], ['3,3,0,n']);
+  const p = at(16, 88, ID);
+  assert.deepEqual(cell(pickTarget(p.x, p.y, ID, 0, source(g, { faded: ['3,3,0'] }))), ['ground', 3, 2, 0]);
 });
 
 test('pick: on the 343×343 zombie city a pick takes well under 1 ms (synthetic masks)', () => {

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { luminance, parseColor, shade } from '../src/iso/colors.ts';
+import { fadeCells } from '../src/iso/cutaway.ts';
 import { depthKey, diagonalOf, Layer } from '../src/iso/depth.ts';
 import {
   BLOCK_H,
   cameraAt,
+  edgeAnchorIso,
   groundCentreIso,
   intersects,
   isoToWorld,
@@ -153,6 +155,29 @@ test('depth: a raised tile against entities in front of and behind it', () => {
   assert.deepEqual(after, [false, false, true, true, true]);
   // Same tile position: entity after the block.
   assert.ok(depthKey(3, 3, Layer.Entity) > block);
+});
+
+test('depth: an n edge of (x, y) is in front of (x, y − 1) and behind entities in (x, y); w likewise with (x − 1, y)', () => {
+  const edge = depthKey(3, 3, Layer.Edge);
+  for (const [x, y] of [[3, 2], [2, 3]] as const) {
+    for (const layer of [Layer.Block, Layer.Pile, Layer.Entity]) assert.ok(depthKey(x, y, layer) < edge, `layer ${layer} at ${x},${y} is behind`);
+  }
+  for (const layer of [Layer.Block, Layer.Pile, Layer.Entity]) assert.ok(depthKey(3, 3, layer) > edge, `layer ${layer} in the edge's own cell is in front`);
+  // An entity walking through the doorway from (3, 2) into (3, 3) passes the slab once, when it arrives.
+  const path = [[3, 2], [3, 2.5], [3, 2.99], [3, 3]] as const;
+  assert.deepEqual(
+    path.map(([x, y]) => depthKey(x, y, Layer.Entity) > edge),
+    [false, false, false, true],
+  );
+  // Both slabs start at the cell's top vertex.
+  assert.deepEqual(edgeAnchorIso(3, 3), worldToIso(3, 3));
+});
+
+test('cutaway: edges fade with their cell, so the south and east sides of the player’s cell are in front', () => {
+  const cells = fadeCells(5, 5).map((c) => `${c.x},${c.y}`);
+  assert.ok(cells.includes('5,6'), 'the n edge of (5, 6) is the player’s south side');
+  assert.ok(cells.includes('6,5'), 'the w edge of (6, 5) is the player’s east side');
+  assert.ok(!cells.includes('5,5'), 'the player’s own n and w sides are behind');
 });
 
 test('depth: diagonal buckets', () => {

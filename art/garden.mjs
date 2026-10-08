@@ -2,7 +2,7 @@
 // butterflies and the night fox. Round shapes, big eyes and a bright pastel palette.
 
 import { finish, item, FACINGS } from './characters.mjs';
-import { blockTile, Canvas, flatTile, hash, px } from './lib.mjs';
+import { blockTile, Canvas, edgeTile, ET, flatTile, hash, px } from './lib.mjs';
 
 export const palette = {
   outline: '#4a3848',
@@ -214,18 +214,19 @@ function berryBush() {
   return c;
 }
 
-/** A white picket fence post with rails running along both map axes, so neighbours join up. */
+/** A low white picket fence on a cell's edge: two rails and three pickets, low enough to see over. */
 function fence() {
-  const { c, I } = onLawn(53);
-  const rail = (lit) => (a, z) => (px(z) % 8 === 7 ? 'white_lo' : lit ? 'white' : 'white_lo');
-  // Rails along u (east–west), then along v (north–south), low and thin.
-  I.box(0, 0.44, 1, 0.56, 0.2, 0.3, { left: rail(true), right: 'white_lo', top: 'white' });
-  I.box(0.44, 0, 0.56, 1, 0.2, 0.3, { left: 'white', right: rail(false), top: 'white' });
-  I.box(0, 0.44, 1, 0.56, 0.5, 0.6, { left: rail(true), right: 'white_lo', top: 'white' });
-  I.box(0.44, 0, 0.56, 1, 0.5, 0.6, { left: 'white', right: rail(false), top: 'white' });
-  // The picket: a post with a pointed (stepped) cap.
-  I.box(0.38, 0.38, 0.62, 0.62, 0, 0.75, { left: 'white', right: 'white_lo', top: 'white' });
-  I.box(0.44, 0.44, 0.56, 0.56, 0.75, 0.88, { left: 'white', right: 'white_lo', top: 'pink' });
+  const { c, I } = edgeTile();
+  const picket = (u0) => {
+    I.box(u0, -ET, u0 + 0.12, ET, 0, 0.62, { left: 'white', right: 'white_lo', top: 'white' });
+    I.box(u0 + 0.03, -ET / 2, u0 + 0.09, ET / 2, 0.62, 0.72, { left: 'white', right: 'white_lo', top: 'pink' });
+  };
+  // Back to front: the left picket, the rails, then the middle and right pickets over them.
+  picket(-ET);
+  I.box(-ET, -ET / 2, 1 + ET, ET / 2, 0.16, 0.24, { left: 'white', right: 'white_lo', top: 'white' });
+  I.box(-ET, -ET / 2, 1 + ET, ET / 2, 0.44, 0.52, { left: 'white', right: 'white_lo', top: 'white' });
+  picket(0.44);
+  picket(1 + ET - 0.12);
   return c;
 }
 
@@ -663,7 +664,7 @@ export function images() {
     { file: 'pond.svg', canvas: pond(), note: 'flat tile' },
     { file: 'bush.svg', canvas: bush(), note: 'block' },
     { file: 'berry_bush.svg', canvas: berryBush(), note: 'block' },
-    { file: 'fence.svg', canvas: fence(), note: 'block' },
+    { file: 'fence.svg', canvas: fence(), note: 'edge: low, see-over' },
     ...furn('wheelbarrow', wheelbarrow),
     ...FACINGS.map((f) => ({ file: `bunny_${f}.svg`, canvas: critter(BUNNY[f], bunnyKey), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `cat_${f}.svg`, canvas: critter(CAT[f], catKey, { rx: 6 }), note: `facing ${f}` })),

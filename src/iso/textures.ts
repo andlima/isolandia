@@ -14,6 +14,7 @@ import {
   resolveFacing,
   type ArchetypeDef,
   type Definition,
+  type EdgeSide,
   type Facing,
   type ItemDef,
   type TileDef,
@@ -112,6 +113,8 @@ export function facingEdge(f: Facing): readonly [readonly [number, number], read
 export class TextureBank {
   /** Per tile, 5 slots: no explicit facing, then `n`, `e`, `s`, `w`. */
   private readonly tiles: (FacedTexture | undefined)[] = [];
+  /** Per edge tile, 2 slots: `n`, then `w`. */
+  private readonly edges: (AnchoredTexture | undefined)[] = [];
   /** Per archetype placeholder, one slot per facing (`FACINGS` order). */
   private readonly archetypes: (FacedTexture | undefined)[] = [];
   private readonly items: (AnchoredTexture | undefined)[] = [];
@@ -164,6 +167,37 @@ export class TextureBank {
     const f = facing ?? DEFAULT_FACING;
     return (this.tiles[slot] ??=
       this.fromAsset(t.sprite, f, null) ?? { ...this.bakeMasked(t.raised ? block(t.color, facing) : diamond(t.color, facing)), facing: f });
+  }
+
+  /**
+   * Texture for an edge tile on a cell's `side`; its anchor goes on the
+   * diamond's top vertex. A single-image asset (or the placeholder slab) is
+   * drawn for `n`, the diamond's top-right side, and mirrored for `w`, its
+   * top-left side; a directional asset uses its `n` and `w` images (or
+   * their mirrored partners).
+   */
+  edge(t: TileDef, side: EdgeSide): AnchoredTexture {
+    const slot = t.index * 2 + (side === 'n' ? 0 : 1);
+    return (this.edges[slot] ??= this.edgeFromAsset(t.sprite, side) ?? this.mirror(this.edgeN(t), side === 'w'));
+  }
+
+  /** The `n` texture of an edge tile with no usable asset: a procedural slab. */
+  private edgeN(t: TileDef): AnchoredTexture {
+    return (this.edges[t.index * 2] ??= this.bakeMasked(slab(t.color)));
+  }
+
+  private edgeFromAsset(index: number | null, side: EdgeSide): AnchoredTexture | null {
+    if (index === null) return null;
+    const asset = this.def.assets[index]!;
+    const r = asset.ways === 1 ? { image: 0, mirrored: side === 'w' } : resolveFacing(asset.byFacing, side, null);
+    const texture = this.assets[index]?.[r.image];
+    if (!texture) return null;
+    const [anchorX, anchorY] = asset.images[r.image]!.anchor;
+    return { texture, anchorX, anchorY, mirrored: r.mirrored };
+  }
+
+  private mirror(t: AnchoredTexture, mirrored: boolean): AnchoredTexture {
+    return mirrored ? { ...t, mirrored: !t.mirrored } : t;
   }
 
   /**
@@ -262,6 +296,31 @@ function block(color: string, facing: Facing | null): Graphics {
     .fill(c);
   if (facing) edgeCue(g, c, facing, H);
   return g.poly([0, -TILE_H - H, HW, -HH - H, 0, -H, -HW, -HH - H]).stroke({ width: 1, color: shade(c, 0.4), alpha: 0.8 });
+}
+
+/** Half the thickness of an edge slab, in tile units (an edge is 1/8 of a tile thick). */
+const EDGE_HALF = 1 / 16;
+
+/**
+ * A wall-height slab on a cell's `n` side, anchored on the diamond's top
+ * vertex: along u from −EDGE_HALF to 1 + EDGE_HALF (so slabs meeting at a
+ * vertex overlap into a corner post), v from −EDGE_HALF to +EDGE_HALF.
+ */
+function slab(color: string): Graphics {
+  const c = parseColor(color);
+  const H = BLOCK_H;
+  const e = EDGE_HALF;
+  const at = (u: number, v: number, z: number) => [(u - v) * HW, (u + v) * HH - z];
+  const quad = (...pts: number[][]) => pts.flat();
+  const [u0, u1] = [-e, 1 + e];
+  return new Graphics()
+    .poly(quad(at(u0, e, 0), at(u1, e, 0), at(u1, e, H), at(u0, e, H))) // front (south) face
+    .fill(shade(c, 0.72))
+    .poly(quad(at(u1, -e, 0), at(u1, e, 0), at(u1, e, H), at(u1, -e, H))) // end face
+    .fill(shade(c, 0.55))
+    .poly(quad(at(u0, -e, H), at(u1, -e, H), at(u1, e, H), at(u0, e, H))) // top
+    .fill(c)
+    .stroke({ width: 1, color: shade(c, 0.4), alpha: 0.8 });
 }
 
 /** A small sack in the item's colour, resting on the ground centre. */
