@@ -95,6 +95,7 @@ tiles:
     sprite: fence_img
     walkable: false
     opaque: false                   # low: you can see over it
+    edge: true                      # a low fence between cells
 
 archetypes:
   - id: bunny
