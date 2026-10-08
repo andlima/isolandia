@@ -3,7 +3,7 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, reasonText, recipeHint, type Action, type Intent, type World } from '../core/index.ts';
+import { hudModel, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -98,6 +98,8 @@ export interface ActEntry {
   /** Target cell (tile actions and containers). */
   readonly x?: number;
   readonly y?: number;
+  /** The target is the edge on this side of the cell. */
+  readonly side?: EdgeSide;
   readonly ok: boolean;
   /** Why it cannot be done now (`reasonText`), or `''`. */
   readonly hint: string;
@@ -143,8 +145,9 @@ export function actionMenu(world: World): ActEntry[] {
   }
   for (const a of world.availableActions()) {
     if (a.kind !== 'act') continue;
-    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y!, z: a.z! } : { kind: 'act', action: a.action! };
-    out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y! } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
+    const side = a.side ? { side: a.side } : {};
+    const action: Action = a.x !== undefined ? { kind: 'act', action: a.action!, x: a.x, y: a.y!, z: a.z!, ...side } : { kind: 'act', action: a.action! };
+    out.push({ label: a.label, ...(a.x !== undefined ? { x: a.x, y: a.y!, ...side } : {}), ok: a.ok, hint: reasonText(a), actions: [action] });
   }
   for (let y = py - 1; y <= py + 1; y++) {
     for (let x = px - 1; x <= px + 1; x++) {
@@ -156,10 +159,10 @@ export function actionMenu(world: World): ActEntry[] {
   return out.slice(0, 9);
 }
 
-/** `act: 1) Barricade (12,3)  2) Rest [Not now]`, or a note when nothing can be done here. */
+/** `act: 1) Barricade (12,3 w)  2) Rest [Not now]` (an edge target names its side), or a note when nothing can be done here. */
 export function actionMenuText(list: readonly ActEntry[]): string {
   if (list.length === 0) return 'no actions here (any key)';
-  const entry = (a: ActEntry, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y})` : ''}${a.ok ? '' : ` [${a.hint}]`}`;
+  const entry = (a: ActEntry, i: number) => `${i + 1}) ${a.label}${a.x !== undefined ? ` (${a.x},${a.y}${a.side ? ` ${a.side}` : ''})` : ''}${a.ok ? '' : ` [${a.hint}]`}`;
   return `act: ${list.map(entry).join('  ')}`;
 }
 
@@ -301,8 +304,9 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
       // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
       const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + world.player.archetype.measurements.length + 7 + 2;
       const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + (saves ? '  S: save  L: load' : '');
-      const width = Math.max(10, stdout.columns ?? 80);
-      const height = Math.max(5, (stdout.rows ?? 24) - hudRows);
+      // The view is double resolution (cells between edges): 2·w + 1 columns by 2·h + 1 lines.
+      const width = Math.max(5, Math.floor(((stdout.columns ?? 80) - 1) / 2));
+      const height = Math.max(2, Math.floor(((stdout.rows ?? 24) - hudRows - 1) / 2));
       const frame = renderAscii(world, { width, height });
       if (message && Date.now() - messageAt > STATUS_MS) message = '';
       const sim = simStatus(world);

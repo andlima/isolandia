@@ -24,7 +24,7 @@ import { readPack } from '../src/node/read-pack.ts';
 import { climbKey, suppressesDefault } from '../src/web/keys.ts';
 import { clickPlan, contextMenu, menuTitle, runMenuItem } from '../src/web/menu.ts';
 import { clickIntent } from '../src/web/panels.ts';
-import { assertRoundTrip, fixture, GAMES } from './helpers.ts';
+import { assertRoundTrip, cellRows, fixture, GAMES } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -591,8 +591,8 @@ test('terminal: < / > climb or say there is no way; the x list offers Go up; the
   // The view shows floor 1 only: the crate upstairs, the empty cells as spaces, the listener; not the chaser below.
   const frame = renderAscii(w, { width: 7, height: 5 });
   // Centred on the player at (4, 1): the view starts at (1, -1).
-  assert.deepEqual(frame.lines, ['       ', '###### ', '.B.@.# ', '.....# ', 'l  ..# ']);
-  assert.equal(frame.colors[4]![1], null, 'an empty cell has no colour');
+  assert.deepEqual(cellRows(frame), ['       ', '###### ', '.B.@.# ', '.....# ', 'l  ..# ']);
+  assert.equal(frame.colors[9]![3], null, 'an empty cell has no colour');
   const hud = hudLines(hudModel(w));
   assert.equal(hud[1], 'Floor 1');
   assert.equal(hudModel(World.create(loadPacksOrThrow([fixture()]), 1)).floor, null);

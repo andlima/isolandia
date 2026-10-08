@@ -19,7 +19,7 @@ import {
 } from '../src/core/index.ts';
 import { clickIntent } from '../src/web/panels.ts';
 import { transferView } from '../src/web/transfer.ts';
-import { fixture, loadFixture } from './helpers.ts';
+import { cellRows, fixture, loadFixture } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -597,10 +597,11 @@ test('hudModel/ASCII: packs without items keep the HUD byte-identical; ground pi
   const frame = renderAscii(w, { width: 7, height: 5 });
   const text = frameToText(frame);
   // Viewport origin: (3 - 3, 2 - 2) = (0, 0), so screen = world coordinates.
-  assert.equal(frame.lines[2], '#..@*.#');
-  assert.equal(frame.colors[2]![4], 'gray');
+  // Cells are at odd lines and columns: viewport row 2 is line 5, column x is 2x + 1.
+  assert.equal(cellRows(frame)[2], '#..@*.#');
+  assert.equal(frame.colors[5]![9], 'gray');
   at(w, 4, 2);
-  assert.equal(renderAscii(w, { width: 7, height: 5 }).lines[2]![3], '@'); // entities draw over piles
+  assert.equal(cellRows(renderAscii(w, { width: 7, height: 5 }))[2]![3], '@'); // entities draw over piles
   assert.match(text, /Carrying: 0\/0\.6/);
   assert.match(text, /Inventory: empty/);
 });

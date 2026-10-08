@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { frameToText, renderAscii } from '../src/ascii/render.ts';
+import { renderAscii } from '../src/ascii/render.ts';
 import { actionMenu, actionMenuText, handleKey, type KeyState } from '../src/ascii/terminal.ts';
 import {
   countOf,
@@ -19,7 +19,7 @@ import {
 import { readPack } from '../src/node/read-pack.ts';
 import { activityBar } from '../src/web/hud.ts';
 import { transferView } from '../src/web/transfer.ts';
-import { fixture, GAMES, genreCell } from './helpers.ts';
+import { cellRows, fixture, GAMES, genreCell } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -764,7 +764,7 @@ test('ascii: x opens the action list, 1-9 start one, any other key closes it', (
 test('ascii: the renderer shows a changed tile', () => {
   const w = world();
   moveTo(w.player, 4, 1);
-  const row = () => frameToText(renderAscii(w, { width: 9, height: 3 })).split('\n')[1]!;
+  const row = () => cellRows(renderAscii(w, { width: 9, height: 3 }))[1]!;
   assert.equal(row(), '#...@W#  ');
   w.queueAction({ kind: 'act', action: 't:board_up', x: 5, y: 1, z: 0 });
   steps(w, 61);
