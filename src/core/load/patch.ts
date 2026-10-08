@@ -28,6 +28,7 @@ export const KIND_OF: Record<ListDomain, Kind> = {
   vars: 'var',
   quests: 'quest',
   journal: 'journal entry',
+  dialogues: 'dialogue',
 };
 
 /** A loaded pack: its raw content, what it can see, and every pack it depends on (transitively). */

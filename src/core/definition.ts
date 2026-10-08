@@ -312,6 +312,8 @@ export interface ArchetypeDef {
   readonly inventory: InventorySpec | null;
   /** Behavior index driving non-player entities of this archetype, or null. */
   readonly behavior: number | null;
+  /** Dialogue index of the archetype's conversation (`talk`), or null; ignored on the player. */
+  readonly dialogue: number | null;
 }
 
 /** Built-in activity of a behavior state. */
@@ -447,11 +449,13 @@ export interface NumberTerm {
   readonly fn: Compiled | null;
 }
 
-/** A measurement effect; always acts on `self`. */
+/** A measurement effect; acts on `self`, or on the NPC being talked to with `on: npc` (dialogues only). */
 export interface MeasurementEffectDef extends NumberTerm {
   /** `apply` adds the value, `set` replaces the measurement's value. */
   readonly type: 'apply' | 'set';
   readonly measurement: number;
+  /** Set (`'npc'`) when the effect acts on the NPC of the open conversation instead of `self`. */
+  readonly on?: 'npc';
 }
 
 /** Emits a noise at `self`'s cell; the term is the hearing radius in tiles. */
@@ -492,7 +496,7 @@ export interface JournalEffectDef {
   readonly entry: number;
 }
 
-/** One effect of a system, item use, action, recipe or quest stage. */
+/** One effect of a system, item use, action, recipe, quest stage or dialogue. */
 export type EffectDef = MeasurementEffectDef | NoiseEffectDef | SetTileEffectDef | VarEffectDef | QuestEffectDef | JournalEffectDef;
 
 /** A world-level number (`vars` domain): one value per world, clamped to `[min, max]` on every write. */
@@ -541,6 +545,71 @@ export interface QuestDef {
   readonly stages: readonly QuestStageDef[];
   /** Indices of the stages with a `when`, ascending (the quest phase's work list). */
   readonly watched: readonly number[];
+}
+
+/** Node index of a dialogue choice's `to: end`: the choice ends the conversation. */
+export const DIALOGUE_END = -1;
+
+/** Most choices a dialogue node can show (they are numbered 1–9). */
+export const MAX_DIALOGUE_CHOICES = 9;
+
+/** One choice of a dialogue node. Expressions run with `self` = `player` = the player and `npc` = the NPC. */
+export interface DialogueChoiceDef {
+  readonly text: string;
+  /** Node index, or `DIALOGUE_END`. */
+  readonly to: number;
+  /** Null means always. */
+  readonly whenFn: Compiled | null;
+  /** Shown (disabled) when `when` is falsy; null hides the choice instead. */
+  readonly unavailable: string | null;
+  /** Removed from the player when chosen; missing items disable the choice. */
+  readonly consume: readonly ItemCount[];
+  /** Added to the player when chosen (overflow goes to the ground pile at the player's cell). */
+  readonly give: readonly ItemCount[];
+  /** Run when chosen, after `consume` and `give`. */
+  readonly effects: readonly EffectDef[];
+  /** Hidden for good once chosen (world-level, recorded by `id`). */
+  readonly once: boolean;
+  /** Choice id, unique within the dialogue; `''` when none. */
+  readonly id: string;
+  /** Synthesized from a node's `next`: choosing it is not a player choice for the loop guard. */
+  readonly auto: boolean;
+}
+
+/** Who a node's line is from: the NPC's or player's archetype label, or a fixed name. */
+export type DialogueSpeaker = { readonly kind: 'npc' | 'player' } | { readonly kind: 'name'; readonly name: string };
+
+/** One node of a dialogue: a line and the choices that answer it. */
+export interface DialogueNodeDef {
+  readonly name: string;
+  readonly index: number;
+  readonly speaker: DialogueSpeaker;
+  readonly text: string;
+  /** Run each time the node is entered. */
+  readonly effects: readonly EffectDef[];
+  /** Non-empty (`next` and a node without choices are synthesized choices), at most `MAX_DIALOGUE_CHOICES`. */
+  readonly choices: readonly DialogueChoiceDef[];
+  /** False forbids leaving (Escape) at this node. */
+  readonly leave: boolean;
+}
+
+/** An entry of a dialogue's `start` list: the first one whose `when` holds picks the opening node. */
+export interface DialogueStartDef {
+  /** Null means always. */
+  readonly whenFn: Compiled | null;
+  readonly node: number;
+}
+
+/** A conversation tree (`dialogues` domain), attached to archetypes with `dialogue`. */
+export interface DialogueDef {
+  readonly id: string;
+  readonly index: number;
+  /** Whether the NPC will talk at all; null means always. */
+  readonly whenFn: Compiled | null;
+  /** Shown when `when` is falsy, or null for the default. */
+  readonly unavailable: string | null;
+  readonly start: readonly DialogueStartDef[];
+  readonly nodes: readonly DialogueNodeDef[];
 }
 
 /** A periodic rule (`systems` domain), run once per matching entity. */
@@ -633,6 +702,7 @@ export type PatchDomain =
   | 'vars'
   | 'quests'
   | 'journal'
+  | 'dialogues'
   | 'start'
   | 'clock'
   | 'lighting';
@@ -667,6 +737,7 @@ export interface Definition {
   readonly vars: readonly VarDef[];
   readonly quests: readonly QuestDef[];
   readonly journal: readonly JournalEntryDef[];
+  readonly dialogues: readonly DialogueDef[];
   readonly distributions: readonly DistributionDef[];
   /** Every room tag used by any map, in first-seen order (room tags are not namespaced). */
   readonly roomTags: readonly string[];
@@ -703,5 +774,6 @@ export interface Definition {
     readonly vars: Readonly<Record<string, number>>;
     readonly quests: Readonly<Record<string, number>>;
     readonly journal: Readonly<Record<string, number>>;
+    readonly dialogues: Readonly<Record<string, number>>;
   };
 }

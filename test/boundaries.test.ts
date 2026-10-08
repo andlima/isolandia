@@ -53,7 +53,7 @@ test('nothing in src/ imports spike code', () => {
 });
 
 test('no stdpack or genre words in src/ (engine code must not name stdpack or genre content)', () => {
-  const genre = /\b(zombie|zmb|vampire|vamp|blood|hunger|thirst|survivor|shambler|mansion|undead|bunny|carrot|gdn|butterfly|burrow|clover|strawberry|wheelbarrow|fox)\b/i;
+  const genre = /\b(zombie|zmb|vampire|vamp|blood|hunger|thirst|survivor|shambler|mansion|undead|bunny|carrot|gdn|butterfly|burrow|clover|strawberry|wheelbarrow|fox|barkeep|bartender|saloon|sheriff|outlaw|detective|noir|western|gunslinger|witness|cowboy|whiskey)\b/i;
   const stdpack = /\b(hp|health|fatigue|hungry|thirsty|humanoid)\b/i;
   const bad: string[] = [];
   for (const f of files('src')) {

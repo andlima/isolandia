@@ -51,6 +51,8 @@ export interface ExprContext {
    */
   target?: { readonly x: number; readonly y: number; readonly z: number; readonly side?: 'n' | 'w' | null } | null;
   player: ExprEntity;
+  /** The NPC being talked to, set only while a dialogue's expressions run (see `CompileSymbols.npc`). */
+  npc?: ExprEntity | null;
   tick: number;
   ticksPerSecond: number;
   /** Calendar constants; `world.day`, `world.hour`, … are computed from `tick`. */
@@ -117,6 +119,8 @@ export interface CompileSymbols {
   resolveQuest?(ref: string): { index: number } | { error: string };
   /** Resolve a stage id of a quest (by quest index) to its stage index. */
   resolveStage?(quest: number, stage: string): { index: number } | { error: string };
+  /** Whether `npc` (the NPC being talked to) is in scope: dialogue expressions only. */
+  npc?: boolean;
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -325,9 +329,11 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     return fail;
   };
 
-  function entityRoot(name: 'self' | 'player'): (ctx: ExprContext) => ExprEntity {
-    return name === 'self' ? (c) => c.self : (c) => c.player;
+  function entityRoot(name: 'self' | 'player' | 'npc'): (ctx: ExprContext) => ExprEntity {
+    return name === 'self' ? (c) => c.self : name === 'player' ? (c) => c.player : (c) => c.npc!;
   }
+
+  const NPC_ONLY = `'npc' is only available in dialogues`;
 
   function member(node: Extract<Ast, { kind: 'member' }>): CompiledExpr {
     const obj = node.object;
@@ -335,7 +341,9 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const prop = node.property;
     switch (obj.name) {
       case 'self':
-      case 'player': {
+      case 'player':
+      case 'npc': {
+        if (obj.name === 'npc' && !symbols.npc) return err(NPC_ONLY, obj.pos);
         const root = entityRoot(obj.name);
         if (prop === 'x') return { fn: (c) => root(c).x, type: 'number' };
         if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
@@ -346,6 +354,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         const r = symbols.resolveMeasurement(prop);
         if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
         const idx = r.index;
+        if (obj.name === 'npc') return { fn: (c) => c.npc!.m[idx]!, type: 'number' };
         return obj.name === 'self'
           ? { fn: (c) => c.self.m[idx]!, type: 'number' }
           : { fn: (c) => c.player.m[idx]!, type: 'number' };
@@ -376,6 +385,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         return { fn: (c) => c.self, type: 'entity' };
       case 'player':
         return { fn: (c) => c.player, type: 'entity' };
+      case 'npc':
+        return symbols.npc ? { fn: (c) => c.npc!, type: 'entity' } : err(NPC_ONLY, node.pos);
       case 'tile':
         return {
           fn: (c) => {

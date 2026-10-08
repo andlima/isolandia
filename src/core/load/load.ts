@@ -18,7 +18,14 @@ import {
   type BehaviorDef,
   type BehaviorStateDef,
   type ContainerSpec,
+  DIALOGUE_END,
+  type DialogueChoiceDef,
+  type DialogueDef,
+  type DialogueNodeDef,
+  type DialogueSpeaker,
+  type DialogueStartDef,
   EMPTY_TILE,
+  MAX_DIALOGUE_CHOICES,
   type OutcomeDef,
   type DistributionDef,
   type DurationDef,
@@ -97,6 +104,10 @@ const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
 const DEFAULT_RECIPE_VERB = 'Craft';
 const DEFAULT_RECIPE_CATEGORY = 'General';
+const NPC_SPEAKER: DialogueSpeaker = { kind: 'npc' };
+/** The choice a node without `choices` or `next` gets: it ends the conversation. */
+const LEAVE_CHOICE: DialogueChoiceDef = { text: 'Leave', to: DIALOGUE_END, whenFn: null, unavailable: null, consume: [], give: [], effects: [], once: false, id: '', auto: false };
+const CONTINUE_TEXT = 'Continue';
 const ACTIVITIES: readonly ActivityKind[] = ['idle', 'wander', 'pursue', 'flee', 'home', 'investigate'];
 const DEFAULT_REPATH = 1;
 const always = (): boolean => true;
@@ -129,6 +140,8 @@ class Loader {
   private stageNames: string[][] = [];
   /** Quest indices that some `quest` effect names (a quest without `when` stages needs one). */
   private readonly questTargets = new Set<number>();
+  /** Set while a dialogue is read: `npc` and `on: npc` are only valid there. */
+  private inDialogue = false;
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
@@ -157,6 +170,7 @@ class Loader {
     const vars = this.defined.vars.map((d) => this.worldVar(d));
     const journal = this.defined.journal.map((d) => this.journalEntry(d));
     const quests = this.defined.quests.map((d) => this.quest(d));
+    const dialogues = this.defined.dialogues.map((d) => this.dialogue(d, items));
     const start = this.start(maps);
     this.checkQuestStarts(quests);
     const clock = this.clock();
@@ -193,6 +207,7 @@ class Loader {
       vars,
       quests,
       journal,
+      dialogues,
       distributions,
       roomTags: this.roomTags,
       start,
@@ -215,6 +230,7 @@ class Loader {
         vars: ids(vars),
         quests: ids(quests),
         journal: ids(journal),
+        dialogues: ids(dialogues),
       },
     };
     return { ok: true, definition: deepFreeze(definition), warnings };
@@ -314,6 +330,7 @@ class Loader {
       resolveEntry: resolver('journal entry'),
       resolveQuest: resolver('quest'),
       resolveStage: (q, stage) => this.stage(q, stage),
+      npc: this.inDialogue,
     });
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
@@ -596,7 +613,7 @@ class Loader {
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
     const f = this.fields(
       d,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -638,7 +655,8 @@ class Loader {
     const sprite = this.sprite(f, d);
     const inventory = this.inventory(f, d, items);
     const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scopeOf('behavior'), f.at('behavior'), this.sink)?.index ?? null) : null;
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior };
+    const dialogue = f.has('dialogue') ? (this.symbols.ref('dialogue', f.raw('dialogue'), d.scopeOf('dialogue'), f.at('dialogue'), this.sink)?.index ?? null) : null;
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue };
   }
 
   private inventory(f: Fields, d: Defined, items: readonly ItemDef[]): InventorySpec | null {
@@ -1736,10 +1754,17 @@ class Loader {
         if (term) effects.push({ type: t, ...term });
         return;
       }
-      const ef = new Fields(this.sink, src, raw, ['type', 'measurement', valueKey], `'${t}' effect`);
+      const ef = new Fields(this.sink, src, raw, ['type', 'measurement', valueKey, 'on'], `'${t}' effect`);
       const m = ef.present('measurement') ? this.symbols.ref('measurement', ef.raw('measurement'), scope, ef.at('measurement'), this.sink) : null;
       const term = ef.present(valueKey) ? this.numberTerm(ef.raw(valueKey), valueKey, scope, ef.at(valueKey)) : null;
-      if (m && term) effects.push({ type: t, measurement: m.index, ...term });
+      const on = ef.raw('on');
+      let onNpc = false;
+      if (on !== undefined && on !== null) {
+        if (!this.inDialogue) this.sink.add(ef.at('on'), `field 'on' is only allowed in the effects of dialogues`);
+        else if (on === 'npc') onNpc = true;
+        else if (on !== 'self') this.sink.add(ef.at('on'), `field 'on' must be 'self' or 'npc', got ${JSON.stringify(on)}`);
+      }
+      if (m && term) effects.push({ type: t, measurement: m.index, ...term, ...(onNpc ? { on: 'npc' as const } : {}) });
     });
     return effects;
   }
@@ -1832,6 +1857,139 @@ class Loader {
       const d = this.defined.quests[q.index]!;
       this.sink.add(at(d.srcOf('stages'), 'stages'), `quest '${q.id}' can never start: none of its stages has a 'when', and no 'quest' effect names it`);
     }
+  }
+
+  // ── Dialogues ───────────────────────────────────────────────────────────
+
+  /** A dialogue: its expressions see `npc` and its measurement effects take `on: npc`. */
+  private dialogue(d: Defined, items: readonly ItemDef[]): DialogueDef {
+    this.inDialogue = true;
+    try {
+      return this.readDialogue(d, items);
+    } finally {
+      this.inDialogue = false;
+    }
+  }
+
+  private readDialogue(d: Defined, items: readonly ItemDef[]): DialogueDef {
+    const f = this.fields(d, ['id', 'when', 'unavailable', 'start', 'nodes'], 'dialogue');
+    const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
+    const unavailable = f.string('unavailable', false) ?? null;
+    const rawNodes = f.mapping('nodes', true);
+    const names = Object.keys(rawNodes ?? {});
+    if (rawNodes && names.length === 0) this.sink.add(f.at('nodes'), `field 'nodes' must define at least one node`);
+    for (const n of names) {
+      if (n === 'end') this.sink.add(f.at('nodes', n), `node name 'end' is reserved: 'to: end' ends the conversation`);
+      else if (!ID_RE.test(n)) this.sink.add(f.at('nodes', n), `invalid node name '${n}': node names must match [a-z][a-z0-9_]*`);
+    }
+    const reached = new Uint8Array(names.length);
+    const ref = (v: Json | undefined, src: Src, allowEnd: boolean): number | null => {
+      const k = this.nodeRef(v, names, src, d.id, allowEnd);
+      if (k !== null && k >= 0) reached[k] = 1;
+      return k;
+    };
+
+    const start: DialogueStartDef[] = [];
+    const sv = f.raw('start');
+    const startScope = d.scopeOf('start');
+    if (sv === undefined || sv === null) f.present('start');
+    else if (typeof sv === 'string') {
+      const k = ref(sv, f.at('start'), false);
+      if (k !== null) start.push({ whenFn: null, node: k });
+    } else if (Array.isArray(sv)) {
+      if (sv.length === 0) this.sink.add(f.at('start'), `field 'start' must list at least one entry`);
+      sv.forEach((raw, i) => {
+        const src = f.at('start', i);
+        if (!isObject(raw)) return void this.sink.add(src, `start entries must be mappings like { when: "…", node: greeting }`);
+        const sf = new Fields(this.sink, src, raw, ['when', 'node'], 'start entry');
+        const when = this.condition(sf, 'when', startScope);
+        const k = sf.present('node') ? ref(sf.raw('node'), sf.at('node'), false) : null;
+        if (k !== null && when !== null) start.push({ whenFn: when ?? null, node: k });
+      });
+    } else this.sink.add(f.at('start'), `field 'start' must be a node name or a list of { when?, node }`);
+
+    const scope = d.scopeOf('nodes');
+    const choiceIds = new Set<string>();
+    const nodes = names.map((name, index): DialogueNodeDef => {
+      const raw = rawNodes![name];
+      const src = f.at('nodes', name);
+      const node: DialogueNodeDef = { name, index, speaker: NPC_SPEAKER, text: '', effects: [], choices: [LEAVE_CHOICE], leave: true };
+      if (!isObject(raw)) {
+        this.sink.add(src, `nodes must be mappings like { text: "…", choices: [{ text: "…", to: end }] }`);
+        return node;
+      }
+      const nf = new Fields(this.sink, src, raw, ['speaker', 'text', 'effects', 'choices', 'next', 'leave'], 'dialogue node');
+      const sp = nf.string('speaker', false);
+      const speaker: DialogueSpeaker = sp === undefined || sp === 'npc' ? NPC_SPEAKER : sp === 'player' ? { kind: 'player' } : { kind: 'name', name: sp };
+      const text = nf.string('text') ?? '';
+      if (nf.has('text') && text.trim() === '') this.sink.add(nf.at('text'), `field 'text' must not be empty`);
+      const effects = this.effects(nf, scope, { optional: true });
+      const leave = nf.boolean('leave', false) ?? true;
+      let choices: DialogueChoiceDef[] = [LEAVE_CHOICE];
+      const list = nf.list('choices');
+      if (nf.has('choices') && nf.has('next')) this.sink.add(nf.at('next'), `node '${name}' has both 'choices' and 'next'; use one`);
+      if (list) {
+        if (list.length === 0) this.sink.add(nf.at('choices'), `field 'choices' must list at least one choice`);
+        else if (list.length > MAX_DIALOGUE_CHOICES) this.sink.add(nf.at('choices'), `node '${name}' has ${list.length} choices; at most ${MAX_DIALOGUE_CHOICES} are allowed`);
+        if (list.length > 0) choices = list.map((c, i) => this.dialogueChoice(c, nf.at('choices', i), (v, s) => ref(v, s, true), scope, choiceIds, items));
+      } else if (nf.has('next')) {
+        const to = ref(nf.raw('next'), nf.at('next'), true);
+        choices = [{ ...LEAVE_CHOICE, text: CONTINUE_TEXT, to: to ?? DIALOGUE_END, auto: true }];
+      }
+      return { name, index, speaker, text, effects, choices, leave };
+    });
+    names.forEach((name, k) => {
+      if (reached[k] === 0 && rawNodes) this.sink.warn(f.at('nodes', name), `node '${name}' of dialogue '${d.id}' is never reached: no 'start', 'to' or 'next' names it`);
+    });
+    return { id: d.id, index: d.index, whenFn, unavailable, start, nodes };
+  }
+
+  /** A node reference (`start`, `to`, `next`): a node name of the dialogue, or `end` where allowed; null after reporting. */
+  private nodeRef(v: Json | undefined, names: readonly string[], src: Src, dialogue: string, allowEnd: boolean): number | null {
+    if (typeof v !== 'string') {
+      this.sink.add(src, `expected a node name${allowEnd ? ` or 'end'` : ''}, got ${JSON.stringify(v)}`);
+      return null;
+    }
+    if (allowEnd && v === 'end') return DIALOGUE_END;
+    const k = names.indexOf(v);
+    if (k >= 0 && v !== 'end') return k;
+    const s = nearMiss(v, allowEnd ? [...names, 'end'] : names);
+    this.sink.add(src, `unknown node '${v}' of dialogue '${dialogue}'${s ? ` (did you mean '${s}'?)` : ''}`);
+    return null;
+  }
+
+  private dialogueChoice(
+    raw: Json,
+    src: Src,
+    ref: (v: Json | undefined, src: Src) => number | null,
+    scope: Scope,
+    ids: Set<string>,
+    items: readonly ItemDef[],
+  ): DialogueChoiceDef {
+    if (!isObject(raw)) {
+      this.sink.add(src, `choices must be mappings like { text: "…", to: end }`);
+      return LEAVE_CHOICE;
+    }
+    const cf = new Fields(this.sink, src, raw, ['text', 'to', 'when', 'unavailable', 'consume', 'give', 'effects', 'once', 'id'], 'choice');
+    const text = cf.string('text') ?? '';
+    const to = cf.present('to') ? ref(cf.raw('to'), cf.at('to')) : null;
+    const whenFn = this.condition(cf, 'when', scope) ?? null;
+    const unavailable = cf.string('unavailable', false) ?? null;
+    const consume = this.itemCounts(cf, 'consume', scope, 'consumed');
+    const give = this.itemCounts(cf, 'give', scope, 'given');
+    for (const g of give) {
+      if (consume.some((c) => c.item === g.item)) this.sink.add(cf.at('give'), `item '${items[g.item]!.id}' is both consumed and given; list it in 'consume' or 'give', not both`);
+    }
+    const effects = this.effects(cf, scope, { optional: true });
+    const once = cf.boolean('once', false) ?? false;
+    const id = cf.string('id', false) ?? '';
+    if (cf.has('id') && typeof raw['id'] === 'string') {
+      if (!ID_RE.test(id)) this.sink.add(cf.at('id'), `invalid choice id '${id}': choice ids must match [a-z][a-z0-9_]*`);
+      else if (ids.has(id)) this.sink.add(cf.at('id'), `duplicate choice id '${id}' in this dialogue`);
+      ids.add(id);
+    }
+    if (once && !cf.has('id')) this.sink.add(cf.at('once'), `a 'once' choice needs an 'id' (saves record it)`);
+    return { text, to: to ?? DIALOGUE_END, whenFn, unavailable, consume, give, effects, once, id, auto: false };
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────
