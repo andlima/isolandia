@@ -1,3 +1,4 @@
+import type { EdgeSide } from '../definition.ts';
 import type { Grid } from './grid.ts';
 
 const SQRT2 = Math.SQRT2;
@@ -17,8 +18,10 @@ export function octile(ax: number, ay: number, bx: number, by: number): number {
 
 /**
  * A* over a Grid's floors: the 8 same-floor neighbours with an octile cost
- * and no corner cutting (a diagonal needs both orthogonal neighbours
- * walkable), then the cell's links up and down (cost 1, see `Grid.link`).
+ * across crossable edges and no corner cutting (a diagonal needs both
+ * orthogonal neighbours walkable and every edge of both L routes crossable,
+ * as `Grid.canStep`), then the cell's links up and down (cost 1, see
+ * `Grid.link`).
  * The heuristic is octile on (x, y) only, which stays admissible.
  *
  * Per-node state lives in typed arrays indexed by cell index
@@ -90,29 +93,61 @@ export class Pathfinder {
   }
 
   /**
-   * Shortest path to any walkable tile 8-adjacent to (gx, gy) on the goal's
-   * floor `gz`, or to the goal itself when it is walkable (same return
+   * Shortest path to any walkable tile from which (gx, gy) is in reach on the
+   * goal's floor `gz` (8-adjacent with no non-walkable edge between, see
+   * `Grid.reaches`), or to the goal itself when it is walkable (same return
    * convention and budget as `findPath`). One multi-goal search; ties are
    * broken like `findPath`. Fails without searching when no goal cell shares
    * a walkable start's region.
    */
   findPathAdjacent(sx: number, sy: number, gx: number, gy: number, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
     this.reset();
-    const { width, height, walk } = this.grid;
-    if (!this.grid.inBounds(sx, sy, sz) || !this.grid.inBounds(gx, gy, gz)) return null;
-    const start = this.grid.index(sx, sy, sz);
-    const labels = walk[start] === 1 ? this.grid.regions() : null;
+    const grid = this.grid;
+    const { width, height, walk } = grid;
+    if (!grid.inBounds(sx, sy, sz) || !grid.inBounds(gx, gy, gz)) return null;
     const gen = ++this.gen;
+    for (let y = Math.max(0, gy - 1); y <= Math.min(height - 1, gy + 1); y++) {
+      for (let x = Math.max(0, gx - 1); x <= Math.min(width - 1, gx + 1); x++) {
+        const i = grid.index(x, y, gz);
+        if (walk[i] === 1 && grid.edgesOpen(i, gx - x, gy - y)) this.goal[i] = gen;
+      }
+    }
+    return this.searchGoals(sx, sy, sz, gx, gy, gz, gen, budget);
+  }
+
+  /**
+   * Shortest path to a walkable cell from which the edge on side `side` of
+   * (gx, gy, gz) is in reach: one of the two cells it separates (same
+   * return convention and budget as `findPath`).
+   */
+  findPathToEdge(sx: number, sy: number, gx: number, gy: number, side: EdgeSide, sz = 0, gz = 0, budget = Infinity): Int32Array | null {
+    this.reset();
+    const grid = this.grid;
+    const { walk } = grid;
+    if (!grid.inBounds(sx, sy, sz) || !grid.inBounds(gx, gy, gz)) return null;
+    const gen = ++this.gen;
+    const i = grid.index(gx, gy, gz);
+    if (walk[i] === 1) this.goal[i] = gen;
+    const ox = side === 'w' ? gx - 1 : gx;
+    const oy = side === 'n' ? gy - 1 : gy;
+    if (grid.inBounds(ox, oy, gz) && walk[grid.index(ox, oy, gz)] === 1) this.goal[grid.index(ox, oy, gz)] = gen;
+    return this.searchGoals(sx, sy, sz, gx, gy, gz, gen, budget);
+  }
+
+  /** Search towards the goal cells of the 3×3 around (gx, gy, gz) stamped with `gen`; fails early on region labels. */
+  private searchGoals(sx: number, sy: number, sz: number, gx: number, gy: number, gz: number, gen: number, budget: number): Int32Array | null {
+    const grid = this.grid;
+    const { width, height, walk } = grid;
+    const start = grid.index(sx, sy, sz);
+    const labels = walk[start] === 1 ? grid.regions() : null;
     let any = false;
     let reachable = labels === null;
     for (let y = Math.max(0, gy - 1); y <= Math.min(height - 1, gy + 1); y++) {
       for (let x = Math.max(0, gx - 1); x <= Math.min(width - 1, gx + 1); x++) {
-        const i = this.grid.index(x, y, gz);
-        if (walk[i] === 1) {
-          this.goal[i] = gen;
-          any = true;
-          if (labels && labels[i] === labels[start]) reachable = true;
-        }
+        const i = grid.index(x, y, gz);
+        if (this.goal[i] !== gen) continue;
+        any = true;
+        if (labels && labels[i] === labels[start]) reachable = true;
       }
     }
     if (!any) return null;
@@ -131,7 +166,7 @@ export class Pathfinder {
    */
   private search(sx: number, sy: number, sz: number, gx: number, gy: number, slack: number, budget: number): Int32Array | null {
     const grid = this.grid;
-    const { width, height, walk } = grid;
+    const { width, height, walk, blockN, blockW } = grid;
     const multi = grid.floors > 1;
     const start = grid.index(sx, sy, sz);
     const gen = this.gen;
@@ -174,7 +209,18 @@ export class Pathfinder {
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const ni = base + ny * width + nx;
         if (walk[ni] !== 1 || closed[ni] === gen) continue;
-        if (d >= 4 && (walk[base + cy * width + nx] !== 1 || walk[base + ny * width + cx] !== 1)) continue;
+        const dx = DX[d]!;
+        const dy = DY[d]!;
+        if (d < 4) {
+          // The crossed edge: the `w` of the cell to the right, or the `n` of the cell below.
+          if (dx !== 0 ? blockW[dx > 0 ? ni : cur] !== 0 : blockN[dy > 0 ? ni : cur] !== 0) continue;
+        } else {
+          if (walk[base + cy * width + nx] !== 1 || walk[base + ny * width + cx] !== 1) continue;
+          // Every edge of both L routes (see `Grid.edgesOpen`).
+          const col = dx > 0 ? cur + 1 : cur;
+          const row = dy > 0 ? cur + width : cur;
+          if (blockW[col] !== 0 || blockW[col + dy * width] !== 0 || blockN[row] !== 0 || blockN[row + dx] !== 0) continue;
+        }
         const ng = gc + COST[d]!;
         if (seen[ni] === gen && ng >= g[ni]!) continue;
         seen[ni] = gen;

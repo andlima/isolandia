@@ -3,4 +3,4 @@ name: Town
 version: 0.1.0
 depends: [std, std_needs]
 kind: game
-description: A quiet 256×256 town to scavenge, cook, sleep and board up in.
+description: A quiet 343×343 town to scavenge, cook, sleep and board up in.

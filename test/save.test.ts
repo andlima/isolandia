@@ -214,7 +214,7 @@ test('save: a plain JSON SaveFile with format, version, packs and map', () => {
   const w = world();
   const s = w.save();
   assert.equal(s.format, 'isolandia-save');
-  assert.equal(s.version, 2);
+  assert.equal(s.version, 3);
   assert.deepEqual(s.packs, [{ namespace: 't', version: '1.0.0' }]);
   assert.deepEqual(s.map, { id: 't:room', width: 14, height: 8, floors: 1 });
   assert.deepEqual(s.state, w.snapshot());
@@ -241,51 +241,14 @@ test('save: pure — hash, RNG state and warnings are unchanged; works on an end
 // ── Version 1 (before floors) ───────────────────────────────────────────────
 
 /** A version 2 save as version 1 wrote it: no floors, every cell without its `z`. */
-function toV1(save: SaveFile): unknown {
-  const s = json(save) as unknown as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const xy = (o: Record<string, unknown> | null) => (o && delete o['z'], o);
-  s['version'] = 1;
-  delete s['map'].floors;
-  const st = s['state'];
-  st.tiles = st.tiles.map(([x, y, , id]: unknown[]) => [x, y, id]);
-  for (const c of st.containers) if (c.cell) c.cell = c.cell.slice(0, 2);
-  for (const e of st.entities) {
-    delete e.z;
-    delete e.fromZ;
-    e.home = e.home.slice(0, 2);
-    if (e.path) e.path = e.path.map((c: number[]) => c.slice(0, 2));
-    if (e.behavior?.plan) e.behavior.plan = [e.behavior.plan[0], e.behavior.plan[1], e.behavior.plan[3]];
-    xy(e.heard);
-    xy(e.activity);
-    xy(e.lastGoto);
-    if (e.intent?.kind === 'goto') xy(e.intent);
+test('versions 1 and 2 (before edge walls) are refused with a clear message', () => {
+  const save = world().save();
+  for (const version of [1, 2]) {
+    const old = { ...json(save), version } as unknown as SaveFile;
+    const r = World.restore(DEF, old);
+    assert.ok(!r.ok, `version ${version}`);
+    assert.deepEqual(r.errors, [`version: save version ${version} predates edge walls (version 3): its map had walls in cells, so it cannot be restored; start a new game`]);
   }
-  return s;
-}
-
-test('version 1 saves load with every z = 0, and continue exactly', () => {
-  const w = rich();
-  w.grid.setTile(2 * w.grid.width + 12, DEF.ids.tiles['t:boarded']!);
-  w.queueIntent({ kind: 'goto', x: 12, y: 5 });
-  steps(w, 2);
-  const save = w.save();
-  assert.ok(save.state.entities.some((e) => e.path) && save.state.entities.some((e) => e.behavior?.plan) && save.state.tiles.length > 0);
-  const v1 = toV1(save);
-  const r = World.restore(DEF, v1);
-  if (!r.ok) assert.fail(r.errors.join('\n'));
-  assert.deepEqual(r.warnings, []);
-  assert.deepStrictEqual(r.world.snapshot(), json(w.snapshot()));
-  assert.equal(r.world.save().version, 2);
-  for (let i = 0; i < 40; i++) {
-    w.step();
-    r.world.step();
-    assert.equal(r.world.hash(), w.hash(), `tick ${w.tick}`);
-  }
-  // Version 1 shapes are checked like version 2 ones.
-  const bad = toV1(save) as { state: { tiles: unknown[] } };
-  bad.state.tiles.push([1, 2]);
-  const e = World.restore(DEF, bad);
-  assert.ok(!e.ok && e.errors.some((m) => m.startsWith('state.tiles[1]: expected [x, y, z, tile id]')), JSON.stringify(e));
 });
 
 // ── Round trip on the fixture ───────────────────────────────────────────────
@@ -418,7 +381,7 @@ function midActivity(def: Definition, kind: 'act' | 'use' | 'craft'): World | nu
         requires: [...a.tools.map((item) => ({ item, count: 1 })), ...a.consume],
         find: (w) => {
           const e = w.availableActions().find((x) => x.kind === 'act' && x.action === a.id && x.ok);
-          return e ? (e.x !== undefined ? { kind: 'act', action: a.id, x: e.x, y: e.y! } : { kind: 'act', action: a.id }) : null;
+          return e ? (e.x !== undefined ? { kind: 'act', action: a.id, x: e.x, y: e.y!, ...(e.side ? { side: e.side } : {}) } : { kind: 'act', action: a.id }) : null;
         },
       });
     }
@@ -506,7 +469,9 @@ for (const name of Object.keys(GAMES) as (keyof typeof GAMES)[]) {
     assert.deepEqual(kinds, expected);
     if (def.actions.some((a) => a.effects.some((x) => x.type === 'set_tile'))) {
       const w = midActivity(def, 'act')!;
-      stepUntil(w, () => w.snapshot().tiles.length > 0);
+      // The shipped set_tile actions (barricade, shutter) change window edges.
+      stepUntil(w, () => w.snapshot().tiles.length + w.snapshot().edges.length > 0);
+      assert.ok(w.snapshot().edges.length > 0);
       assertRoundTrip(w, undefined, 60);
     }
   });
@@ -564,8 +529,13 @@ function fuzz(seed: number): Script {
 }
 
 const FUZZ_TICKS = 600;
-/** Script seeds that differ from the name length (the default): the town's own (4) acts too rarely. */
-const FUZZ_SEED: Record<string, number> = { town: 3 };
+/**
+ * Script seeds that differ from the name length (the default), chosen so the
+ * script acts often enough: in the roomier city the start road is further
+ * from any container, and the town's and the zombie's own seeds (4, 6) act
+ * too rarely. Seed 9 plays 18 actions on both.
+ */
+const FUZZ_SEED: Record<string, number> = { town: 9, zombie: 9 };
 
 for (const [name, def] of [...Object.entries(GENRES), ['fixture', DEF] as const]) {
   test(`fuzz (${name}): saves at three random ticks restore exactly to tick ${FUZZ_TICKS}`, () => {
@@ -629,7 +599,7 @@ const idx = (s: SaveFile, archetype: string) => s.state.entities.findIndex((e) =
 
 test('validation: format, version, packs and map', () => {
   expectError((s) => (s.format = 'other' as 'isolandia-save'), 'format', /expected 'isolandia-save', got 'other'/);
-  expectError((s) => ((s as { version: number }).version = 3), 'version', /unsupported save version 3 \(supported: 1, 2\)/);
+  expectError((s) => ((s as { version: number }).version = 4), 'version', /unsupported save version 4 \(supported: 3\)/);
   expectError((s) => (s.packs = [{ namespace: 'u', version: '1.0.0' }]), 'packs', /made with packs \[u\] but the loaded packs are \[t\]/);
   expectError((s) => s.packs.push({ namespace: 'u', version: '1' }), 'packs', /\[t, u\] but the loaded packs are \[t\]/);
   expectError((s) => (s.map.id = 't:other'), 'map', /map 't:other' \(14×8\) but the start map is 't:room' \(14×8\)/);

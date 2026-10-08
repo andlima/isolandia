@@ -14,11 +14,13 @@ import {
   resolveFacing,
   type ArchetypeDef,
   type Definition,
+  type EdgeSide,
   type Facing,
   type ItemDef,
   type TileDef,
 } from '../core/index.ts';
 import { luminance, parseColor, shade } from './colors.ts';
+import { growReach, maskFromRgba, type HitMask, type Reach } from './hit.ts';
 import { BLOCK_H, MAX_ZOOM, TILE_H, TILE_W } from './projection.ts';
 
 /** A texture plus the normalized image point that goes on the sprite's anchor spot. */
@@ -39,6 +41,9 @@ const HW = TILE_W / 2;
 const HH = TILE_H / 2;
 /** Generated textures are rasterized at this resolution so zooming in stays crisp. */
 const BAKE_RESOLUTION = 3;
+/** Iso px per art pixel (SVG art and placeholders; PNGs use their own pixels). */
+const ART_PX = 2;
+const EMPTY_MASK: HitMask = { cols: 1, rows: 1, bits: new Uint8Array(1) };
 /** SVG pack assets are rasterized at the maximum zoom, so pixel-art edges stay sharp at every zoom level. */
 const SVG_RESOLUTION = MAX_ZOOM;
 
@@ -108,17 +113,49 @@ export function facingEdge(f: Facing): readonly [readonly [number, number], read
 export class TextureBank {
   /** Per tile, 5 slots: no explicit facing, then `n`, `e`, `s`, `w`. */
   private readonly tiles: (FacedTexture | undefined)[] = [];
+  /** Per edge tile, 2 slots: `n`, then `w`. */
+  private readonly edges: (AnchoredTexture | undefined)[] = [];
   /** Per archetype placeholder, one slot per facing (`FACINGS` order). */
   private readonly archetypes: (FacedTexture | undefined)[] = [];
   private readonly items: (AnchoredTexture | undefined)[] = [];
   private readonly markers = new Map<number, AnchoredTexture>();
+  /** Hit mask per texture drawn for a tile, archetype or item (mirrored facings share their partner's). */
+  private readonly masks = new Map<Texture, HitMask>();
+  /** How far any tile, archetype or item sprite reaches from its anchor spot (iso px). */
+  readonly reach: Reach = { up: 0, down: 0, side: 0 };
+  /** Time spent building the asset masks at startup (ms). */
+  readonly maskMs: number;
 
   constructor(
     private readonly renderer: Renderer,
     private readonly def: Definition,
     /** Loaded asset textures, `[asset][image]` (null = failed). */
     private readonly assets: readonly (readonly (Texture | null)[])[],
-  ) {}
+  ) {
+    const t0 = performance.now();
+    def.assets.forEach((a, i) =>
+      a.images.forEach(({ file, anchor }, j) => {
+        const texture = assets[i]?.[j];
+        if (texture) this.addMask(texture, anchor[0], anchor[1], file.toLowerCase().endsWith('.png') ? 1 : ART_PX);
+      }),
+    );
+    this.maskMs = performance.now() - t0;
+  }
+
+  /** The hit mask of a texture returned by `tile`, `archetype` or `item`. */
+  mask(texture: Texture): HitMask {
+    return this.masks.get(texture) ?? EMPTY_MASK;
+  }
+
+  /** Build a texture's mask from its pixels, `artPx` iso px per mask cell. */
+  private addMask(texture: Texture, anchorX: number, anchorY: number, artPx: number): void {
+    if (this.masks.has(texture)) return;
+    const { pixels, width, height } = this.renderer.extract.pixels({ target: texture });
+    const cols = Math.max(1, Math.round(texture.width / artPx));
+    const rows = Math.max(1, Math.round(texture.height / artPx));
+    this.masks.set(texture, maskFromRgba(pixels, width, height, cols, rows));
+    growReach(this.reach, texture.width, texture.height, anchorX, anchorY);
+  }
 
   /**
    * Texture for a tile in a cell with the given legend `facing` (null = not
@@ -129,7 +166,38 @@ export class TextureBank {
     const slot = t.index * 5 + (facing === null ? 0 : 1 + ['n', 'e', 's', 'w'].indexOf(facing));
     const f = facing ?? DEFAULT_FACING;
     return (this.tiles[slot] ??=
-      this.fromAsset(t.sprite, f, null) ?? { ...this.bake(t.raised ? block(t.color, facing) : diamond(t.color, facing)), facing: f });
+      this.fromAsset(t.sprite, f, null) ?? { ...this.bakeMasked(t.raised ? block(t.color, facing) : diamond(t.color, facing)), facing: f });
+  }
+
+  /**
+   * Texture for an edge tile on a cell's `side`; its anchor goes on the
+   * diamond's top vertex. A single-image asset (or the placeholder slab) is
+   * drawn for `n`, the diamond's top-right side, and mirrored for `w`, its
+   * top-left side; a directional asset uses its `n` and `w` images (or
+   * their mirrored partners).
+   */
+  edge(t: TileDef, side: EdgeSide): AnchoredTexture {
+    const slot = t.index * 2 + (side === 'n' ? 0 : 1);
+    return (this.edges[slot] ??= this.edgeFromAsset(t.sprite, side) ?? this.mirror(this.edgeN(t), side === 'w'));
+  }
+
+  /** The `n` texture of an edge tile with no usable asset: a procedural slab. */
+  private edgeN(t: TileDef): AnchoredTexture {
+    return (this.edges[t.index * 2] ??= this.bakeMasked(slab(t.color)));
+  }
+
+  private edgeFromAsset(index: number | null, side: EdgeSide): AnchoredTexture | null {
+    if (index === null) return null;
+    const asset = this.def.assets[index]!;
+    const r = asset.ways === 1 ? { image: 0, mirrored: side === 'w' } : resolveFacing(asset.byFacing, side, null);
+    const texture = this.assets[index]?.[r.image];
+    if (!texture) return null;
+    const [anchorX, anchorY] = asset.images[r.image]!.anchor;
+    return { texture, anchorX, anchorY, mirrored: r.mirrored };
+  }
+
+  private mirror(t: AnchoredTexture, mirrored: boolean): AnchoredTexture {
+    return mirrored ? { ...t, mirrored: !t.mirrored } : t;
   }
 
   /**
@@ -141,12 +209,12 @@ export class TextureBank {
     const fromAsset = this.fromAsset(a.sprite, facing, prev);
     if (fromAsset) return fromAsset;
     const slot = a.index * 8 + FACINGS.indexOf(facing);
-    return (this.archetypes[slot] ??= { ...this.bake(marker(a.color, a.glyph, facing)), facing });
+    return (this.archetypes[slot] ??= { ...this.bakeMasked(marker(a.color, a.glyph, facing)), facing });
   }
 
   /** Texture for a ground pile of an item (always facing `s`); its anchor goes on the tile's ground centre. */
   item(i: ItemDef): AnchoredTexture {
-    return (this.items[i.index] ??= this.fromAsset(i.sprite, DEFAULT_FACING, null) ?? this.bake(pile(i.color)));
+    return (this.items[i.index] ??= this.fromAsset(i.sprite, DEFAULT_FACING, null) ?? this.bakeMasked(pile(i.color)));
   }
 
   /** Diamond outline for tile highlights; anchored like a flat tile. */
@@ -172,6 +240,13 @@ export class TextureBank {
     if (!texture) return null;
     const [anchorX, anchorY] = asset.images[r.image]!.anchor;
     return { texture, anchorX, anchorY, mirrored: r.mirrored, facing: r.facing };
+  }
+
+  /** `bake` plus a hit mask (placeholders get theirs when first baked). */
+  private bakeMasked(c: Container): AnchoredTexture {
+    const t = this.bake(c);
+    this.addMask(t.texture, t.anchorX, t.anchorY, ART_PX);
+    return t;
   }
 
   /** Render a display object drawn around its anchor spot (0, 0) into a texture. */
@@ -221,6 +296,31 @@ function block(color: string, facing: Facing | null): Graphics {
     .fill(c);
   if (facing) edgeCue(g, c, facing, H);
   return g.poly([0, -TILE_H - H, HW, -HH - H, 0, -H, -HW, -HH - H]).stroke({ width: 1, color: shade(c, 0.4), alpha: 0.8 });
+}
+
+/** Half the thickness of an edge slab, in tile units (an edge is 1/8 of a tile thick). */
+const EDGE_HALF = 1 / 16;
+
+/**
+ * A wall-height slab on a cell's `n` side, anchored on the diamond's top
+ * vertex: along u from −EDGE_HALF to 1 + EDGE_HALF (so slabs meeting at a
+ * vertex overlap into a corner post), v from −EDGE_HALF to +EDGE_HALF.
+ */
+function slab(color: string): Graphics {
+  const c = parseColor(color);
+  const H = BLOCK_H;
+  const e = EDGE_HALF;
+  const at = (u: number, v: number, z: number) => [(u - v) * HW, (u + v) * HH - z];
+  const quad = (...pts: number[][]) => pts.flat();
+  const [u0, u1] = [-e, 1 + e];
+  return new Graphics()
+    .poly(quad(at(u0, e, 0), at(u1, e, 0), at(u1, e, H), at(u0, e, H))) // front (south) face
+    .fill(shade(c, 0.72))
+    .poly(quad(at(u1, -e, 0), at(u1, e, 0), at(u1, e, H), at(u1, -e, H))) // end face
+    .fill(shade(c, 0.55))
+    .poly(quad(at(u0, -e, H), at(u1, -e, H), at(u1, e, H), at(u0, e, H))) // top
+    .fill(c)
+    .stroke({ width: 1, color: shade(c, 0.4), alpha: 0.8 });
 }
 
 /** A small sack in the item's colour, resting on the ground centre. */

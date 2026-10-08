@@ -69,7 +69,7 @@ packs you want and the engine adds what they `depends` on
 packs/
   std/        # stdpack: health, a humanoid archetype, basic tiles
   std-needs/  # stdpack: hunger/thirst/fatigue and their statuses (optional)
-  town/       # game "Town": a genre-free 256×256 town with furniture, food,
+  town/       # game "Town": a genre-free 343×343 town with furniture, food,
               #   loot, cooking, barricading; a quiet sandbox on its own
   zombie/     # mod "Zombie Town": the dead fill the town; find a car battery
   vampire/    # mod "Vampire Mansion": blood, sunlight, coffins, on its estate

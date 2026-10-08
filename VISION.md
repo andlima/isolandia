@@ -108,6 +108,21 @@ code.
    - When possible, validate with a very different third genre (noir with
      no combat, a space station with oxygen instead of food) to expose
      assumptions that zombie and vampire share.
+9. **Thin walls on cell edges**, as in *Project Zomboid* (task
+   `edge-walls`). Walls, doors, windows and fences are edge tiles
+   (`edge: true`) on the `n` or `w` side of a cell, not cells: a full-cell
+   wall took a whole cell of floor and drew as a 64×64 block, which made
+   small rooms cramped and hid the player behind every wall. Each cell
+   owns its north and west edge (the south and east sides are the
+   neighbours'), so storage is two typed arrays beside the cells and the
+   hot paths (steps, A\*, sight) stay array reads. A diagonal step needs
+   both L routes clear (no corner cutting); a diagonal line of sight is
+   blocked only when both are blocked; reach does not cross a
+   non-walkable edge. In iso an edge is a thin slab, one image mirrored
+   for the two sides. Maps were converted mechanically (`npm run
+   map:edges`, kept for modders), keeping sizes and coordinates; saves
+   from before (version ≤ 2) are refused. Floors stay cells, doors stay
+   always open, and walls do not muffle noise.
 
 ## 4. Target schema primitives (sketch, not final)
 
@@ -180,8 +195,8 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   until ~M4.
 - **Performance:** compile expressions to closures at load; per-chunk
   depth sorting; NPCs beyond an active radius go dormant (M6). Measured on
-  the 256×256 zombie city with 961 entities (`docs/perf.md`): **0.22 ms avg,
-  0.38 ms p95 per tick** in Node (0.35 / 0.59 ms without dormancy), far
+  the 343×343 zombie city with 961 entities (`docs/perf.md`): **0.26 ms avg,
+  0.46 ms p95 per tick** in Node (0.44 / 0.72 ms without dormancy), far
   under the 10 ms target. Browser fps on the city is still a manual
   follow-up (as in S0). LOD for drift and systems is not needed yet.
 - **Scope:** Zomboid has more than a decade of development. The target is
@@ -494,13 +509,27 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     first time it is near the view, keeps at most 160 in an LRU and
     destroys the rest; entity and pile sprites exist only in built, visible
     chunks. F3 shows a perf line.
+- ~~How many clicks does a common interaction take?~~ **Decided (spec
+  `ux-smart-click`):** **left click runs a safe default (open, climb,
+  walk), or opens the menu when the object has actions that cost
+  something; disabled entries fold under *Can't do now*.**
+  - The default is the first enabled `open`, else the cell's only
+    `climb`, else `walk`; costly actions (`act`, `craft`) never run on a
+    plain click. Shift-click always walks; right-click, long-press and
+    `E` always open the menu, which alone offers *Walk here*.
+  - The menu puts the default first, numbers enabled entries `1`–`9` and
+    shows each action's duration and the items it uses up
+    (`Interaction.duration` / `uses`, filled purely by the core).
+  - Hover (mouse and pen) outlines the target and shows a tooltip with
+    what a click will do; touch has no hover.
 
 ## 8. Next step
 
 M7 is delivered: **overrides and removals** by qualified id (spec
 `m7-overrides`), **stacks** with a pack catalog, a resolver and a title
 screen (spec `m7-stacks`), and **one town, two mods** (spec
-`m7-town-base`). The genre-free `town` base game holds the 256×256 city,
+`m7-town-base`). The genre-free `town` base game holds the city (343×343 since the roomier
+maps of `roomier-maps`),
 its furniture, food, loot, cooking, bandages, barricading and a
 needs-driven `resident`; alone it is a quiet sandbox with no NPCs.
 `zombie` is a mod that fills the town with the dead (map `populate` and
@@ -516,11 +545,13 @@ mystery or a wild-west duel.
 
 M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
 `m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked
-world** (spec `m6-chunked-world`). The zombie game is a 256×256 city built
+world** (spec `m6-chunked-world`). The zombie game is a city built
 from house, store, garage, park and road parts around the old town block,
 with ~960 dead (dense downtown, sparse at the edges) that rest while far
-away; the vampire's mansion stands in a 96×96 estate of graveyards and
-village cottages with ~150 bats.
+away; the vampire's mansion stands in an estate of graveyards and
+village cottages with ~150 bats. Task `roomier-maps` made both roomier:
+3-wide rooms, 2-wide halls, 5-wide roads and yards between buildings, on a
+343×343 city and a 128×128 estate (256×256 and 96×96 before).
 
 M5 is delivered: **timed actions** (spec `m5-timed-actions`), the
 **context menu** (spec `m5-context-menu`) and **recipes** (spec

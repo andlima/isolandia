@@ -8,27 +8,29 @@
 import { Application, type Container } from 'pixi.js';
 import { loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
-import { viewFloor } from '../iso/cutaway.ts';
-import { FLOOR_H, groundCentreIso, isoToScreen, pickCell } from '../iso/projection.ts';
+import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
 import { Hud } from './hud.ts';
+import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
+import { clickPlan, edgeWalkIntent } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
 import { assetUrls, buildPackSources, webCatalog } from './packs.ts';
 import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
 import { showPicker } from './picker-dom.ts';
+import { itemIconUrls, type ItemIconUrls } from './transfer.ts';
 import { exportFile, gameView, loadResult, restoreText, SaveSlots, storageStore, type LoadResult } from './saves.ts';
 
 declare global {
   interface Window {
     /** Set once the first frame is drawn; used by `npm run smoke`. */
-    __iso?: { ready: boolean; packs: string[]; distinctColors(): number };
+    __iso?: { ready: boolean; packs: string[]; distinctColors(): number; maskMs: number };
   }
 }
 
@@ -52,11 +54,12 @@ class GameSession {
     readonly world: World,
     stage: Container,
     textures: TextureBank,
+    icons: ItemIconUrls,
   ) {
     this.scene = new IsoScene(world, textures);
     stage.addChild(this.scene.root);
     this.hud = new Hud(document.body);
-    this.panels = new Panels(document.body, world);
+    this.panels = new Panels(document.body, world, icons);
     this.menu = new ContextMenu(document.body, world, (id) => this.panels.openLoot(id));
     this.lastGoto = world.lastGoto;
   }
@@ -113,7 +116,8 @@ async function main(): Promise<void> {
     web.urls,
   );
   const textures = new TextureBank(app.renderer, def, await loadAssetTextures(def, urls));
-  let session = new GameSession(World.create(def, params.seed), app.stage, textures);
+  const icons = itemIconUrls(def, urls);
+  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons);
 
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
@@ -122,23 +126,18 @@ async function main(): Promise<void> {
     const p = groundCentreIso(r.x, r.y);
     return { x: p.x, y: p.y - r.z * FLOOR_H };
   };
-  /** The cell under a screen point: on the view floor, falling through empty cells to the floors below. */
-  const tileAt = (sx: number, sy: number) => {
-    const w = session.world;
-    const view = viewFloor(renderPosition(w.player, w.tick, loop.alpha).z, w.grid.floors);
-    return pickCell(
-      sx,
-      sy,
-      rig.cam,
-      view,
-      (x, y, z) => w.grid.tileAt(x, y, z)?.raised ?? false,
-      (x, y, z) => w.grid.tileAt(x, y, z) !== undefined,
-    );
-  };
+  /**
+   * What is drawn under a screen point: the frontmost block, pile or entity
+   * sprite, else the ground cell (view floor, falling through empty cells).
+   * Only its cell is used; the player's own sprite gives the player's cell.
+   */
+  const targetAt = (sx: number, sy: number) => session.scene.pickTarget(sx, sy);
+  /** Right-click, long-press: the menu with `Walk here`. */
   const openMenu = (sx: number, sy: number) => {
-    const t = tileAt(sx, sy);
-    session.menu.open(t.x, t.y, t.z, sx, sy);
+    const t = targetAt(sx, sy);
+    session.menu.open(t.x, t.y, t.z, sx, sy, 'context', t.kind === 'edge' ? t.side : null);
   };
+  const hover = new Hover(document.body, app.canvas);
 
   const perf = new PerfMeter();
   const loop = new FixedTickLoop(
@@ -174,7 +173,7 @@ async function main(): Promise<void> {
       return report(r.message, r.errors);
     }
     session.dispose();
-    session = new GameSession(r.world, app.stage, textures);
+    session = new GameSession(r.world, app.stage, textures, icons);
     loop.reset();
     rig.recenter();
     message = r.message;
@@ -200,6 +199,7 @@ async function main(): Promise<void> {
       );
     },
     titleScreen: () => location.assign(location.pathname),
+    opened: () => session.panels.closeTransfer(),
   });
 
   const input = new Input(app.canvas, () => session.world, {
@@ -211,16 +211,22 @@ async function main(): Promise<void> {
       session.menu.close();
       rig.zoom(sx, sy, f, playerIso(loop.alpha), app.screen.width, app.screen.height);
     },
-    click: (sx, sy) => {
+    click: (sx, sy, shift) => {
       // A press outside an open menu only closes it.
       const { menu, world } = session;
       if (menu.dismissed) {
         menu.dismissed = false;
         return;
       }
-      const t = tileAt(sx, sy);
-      world.queueIntent(clickIntent(world, t.x, t.y, t.z));
+      const t = targetAt(sx, sy);
+      // Shift-click always walks; otherwise the click plan runs the safe default or opens the menu.
+      if (shift) return world.queueIntent(t.kind === 'edge' ? edgeWalkIntent(world, t.x, t.y, t.z, t.side) : clickIntent(world, t.x, t.y, t.z));
+      const plan = clickPlan(world, t);
+      if (plan.kind === 'run') menu.run(plan.item);
+      else if (plan.kind === 'menu') menu.open(t.x, t.y, t.z, sx, sy, 'click', t.kind === 'edge' ? t.side : null);
+      else if (plan.kind === 'walk') world.queueIntent(plan.intent);
     },
+    hover: (p) => hover.move(p),
     longPress: openMenu,
     menu: openMenu,
     captureKey: (code) => session.menu.key(code),
@@ -231,6 +237,7 @@ async function main(): Promise<void> {
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
+      if (code === 'Escape') panels.closeTransfer();
       if (code === 'KeyO') {
         game.toggle();
         refreshGame();
@@ -267,6 +274,8 @@ async function main(): Promise<void> {
     const cam = rig.update(playerIso(loop.alpha), width, height);
     scene.markMenuTarget(s.menu.target);
     const stats = scene.update(cam, width, height, loop.alpha, now);
+    // Hover picks against the camera just applied; its outline shows from this frame on.
+    scene.markHover(hover.update(world, targetAt, now, !s.menu.isOpen && !world.ended, s.hud.visible));
     s.hud.update(world);
     perf.frame(now);
     if (s.hud.perfVisible) {
@@ -294,6 +303,7 @@ async function main(): Promise<void> {
     window.__iso = {
       ready: true,
       packs,
+      maskMs: textures.maskMs,
       distinctColors: () => {
         const { pixels } = app.renderer.extract.pixels({ target: app.stage, frame: app.screen });
         const seen = new Set<number>();

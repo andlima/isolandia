@@ -295,10 +295,11 @@ shading, palettes and the generator).
 | `walkable` | boolean          |              | |
 | `raised`   | boolean          | `!walkable`  | Iso rendering only: a raised block, depth-sorted with entities, instead of flat ground. Walkability is unchanged |
 | `opaque`   | boolean          | `!walkable`  | Blocks line of sight (`can_see`). Like `raised`, it defaults from `walkable` and an explicit value wins: a window is `walkable: false, opaque: false` |
-| `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex |
+| `sprite`   | asset id         | placeholder  | Anchored at the diamond's bottom vertex (an edge tile's at its top vertex, see [art.md](art.md#edge-images)) |
 | `tags`     | list of `[a-z][a-z0-9_]*` | `[]` | Tested by `tile.has_tag("x")` / `has_tag(tile, "x")` |
 | `container`| `{ capacity: <number ≥ 0> }` | none | Every map cell with this tile gets its own [container](#containers); its label is the tile's label |
 | `climb`    | `up` or `down`   | none         | A **link** to the same cell one floor up or down (stairs, ladders); see [Floors](#floors). The tile must be walkable |
+| `edge`     | boolean          | `false`      | An **edge tile** (wall, door, window, fence): it goes on the edge between two cells, never in a cell; `walkable` then means it can be crossed and `opaque` that it blocks sight across it. Cannot take `container` or `climb`. See [Edge walls](#edge-walls) |
 
 Tile tags and archetype tags are separate: `self.has_tag("water")` never
 sees the tags of the tile the entity stands on, and `tile.has_tag(...)`
@@ -364,7 +365,8 @@ maps like `garden`); real worlds are edited in [Tiled](#tiled-maps).
 | `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`floors`/`rooms` (see [Tiled maps](#tiled-maps)) |
 | `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map, on any floor); `facing`: orientation of the cell's tile (see below) |
 | `rows`   | list of equal-length strings | a one-floor map; every character must be in the legend, except the space (an [empty cell](#floors)) |
-| `floors` | list of `{ rows }`           | a map with stacked floors instead of `rows`: entry *z* is floor *z*, and every floor has the same size (see [Floors](#floors)) |
+| `floors` | list of `{ rows, edges? }`   | a map with stacked floors instead of `rows`: entry *z* is floor *z*, and every floor has the same size (see [Floors](#floors)) |
+| `edges`  | boolean, default `false`     | the rows use the double-resolution notation with [edges](#edge-walls) between the cells; on the map (every floor) or on one `floors` entry |
 | `rooms`  | list of `{ rect: [x, y, w, h], tags: [...], floor? }` | optional; see below |
 | `spawns` | list of `{ archetype, at: [x, y] \| [x, y, z] }` | optional, on ASCII and Tiled maps (not composites); see [Spawns](#spawns) |
 
@@ -373,14 +375,23 @@ maps:
   - id: town
     legend:
       ".": { tile: floor }
-      "#": { tile: wall }
-      "@": { tile: road, player: true }
-      "Z": { tile: road, spawn: shambler }
-    rows:
-      - "#####"
-      - "#.@Z#"
-      - "#####"
+      "@": { tile: floor, player: true }
+      "Z": { tile: floor, spawn: shambler }
+      "-": { tile: wall }      # edge tiles: on edge positions only
+      "|": { tile: wall }
+      "D": { tile: door }
+    edges: true
+    rows:                      # 3×2 cells; `+` marks vertices (ignored)
+      - "+-+-+-+"
+      - "|.|@ Z|"
+      - "+-+-+D+"
+      - "|. . .|"
+      - "+-+-+-+"
 ```
+
+The top row holds a closet (the first cell, walled off) and a room of two
+cells whose south side has a door into the bottom row (see
+[Edge walls](#edge-walls)).
 
 **Facing.** A legend entry may set `facing: n | e | s | w` (default `s`;
 diagonals and other values are load errors) to orient the **tile** of its
@@ -416,6 +427,84 @@ archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
 
 A room lies on one floor: `floor` (default `0`) must exist.
 
+#### Edge walls
+
+Walls, doors, windows and fences are **edge tiles** (`edge: true`): thin
+slabs on the edges between cells, as in *Project Zomboid*, so rooms use
+the space a wall cell used to take.
+
+- **Model.** Each cell `(x, y, z)` owns two optional edges: its **north
+  edge** `n`, between `(x, y − 1)` and `(x, y)`, and its **west edge**
+  `w`, between `(x − 1, y)` and `(x, y)`. A cell's south side is the `n`
+  of the cell below it and its east side the `w` of the cell to its
+  right. The map border needs no edges: out of bounds is impassable and
+  opaque. Edge tiles go only on edges and other tiles only in cells; a
+  misplaced tile is a load error.
+- **Crossing.** An edge tile's `walkable` says whether it can be crossed
+  (a door: yes; a wall, window or fence: no), `opaque` (default
+  `!walkable`) whether it blocks sight across it (a window and a fence:
+  no).
+- **Movement and paths.** A step between orthogonal neighbours needs the
+  edge between them crossable. A diagonal step needs **both** L-shaped
+  routes (x then y, y then x) clear: every cell walkable and every crossed
+  edge crossable; this is the no-corner-cutting rule. A\*, `goto …
+  adjacent` and region labels use the same rule.
+- **Sight** (`can_see`). A step between orthogonal neighbours is blocked
+  by an opaque edge between them; a diagonal step is blocked when both L
+  routes are blocked (by an opaque cell or edge). Sight stays symmetric.
+  Adjacent cells see each other only when no opaque edge separates them.
+- **Reach.** A cell 8-adjacent to the actor is in reach (tile actions,
+  containers, recipe stations, `adjacent` arrival, behaviour `near`)
+  only when no **non-walkable** edge separates them, by the movement rule
+  above, whatever the target cell's own tile: a fridge across a thin wall
+  is out of reach, one across an open door is not.
+- **Noise** is unchanged: walls do not muffle.
+- **Actions on edges.** A tile-targeted [action](#actions) also matches
+  edges (a window to barricade); an edge is in reach from either cell it
+  separates.
+
+**ASCII notation.** With `edges: true` a floor's rows are **double
+resolution**: `2·h + 1` rows of `2·w + 1` characters for an `w × h` map.
+
+| Position | Row, column | Holds |
+|---|---|---|
+| cell `(x, y)` | `2y + 1`, `2x + 1` | a cell tile, spawn or player start (legend as usual) |
+| `n` edge of `(x, y)` | `2y`, `2x + 1` | an edge tile, or a space for none |
+| `w` edge of `(x, y)` | `2y + 1`, `2x` | an edge tile, or a space for none |
+| vertex | `2y`, `2x` | ignored: any character (`+`, `#`, space) for looks |
+
+The last row and column hold the south and east border; their edge
+positions are ignored. Errors name the row and column and say whether it
+is a cell or an edge position. A map without `edges: true` keeps the
+one-character-per-cell notation, and an edge tile in a cell there is an
+error that names the converter below.
+
+**Converting old maps.** `npm run map:edges -- <pack-dir>… [--map <id>]`
+rewrites, in place, every ASCII map of the listed packs to the `edges: true`
+notation and every Tiled map to cell and edge layers, keeping the map size
+and the coordinates of everything on it (list the pack's dependencies
+first so its tiles resolve; only the listed packs' maps are rewritten).
+It treats every cell holding an edge tile as a lattice **vertex**:
+
+- Two such cells side by side, `(x, y)` and `(x + 1, y)`, give cell
+  `(x, y)` an `n` edge; `(x, y)` above `(x, y + 1)` gives it a `w` edge.
+  The edge takes the tile of `(x, y)`, so a door between two walls gives
+  exactly one door edge.
+- The old wall cell becomes ground: the tile of its south, else east,
+  else south-east neighbour, the first that is plain (walkable, not
+  raised, no container, not an edge tile); failing that, the nearest
+  plain cell of its area, or the floor's most common plain tile (or
+  empty, outside an upper floor). Facings are dropped.
+- Room rects grow by one cell north and/or west where those cells were
+  walls.
+- An isolated wall cell (a pillar), a door or window cell that would give
+  no edge or two, and 2×2 blocks of wall cells are **reported**, not
+  guessed: fix them by hand.
+
+So a building whose wall cells span columns `x0..x1` and rows `y0..y1`
+gets the interior `[x0, x1 − 1] × [y0, y1 − 1]`; its former east wall
+column and south wall row become outside ground.
+
 #### Spawns
 
 Besides legend `spawn` cells and Tiled `spawn` objects, a plain (ASCII or
@@ -428,8 +517,8 @@ maps:
   - id: town:town_center
     override: true
     spawns:
-      - { archetype: shambler, at: [16, 10] }
-      - { archetype: shambler, at: [38, 4, 1] }   # [x, y, z]: upstairs
+      - { archetype: shambler, at: [20, 13] }
+      - { archetype: shambler, at: [52, 5, 1] }   # [x, y, z]: upstairs
 ```
 
 They are merged with the map's own spawns and ordered by floor, then
@@ -526,6 +615,15 @@ floor group are flattened into it.
 | Where             | Property    | Type   | Meaning |
 |-------------------|-------------|--------|---------|
 | group layer       | `floor`     | int    | the floor (`z`) of the layers inside it |
+| tile layer        | `edge`      | string | `n` or `w`: the layer holds that side's [edges](#edge-walls) of its floor |
+
+**Edge layers.** A tile layer with the string property `edge` = `n` or
+`w` holds, per cell, the edge tile on that side of the cell (on a
+multi-floor map it goes in the floor group). Edge layers take only edge
+tiles and other tile layers only cell tiles (a misplaced tile is a load
+error naming the layer). Several edge layers of the same side merge like
+tile layers (top-most wins). Tiled itself shows an edge tile on its cell,
+which is fine for editing: the `edge` property is what counts.
 
 **Objects** are matched by their **class** (`type` in Tiled ≤ 1.8,
 `class` in Tiled ≥ 1.9):
@@ -570,7 +668,8 @@ entry that referenced the file.
 3. Select each tile and add a custom string property `tile` with the pack
    tile id, plus `facing` if it should not face `s`. Add one tileset tile
    per (tile, facing) pair.
-4. Paint the floor on one layer and furniture on layers above it.
+4. Paint the floor on one layer and furniture on layers above it; walls,
+   doors and windows go on an `edge: n` and an `edge: w` layer.
 5. Add an object layer with `player`/`spawn`/`room` objects (set *Class*,
    then the `archetype` or `tags` property).
 
@@ -581,7 +680,8 @@ image-collection tileset, to start editing in Tiled:
 npm run map:export -- packs/std packs/std-needs packs/town --map town_center --out packs/town/maps/parts
 ```
 
-It writes `town_center.tmj` (one `ground` tile layer and one `objects` layer with
+It writes `town_center.tmj` (one `ground` tile layer, an `edges n` and an
+`edges w` edge layer when the floor has such edges, and one `objects` layer with
 the player, a `spawn` point per spawn at the cell centre, and a `room`
 rectangle per room; a multi-floor map gets one `floor N` group per floor,
 with the `floor` property, holding those two layers, and empty cells are
@@ -601,17 +701,17 @@ maps:
   - id: house_a
     tiled: maps/parts/house_a.tmj
   - id: city
-    size: [256, 256]       # [w, h], each ≥ 1
+    size: [343, 343]       # [w, h], each ≥ 1
     fill: grass            # floor-0 cells no part covers
-    player: [132, 127]     # [x, y] or [x, y, z]; required on a start map
+    player: [171, 171]     # [x, y] or [x, y, z]; required on a start map
     parts:
-      - { map: town_center, at: [106, 117] }
-      - { map: house_a, at: [12, 12] }
-      - { map: house_a, at: [23, 12] }   # a part may appear many times
+      - { map: town_center, at: [142, 157] }
+      - { map: house_a, at: [56, 16] }
+      - { map: house_a, at: [36, 56] }   # a part may appear many times
     rooms:                 # extra rooms, in composite coordinates (as ASCII `rooms`)
-      - { rect: [0, 0, 256, 9], tags: [fields] }
+      - { rect: [0, 0, 343, 9], tags: [fields] }
     populate:              # see below
-      - { archetype: guard, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: guard, count: 50, rect: [73, 73, 69, 69] }
 ```
 
 | Field | Notes |
@@ -628,8 +728,10 @@ Composition:
 - The composite has as many floors as its tallest part. A part covers its
   whole rectangle on floor 0 (its own empty cells stay empty); only floor-0
   cells no part covers get `fill`.
-- Each part's cells, facings, spawns, rooms and populate entries are offset
-  by `at`. Spawns are ordered by part, then `z`, then row-major (so entity
+- Each part's cells, [edges](#edge-walls), facings, spawns, rooms and
+  populate entries are offset by `at`. A part replaces the cells and edges
+  inside its rectangle; `fill` sets cells only, never edges (an edge tile
+  as `fill` is a load error). Spawns are ordered by part, then `z`, then row-major (so entity
   ids follow the part order).
 - Link (`climb`) validation runs on the composed map.
 - A map used only as a part needs no player marker.
@@ -651,7 +753,7 @@ map; on a part map it is applied **once per placement**, offset by `at`.
 
 ```yaml
 populate:
-  - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+  - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
   - { archetype: crawler, count: 1, floor: 1, room: bedroom }
 ```
 
@@ -982,7 +1084,11 @@ shutters, resting.
 it. A **tile filter** `{ tiles?: [tile ids], tags?: [tile tags] }` (at
 least one non-empty list) matches a cell whose tile is listed **or** has
 any of the tags; the action then targets one cell `(x, y)`: the actor's
-cell or one of the 8 around it (the reach of containers). In that action's
+cell or one of the 8 around it (the reach of containers, no non-walkable
+edge between). A filter that matches [edge tiles](#edge-walls) also
+matches **edges**: the target is then the edge `(x, y, z, side)`, in reach
+from either of the two cells it separates (same floor, orthogonal
+neighbours only), and `tile` in expressions is the edge's tile. In that action's
 `when`, `interrupt`, `duration` and `effects`, `tile` is the **target
 cell** (see [expressions](expressions.md)); `self` is still the actor.
 Unknown tile or item ids are load errors with suggestions; a tag that no
@@ -995,7 +1101,12 @@ the actor; a `noise` is emitted at the actor's cell), in order, plus
 
 | Effect                              | Meaning |
 |-------------------------------------|---------|
-| `{ type: set_tile, tile: <tile id> }` | Replace the tile at the target cell |
+| `{ type: set_tile, tile: <tile id> }` | Replace the tile at the target cell (or edge) |
+
+- On an edge target the new tile must be an edge tile, and on a cell a
+  cell tile: an action whose filter matches edge tiles may only place
+  edge tiles, and one matching cell tiles only cell tiles (load errors).
+  Changed edges are saved like changed cells (see [saves](saves.md)).
 
 - The new tile must not have a `container` (load error), and neither may
   the target cell's current tile (checked at run time: the action fails
@@ -1095,13 +1206,20 @@ ground pile) an `open` entry, plus `take_all` when it is not empty;
 [link](#floors) that way (with `intent`, the goto to the link's far end);
 every `self` action when the cell is the player's own; and `walk` when the
 cell is walkable and not the player's. Each entry is
-`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, intent?, inReach }`:
+`{ id, label, kind, ok, reason?, missing?, unavailable?, action?, actions?, container?, intent?, inReach, duration?, uses? }`:
 `ok`/`reason` use the same checks as `act` with reach left out (`take_all`
 fails with `no_inventory`, or `too_heavy` when no stack fits at all),
 `action` is the action to queue (the first `take` of a `take_all`, whose
 `actions` lists them all), and `inReach` says whether the player can do it
-without walking. It returns `[]` out of bounds or once the game has ended,
-and is pure like `availableActions()`.
+without walking. `act` and `craft` entries also carry `duration`, the
+sim seconds the action or recipe would take if started now (its
+`duration` evaluated as the start would, rounded to whole ticks; left out
+when the expression throws or gives no number), and `uses`, the items
+completion consumes as `{ item, label, count }` (left out when nothing is
+consumed; tools are not listed, since they are not spent). The browser
+menu shows them as `8s · uses 2× Plank`. It returns `[]` out of bounds or
+once the game has ended, and is pure like `availableActions()` (`random()`
+in a duration draws from the throwaway RNG too).
 
 `reasonText(entry)` (in `src/core/hud.ts`) turns an entry's reason into
 short UI text: `Needs: Hammer, 2× Plank` for `missing`, the
@@ -1292,7 +1410,7 @@ intents, so looting never cancels walking (but a new action cancels an
 | `put`  | `container`, `item`, `count?`           | Player inventory → container |
 | `drop` | `item`, `count?`                        | Player inventory → the ground pile on the player's cell (created if missing) |
 | `use`  | `item`                                  | Runs the item's `use`, then removes `consume` units (at completion when timed) |
-| `act`  | `action`, `x?`, `y?`, `z?`              | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self`; `z` defaults to the player's floor |
+| `act`  | `action`, `x?`, `y?`, `z?`, `side?`     | Starts a pack [action](#actions); `x`/`y` are required for tile targets and forbidden for `self`; `z` defaults to the player's floor; `side` (`n`/`w`) targets that edge of the cell |
 | `craft`| `recipe`, `x?`, `y?`, `z?`              | Starts a [recipe](#recipes); for a station recipe `x`/`y` name the station cell (omitted: the first matching cell in reach, row-major); forbidden without a station; `z` defaults to the player's floor |
 
 An `act` is checked in this order: the action id resolves
@@ -1332,12 +1450,14 @@ the target (`out_of_reach` when no matching cell is in reach).
 - Pending actions and `lastAction` are part of `snapshot()`. Once the game
   has ended (after defeat or victory) `queueAction` ignores its input.
 
-A `goto` intent (`{ kind: 'goto', x, y, z?, adjacent?, then? }`) walks an
+A `goto` intent (`{ kind: 'goto', x, y, z?, adjacent?, side?, then? }`) walks an
 A* path; `z` defaults to the entity's floor, and the path may cross
 [links](#floors). With `adjacent: true` it ends on the reachable walkable
 tile 8-adjacent to the goal on the goal's floor (or the goal itself, if
 walkable) with the shortest path; the browser uses it when you click a
-non-walkable container. `world.climbIntent(dz)` (`dz` = 1 or -1) returns
+non-walkable container. With `side` the goal is that edge of `(x, y)`:
+the path ends on whichever of the two cells it separates is nearer (to
+barricade a window from either side). `world.climbIntent(dz)` (`dz` = 1 or -1) returns
 the goto that crosses the link at the player's cell in that direction, or
 `null` when there is none; the shells bind it to their climb keys.
 
@@ -1573,7 +1693,7 @@ are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
 |---|---|---|---|---|
 | `std` | `std` | library | — | see [Standard packs](#standard-packs) |
 | `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
-| `town` | `town` | game | `std`, `std_needs` | the 256×256 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
+| `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
 | `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`, status `alert`); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
 | `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
 | `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
@@ -1753,7 +1873,7 @@ maps:
   - id: town:town_center         # a part of the city: exact cells (see Spawns)
     override: true
     spawns:
-      - { archetype: shambler, at: [16, 10] }
+      - { archetype: shambler, at: [20, 13] }
       # …
   - id: town:house_c             # a part: applied once per placement
     override: true
@@ -1762,7 +1882,7 @@ maps:
   - id: town:city
     override: true
     populate:
-      - { archetype: shambler, count: 50, rect: [56, 56, 50, 50] }
+      - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
       # …
 archetypes:
   - { id: town:resident, override: true, label: Survivor }
@@ -1860,8 +1980,15 @@ definition or from a pack that does not depend on its definer; and a
 required field cleared with `null`. Map `spawns`: an entry that is not a
 mapping, a missing or unknown `archetype`, an `at` that is not
 `[x, y]`/`[x, y, z]` integers or lies outside the map or on an empty cell,
-and `spawns` on a composite. Warnings (e.g. a loot table that can
-exceed a container's capacity, a filter or station tag no tile carries, an
+and `spawns` on a composite. [Edge walls](#edge-walls): an edge tile with
+`container` or `climb`; an edge tile in a cell or a cell tile on an edge
+(ASCII rows, with the row and column; Tiled layers, naming the layer); a
+spawn or player start on an edge position; `edges: true` rows that are
+not `2·h + 1` by `2·w + 1`; a Tiled `edge` property other than `n`/`w`;
+an edge tile as a composite's `fill`; and a `set_tile` that would put an
+edge tile in a cell or a cell tile on an edge. Warnings (e.g. a loot table that can
+exceed a container's capacity, a filter or station tag no tile carries, a
+recipe `station` that matches only edge tiles, an
 override that changes nothing, a second removal of the same entry, or two
 unrelated packs patching the same field) are printed but do not fail the
 load.

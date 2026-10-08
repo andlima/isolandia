@@ -21,9 +21,9 @@ export const GAMES = {
  * garden is not a composite).
  */
 export const GENRE_AT = {
-  town: { x: 106, y: 117 },
-  zombie: { x: 106, y: 117 },
-  vampire: { x: 37, y: 41 },
+  town: { x: 142, y: 157 },
+  zombie: { x: 142, y: 157 },
+  vampire: { x: 49, y: 54 },
   garden: { x: 0, y: 0 },
 } as const;
 
@@ -121,4 +121,12 @@ export function assertRoundTrip(world: World, script: Script = () => {}, ticks =
     assert.equal(copy.hash(), world.hash(), `hash ${i + 1} ticks after the save (tick ${world.tick})`);
   }
   return copy;
+}
+
+/**
+ * The cell characters of an ASCII frame (`renderAscii`, double resolution):
+ * its odd lines, odd columns — one string per viewport row.
+ */
+export function cellRows(frame: { readonly lines: readonly string[] }): string[] {
+  return frame.lines.filter((_, r) => r % 2 === 1).map((l) => [...l].filter((_, c) => c % 2 === 1).join(''));
 }

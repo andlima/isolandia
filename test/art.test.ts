@@ -135,7 +135,8 @@ test('art: image sizes and anchors follow the per-kind conventions', () => {
     };
     const bottom = (a: readonly [number, number]) => a[0] === 0.5 && a[1] === 1;
     for (const t of def.tiles) {
-      if (t.raised) check(t.sprite, `raised tile ${t.id}`, (w, h, a) => w === 64 && h >= 64 && bottom(a));
+      if (t.edge) check(t.sprite, `edge tile ${t.id}`, (w, h, a) => w === 40 && h === 64 && a[0] === 0.1 && a[1] === 0.65625);
+      else if (t.raised) check(t.sprite, `raised tile ${t.id}`, (w, h, a) => w === 64 && h >= 64 && bottom(a));
       else check(t.sprite, `flat tile ${t.id}`, (w, h, a) => w === 64 && h === 32 && bottom(a));
     }
     for (const c of def.archetypes) check(c.sprite, `archetype ${c.id}`, (w, h, a) => w === 32 && h === 48 && a[0] === 0.5 && a[1] > 0.85 && a[1] < 1);

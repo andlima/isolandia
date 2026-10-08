@@ -66,6 +66,7 @@ tiles:
     sprite: shuttered_window_img
     walkable: false
     opaque: true
+    edge: true                      # in the walls, like the window it shutters
   - id: bookshelf
     label: Bookshelf
     glyph: "L"

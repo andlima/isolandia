@@ -124,6 +124,11 @@ export function tileAnchorIso(x: number, y: number): Point {
   return worldToIso(x + 1, y + 1);
 }
 
+/** Iso point where an edge sprite of cell (x, y) is anchored: the diamond's top vertex (both sides start there). */
+export function edgeAnchorIso(x: number, y: number): Point {
+  return worldToIso(x, y);
+}
+
 /** Iso point where an entity at continuous tile position (x, y) stands: its tile's ground centre. */
 export function groundCentreIso(x: number, y: number): Point {
   return worldToIso(x + 0.5, y + 0.5);

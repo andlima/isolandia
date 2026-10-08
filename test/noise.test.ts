@@ -435,17 +435,17 @@ const M = (x: number, y: number) => genreCell('vampire', x, y);
 
 test('zombie: crunching over broken glass draws a shambler to the spot', () => {
   const w = game('zombie');
-  const z = byHome(w, ...T(16, 10));
+  const z = byHome(w, ...T(20, 13));
   assert.equal(z.archetype.id, 'zmb:shambler');
-  assert.equal(w.grid.tileAt(...T(12, 6))!.id, 'town:glass');
-  place(w.player, ...T(12, 6)); // the hallway of the north-west house, out of z's sight
+  assert.equal(w.grid.tileAt(...T(16, 8))!.id, 'town:glass');
+  place(w.player, ...T(16, 8)); // the hallway of the north-west house, out of z's sight
   const seen: string[] = [];
   let end = -1;
   for (let t = 0; t < 200 && end < 0; t++) {
     w.step();
     const s = stateOf(z);
     if (seen[seen.length - 1] !== s) seen.push(s);
-    if (s === 'chase' || (seen.includes('investigate') && cheb(z.x, z.y, ...T(12, 6)) <= 1)) end = t;
+    if (s === 'chase' || (seen.includes('investigate') && cheb(z.x, z.y, ...T(16, 8)) <= 1)) end = t;
   }
   assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
   assert.ok(end >= 0, `never arrived: ${seen.join(' → ')} at ${z.x},${z.y}`);
@@ -455,7 +455,7 @@ test('zombie: winding up an alarm clock sets shamblers investigating', () => {
   const w = game('zombie');
   const item = w.def.ids.items['town:alarm_clock']!;
   add(w.player.inv!, item, 1, w.def.items[item]!.weight);
-  place(w.player, ...T(12, 3)); // a bedroom, walled off from everyone
+  place(w.player, ...T(17, 4)); // a bedroom, walled off from everyone
   for (let t = 0; t < 3; t++) w.step();
   assert.ok(w.entities.every((e) => e.heardTick === -1));
   w.queueAction({ kind: 'use', item: 'town:alarm_clock' });
@@ -466,17 +466,17 @@ test('zombie: winding up an alarm clock sets shamblers investigating', () => {
   w.step();
   const investigating = w.entities.filter((e) => e.behavior && stateOf(e) === 'investigate');
   assert.ok(investigating.length >= 2, `only ${investigating.length} investigating`);
-  assert.ok(byHome(w, ...T(16, 10)) && investigating.includes(byHome(w, ...T(16, 10))));
+  assert.ok(byHome(w, ...T(20, 13)) && investigating.includes(byHome(w, ...T(20, 13))));
   assert.ok(w.player.inv!.stacks.some((s) => s.item === item), 'the clock is reusable');
 });
 
 test('vampire: creaky floorboards bring a bat over; it then returns to roost', () => {
   const w = game('vampire');
-  const bat = byHome(w, ...M(3, 6));
+  const bat = byHome(w, ...M(4, 9));
   assert.equal(bat.archetype.id, 'vamp:bat');
-  assert.equal(w.grid.tileAt(...M(8, 5))!.id, 'vamp:creaky');
-  assert.ok(w.grid.tileAt(...M(8, 5))!.tags.includes('shade'));
-  place(w.player, ...M(8, 5));
+  assert.equal(w.grid.tileAt(...M(9, 9))!.id, 'vamp:creaky');
+  assert.ok(w.grid.tileAt(...M(9, 9))!.tags.includes('shade'));
+  place(w.player, ...M(9, 9));
   const states: string[] = [];
   const track = () => {
     const s = stateOf(bat);
@@ -488,13 +488,13 @@ test('vampire: creaky floorboards bring a bat over; it then returns to roost', (
   }
   assert.ok(states.includes('investigate') || states.includes('flee'), states.join(' → '));
   // The vampire leaves for the cellar.
-  place(w.player, ...M(18, 11));
+  place(w.player, ...M(25, 16));
   for (let t = 0; t < 300 && !(states.length > 1 && stateOf(bat) === 'roost'); t++) {
     w.step();
     track();
   }
   assert.equal(stateOf(bat), 'roost', states.join(' → '));
-  assert.ok(cheb(bat.x, bat.y, ...M(3, 6)) <= 3);
+  assert.ok(cheb(bat.x, bat.y, ...M(4, 9)) <= 3);
 });
 
 test('garden: hopping on the gravel path draws a napping cat over to investigate', () => {
@@ -526,6 +526,32 @@ test('garden: hopping on the gravel path draws a napping cat over to investigate
   }
 });
 
+test('garden: at night, hopping on the gravel path draws a prowling fox over to investigate', () => {
+  const def = loadPacksOrThrow(GAMES.garden.map((d) => readPack(d)));
+  const w = World.create({ ...def, clock: { ...def.clock, start: 21 * 60 } }, 1);
+  const fox = w.entities.find((e) => e.archetype.id === 'gdn:fox')!;
+  place(w.player, 3, 13); // out of the way
+  // Wait until the prowling fox is within earshot (7) of a gravel cell it is too far to see (6).
+  let spot: [number, number] | null = null;
+  for (let t = 0; t < 600 && !spot; t++) {
+    w.step();
+    if (stateOf(fox) !== 'prowl') continue;
+    for (let x = 2; x <= 21 && !spot; x++) {
+      const d = Math.hypot(x - fox.x, 7 - fox.y);
+      if (d > 6.3 && d < 6.9) spot = [x, 7];
+    }
+  }
+  assert.ok(spot, 'the fox never prowled near the gravel path');
+  assert.equal(w.grid.tileAt(...spot)!.id, 'gdn:gravel');
+  place(w.player, ...spot);
+  const seen: string[] = [];
+  for (let t = 0; t < 30 && !seen.includes('investigate'); t++) {
+    w.step();
+    if (seen[seen.length - 1] !== stateOf(fox)) seen.push(stateOf(fox));
+  }
+  assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
+});
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World; noisy: number } {
@@ -533,9 +559,9 @@ function run(name: keyof typeof GAMES, seed: number, ticks: number): { w: World;
   if (name === 'zombie') {
     const item = w.def.ids.items['town:alarm_clock']!;
     add(w.player.inv!, item, 1, w.def.items[item]!.weight);
-    place(w.player, ...T(8, 8));
+    place(w.player, ...T(8, 11));
   } else if (name === 'garden') place(w.player, 8, 7);
-  else place(w.player, ...M(8, 5));
+  else place(w.player, ...M(9, 9));
   const input = new Rng(seed ^ 0x5eed);
   let noisy = 0;
   for (let t = 0; t < ticks; t++) {

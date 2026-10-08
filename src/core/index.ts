@@ -64,6 +64,6 @@ export {
   type HudActivity,
 } from './hud.ts';
 export { nearMiss } from './expr/index.ts';
-export { Grid } from './sim/grid.ts';
+export { edgeKey, Grid } from './sim/grid.ts';
 export { lineOfSight } from './sim/sight.ts';
 export { Rng } from './sim/rng.ts';

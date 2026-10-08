@@ -175,6 +175,25 @@ export function blockTile() {
   return { c, I: iso(c, TW / 2, BH) };
 }
 
+/** Half the thickness of an edge slab, in tile units (an edge is 1/8 of a tile thick). */
+export const ET = 1 / 16;
+
+/**
+ * A canvas for an edge image (20×32 art px = 40×64 px, see docs/art.md):
+ * the thin slab on a cell's north side, drawn from the cell's top ground
+ * vertex — art px (2, 21), the anchor [0.1, 0.65625] — along +u, between
+ * v = −ET and v = +ET. The renderer mirrors it for a west edge.
+ */
+export function edgeTile() {
+  const c = new Canvas(20, 32);
+  return { c, I: iso(c, 2, 21) };
+}
+
+/** A full-height edge slab (u from −ET to 1 + ET, so neighbours overlap at their corner posts). */
+export function slab(I, { face, end, top, z1 = 1 }) {
+  return I.box(-ET, -ET, 1 + ET, ET, 0, z1, { left: face, right: end, top });
+}
+
 /** Pixel-ellipse drop shadow centred at (cx, cy) (art px, may be .5). */
 export function shadow(c, cx, cy, rx, ry, colour = 'shadow') {
   return c.shade((x, y) => (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 < 1 ? colour : null));

@@ -1,8 +1,8 @@
-// garden: a sunny, fenced garden, the bunny, the sleepy cat and the
-// butterflies. Round shapes, big eyes and a bright pastel palette.
+// garden: a sunny, fenced garden, the bunny, the sleepy cat, the
+// butterflies and the night fox. Round shapes, big eyes and a bright pastel palette.
 
 import { finish, item, FACINGS } from './characters.mjs';
-import { blockTile, Canvas, flatTile, hash, px } from './lib.mjs';
+import { blockTile, Canvas, edgeTile, ET, flatTile, hash, px } from './lib.mjs';
 
 export const palette = {
   outline: '#4a3848',
@@ -35,6 +35,8 @@ export const palette = {
   lilac_lo: '#9a78d4',
   blue: '#7ab8f2',
   blue_lo: '#5288c8',
+  rust: '#e0703a',
+  rust_lo: '#b4502e',
 };
 
 // ── Flat tiles ────────────────────────────────────────────────────────────
@@ -100,6 +102,26 @@ function burrow() {
   c.set(9, 9, 'gravel');
   c.set(22, 7, 'gravel');
   c.set(20, 11, 'leaf');
+  return c;
+}
+
+/** The fox's den: a dark hollow under an arch of roots, with leaf litter around it. */
+function den() {
+  const c = lawn(56);
+  c.shade((x, y) => {
+    const dx = (x + 0.5 - 15) / 11;
+    const dy = (y + 0.5 - 9) / 5.5;
+    const r = dx * dx + dy * dy;
+    if (r < 0.45) return dy < 0.2 ? 'outline' : 'soil_lo'; // the hollow, deep at the back
+    if (r < 1) return hash(x, y, 57) < 0.3 ? 'soil_lo' : 'soil'; // trodden earth
+    return null;
+  });
+  // Gnarled roots arching over the back of the hollow.
+  for (const [x, y] of [[7, 7], [8, 6], [9, 5], [10, 5], [11, 4], [12, 4], [13, 4], [14, 4], [15, 5], [16, 5], [17, 6], [18, 6], [19, 7], [20, 8]]) c.set(x, y, 'soil_hi');
+  for (const [x, y] of [[12, 5], [13, 6], [17, 7], [18, 8]]) c.set(x, y, 'soil');
+  // Fallen leaves and a lost feather.
+  for (const [x, y, k] of [[5, 9, 'orange_lo'], [24, 10, 'leaf_lo'], [21, 12, 'orange'], [9, 12, 'leaf_lo'], [26, 8, 'orange_lo']]) c.set(x, y, k);
+  c.set(18, 11, 'white'), c.set(19, 11, 'white_lo');
   return c;
 }
 
@@ -192,18 +214,19 @@ function berryBush() {
   return c;
 }
 
-/** A white picket fence post with rails running along both map axes, so neighbours join up. */
+/** A low white picket fence on a cell's edge: two rails and three pickets, low enough to see over. */
 function fence() {
-  const { c, I } = onLawn(53);
-  const rail = (lit) => (a, z) => (px(z) % 8 === 7 ? 'white_lo' : lit ? 'white' : 'white_lo');
-  // Rails along u (east–west), then along v (north–south), low and thin.
-  I.box(0, 0.44, 1, 0.56, 0.2, 0.3, { left: rail(true), right: 'white_lo', top: 'white' });
-  I.box(0.44, 0, 0.56, 1, 0.2, 0.3, { left: 'white', right: rail(false), top: 'white' });
-  I.box(0, 0.44, 1, 0.56, 0.5, 0.6, { left: rail(true), right: 'white_lo', top: 'white' });
-  I.box(0.44, 0, 0.56, 1, 0.5, 0.6, { left: 'white', right: rail(false), top: 'white' });
-  // The picket: a post with a pointed (stepped) cap.
-  I.box(0.38, 0.38, 0.62, 0.62, 0, 0.75, { left: 'white', right: 'white_lo', top: 'white' });
-  I.box(0.44, 0.44, 0.56, 0.56, 0.75, 0.88, { left: 'white', right: 'white_lo', top: 'pink' });
+  const { c, I } = edgeTile();
+  const picket = (u0) => {
+    I.box(u0, -ET, u0 + 0.12, ET, 0, 0.62, { left: 'white', right: 'white_lo', top: 'white' });
+    I.box(u0 + 0.03, -ET / 2, u0 + 0.09, ET / 2, 0.62, 0.72, { left: 'white', right: 'white_lo', top: 'pink' });
+  };
+  // Back to front: the left picket, the rails, then the middle and right pickets over them.
+  picket(-ET);
+  I.box(-ET, -ET / 2, 1 + ET, ET / 2, 0.16, 0.24, { left: 'white', right: 'white_lo', top: 'white' });
+  I.box(-ET, -ET / 2, 1 + ET, ET / 2, 0.44, 0.52, { left: 'white', right: 'white_lo', top: 'white' });
+  picket(0.44);
+  picket(1 + ET - 0.12);
   return c;
 }
 
@@ -447,6 +470,106 @@ CAT.nw[9] = '..ooooooooOOOoO.';
 CAT.nw[10] = '..oosoooosoOOO..';
 const catKey = { o: 'orange', O: 'orange_lo', c: 'cream', k: 'outline', p: 'pink', s: 'orange_lo' };
 
+// Fox: r rust, R rust (shaded side), c cream (cheeks, muzzle, chest),
+// w white tail tip and eye glint, k eye, n nose, d dark socks and ear tips.
+const FOX = {
+  s: [
+    '.d........d.....',
+    '.dd......dd.....',
+    '.rcr....rcR.....',
+    '.rccr..rccR.....',
+    '.rrrrrrrrrR.....',
+    'rrrrrrrrrrRR....',
+    'rrkwrrrrkwRR....',
+    'rrkkrrrrkkRR....',
+    'ccrrrrrrrrcc....',
+    '.ccrrccrrcc.....',
+    '..cccccccc...ww.',
+    '...ccnncc...wwww',
+    '...rcccR...rrrrR',
+    '..rrccccR..rrrR.',
+    '..rrccccRRrrrR..',
+    '..rrrccRRRrrR...',
+    '..ddrrrRRdd.....',
+    '..dd....dd......',
+  ],
+  se: [
+    '...d........d...',
+    '...dd......dd...',
+    '...rcr....rcR...',
+    '...rccr..rccR...',
+    '...rrrrrrrrrR...',
+    '..rrrrrrrrrrRR..',
+    '..rrkwrrrrkwRR..',
+    '..rrkkrrrrkkRR..',
+    '..ccrrrrrrrrcc..',
+    '...ccrrrccrcc...',
+    '.w..ccccccccc...',
+    'www..ccccnnc....',
+    'wrrr.rcccRR.....',
+    '.rrrrrccccRR....',
+    '..rrrrcccRRR....',
+    '...rrrrrRRRR....',
+    '...ddrrRRdd.....',
+    '...dd....dd.....',
+  ],
+  ne: [
+    '..........d..d..',
+    '.........dd.dd..',
+    '.........rcrrc..',
+    '.........rrrrrR.',
+    '........rrrrwk..',
+    '........rrrrkkcc',
+    'ww......ccrrcccn',
+    'wwr.....cccccc..',
+    '.rrr.rrrrrrrr...',
+    '..rrrrrrrrrrrR..',
+    '..rrrrrrrrrrRR..',
+    '...RRrrrrrrrcR..',
+    '....RRRRRRRRR...',
+    '....dd.dd.dd.dd.',
+  ],
+  w: [
+    '......d.d.......',
+    '.....drdrd......',
+    '.....rcrcR......',
+    '.....rcrrR......',
+    '....rrrrrRR.....',
+    '...rrwkrrrR.....',
+    '..rrrkkrrrR.....',
+    'ncccrrrrrrR.....',
+    '.ccccccrrRR.....',
+    '...cccccRR......',
+    '....cccrrrrrr...',
+    '....ccrrrrrrrRr.',
+    '....ccrrrrrrRRrr',
+    '....crrrrrrRRrrw',
+    '....rrrrrrRRR.ww',
+    '....ddrr..Rdd.w.',
+    '....dd.....dd...',
+  ],
+  nw: [
+    '..d.......d.....',
+    '.dd.......dd....',
+    '.rrr.....rrR....',
+    '.rrrr...rrrR....',
+    '.rrrrrrrrrrR....',
+    '.rrrrrrrrrrR....',
+    'crrrrrrrrrrRc...',
+    '.crrrrrrrrRc....',
+    '..rrrrrrrRR.....',
+    '...rrrrrrR......',
+    '..rrrrrrrRR.....',
+    '..rrrrrrrRRR.rr.',
+    '..rrrrrrrRRRrrrR',
+    '..rrrrrrrRRRrrR.',
+    '..rrrrRRRRRRrw..',
+    '..ddrrrrRRddww..',
+    '..dd.....dd.....',
+  ],
+};
+const foxKey = { r: 'rust', R: 'rust_lo', c: 'cream', w: 'white', k: 'outline', n: 'outline', d: 'soil_lo' };
+
 // Butterfly: l lilac wing, L lilac (shaded), y yellow spot, b body, a antenna.
 const BUTTERFLY = {
   se: [
@@ -536,14 +659,16 @@ export function images() {
     { file: 'flowers.svg', canvas: flowers(), note: 'flat tile' },
     { file: 'gravel.svg', canvas: gravel(), note: 'flat tile' },
     { file: 'burrow.svg', canvas: burrow(), note: 'flat tile' },
+    { file: 'den.svg', canvas: den(), note: 'flat tile' },
     { file: 'carrot_patch.svg', canvas: carrotPatch(), note: 'flat tile' },
     { file: 'pond.svg', canvas: pond(), note: 'flat tile' },
     { file: 'bush.svg', canvas: bush(), note: 'block' },
     { file: 'berry_bush.svg', canvas: berryBush(), note: 'block' },
-    { file: 'fence.svg', canvas: fence(), note: 'block' },
+    { file: 'fence.svg', canvas: fence(), note: 'edge: low, see-over' },
     ...furn('wheelbarrow', wheelbarrow),
     ...FACINGS.map((f) => ({ file: `bunny_${f}.svg`, canvas: critter(BUNNY[f], bunnyKey), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `cat_${f}.svg`, canvas: critter(CAT[f], catKey, { rx: 6 }), note: `facing ${f}` })),
+    ...FACINGS.map((f) => ({ file: `fox_${f}.svg`, canvas: critter(FOX[f], foxKey, { rx: 6 }), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `butterfly_${f}.svg`, canvas: butterfly(f), note: `facing ${f}` })),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),
   ];

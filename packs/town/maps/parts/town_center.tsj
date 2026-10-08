@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "town_center",
   "spacing": 0,
-  "tilecount": 21,
+  "tilecount": 22,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -85,17 +85,17 @@
     },
     {
       "id": 6,
-      "image": "../../assets/bed_s.svg",
+      "image": "../../assets/cabinet_w.svg",
       "properties": [
         {
           "name": "facing",
           "type": "string",
-          "value": "s"
+          "value": "n"
         },
         {
           "name": "tile",
           "type": "string",
-          "value": "bed"
+          "value": "cabinet"
         }
       ]
     },
@@ -103,6 +103,11 @@
       "id": 7,
       "image": "../../assets/cabinet_s.svg",
       "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
         {
           "name": "tile",
           "type": "string",
@@ -155,8 +160,13 @@
     },
     {
       "id": 11,
-      "image": "../../assets/cupboard_s.svg",
+      "image": "../../assets/cupboard_w.svg",
       "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "n"
+        },
         {
           "name": "tile",
           "type": "string",
@@ -166,8 +176,29 @@
     },
     {
       "id": 12,
-      "image": "../../assets/dresser_s.svg",
+      "image": "../../assets/cupboard_s.svg",
       "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "s"
+        },
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "cupboard"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "image": "../../assets/dresser_w.svg",
+      "properties": [
+        {
+          "name": "facing",
+          "type": "string",
+          "value": "n"
+        },
         {
           "name": "tile",
           "type": "string",
@@ -176,7 +207,7 @@
       ]
     },
     {
-      "id": 13,
+      "id": 14,
       "image": "../../assets/dresser_s.svg",
       "properties": [
         {
@@ -192,7 +223,7 @@
       ]
     },
     {
-      "id": 14,
+      "id": 15,
       "image": "../../assets/fridge_w.svg",
       "properties": [
         {
@@ -208,7 +239,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 16,
       "image": "../../assets/fridge_s.svg",
       "properties": [
         {
@@ -224,7 +255,7 @@
       ]
     },
     {
-      "id": 16,
+      "id": 17,
       "image": "../../assets/glass.svg",
       "properties": [
         {
@@ -235,7 +266,7 @@
       ]
     },
     {
-      "id": 17,
+      "id": 18,
       "image": "../../assets/grass.svg",
       "properties": [
         {
@@ -246,7 +277,7 @@
       ]
     },
     {
-      "id": 18,
+      "id": 19,
       "image": "../../assets/road.svg",
       "properties": [
         {
@@ -257,7 +288,7 @@
       ]
     },
     {
-      "id": 19,
+      "id": 20,
       "image": "../../assets/stove.svg",
       "properties": [
         {
@@ -268,7 +299,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 21,
       "image": "../../assets/window.svg",
       "properties": [
         {

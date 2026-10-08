@@ -18,24 +18,44 @@ maps:
       "@": { tile: grass, player: true }
       "C": { tile: grass, spawn: cat }
       "b": { tile: flowers, spawn: butterfly }
+      "D": { tile: den, spawn: fox }
+    edges: true
     rows:
-      - "FFFFFFFFFFFFFFFFFFFFFFFF"
-      - "F&O...*b*....B....#####F"
-      - "F&.@...**.........#_W_#F"
-      - "F.....&.....&&....#___#F"
-      - "F..B..........C...#___#F"
-      - "F.........v.......##+##F"
-      - "F.......&...........:..F"
-      - "F.::::::::::::::::::::.F"
-      - "F.:..................&.F"
-      - "F.:v..v..v.M..*b*..~~~.F"
-      - "F.:.............*.~~~~.F"
-      - "F.:v..v..v..&.....~~~..F"
-      - "F.:...........C........F"
-      - "FB.........&.....v...B.F"
-      - "F...*b*..B..........&&.F"
-      - "FFFFFFFFFFFFFFFFFFFFFFFF"
-    # The vegetable garden in the middle, the shed in the north-east corner.
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF##########  "
+      - "F. . . . . . . . . . . . . . . . . .#_ _ _ _ _#. "
+      - "F                                   #         #  "
+      - "F. & O . . . * b * . . . . B . . . .#_ _ _ _ _#. "
+      - "F                                   #         #  "
+      - "F. & . @ . . . * * . . . . . . . . .#_ _ W _ _#. "
+      - "F                                   #         #  "
+      - "F. . . . . . & . . . . . & & . . . .#_ _ _ _ _#. "
+      - "F                                   #         #  "
+      - "F. . . B . . . . . . . . . . C . . .#_ _ _ _ _#. "
+      - "F                                   #####+#####  "
+      - "F. . . . . . . . . . v . . . . . . . . . : . .F. "
+      - "F                                             F  "
+      - "F. . . . . . . . & . . . . . . . . . . . : . .F. "
+      - "F                                             F  "
+      - "F. . : : : : : : : : : : : : : : : : : : : : .F. "
+      - "F                                             F  "
+      - "F. . : . . . . . . . . . . . . . . . . . . & .F. "
+      - "F                                             F  "
+      - "F. . : v . . v . . v . M . . * b * . . ~ ~ ~ .F. "
+      - "F                                             F  "
+      - "F. . : . . . . . . . . . . . . . * . ~ ~ ~ ~ .F. "
+      - "F                                             F  "
+      - "F. . : v . . v . . v . . & . . . . . ~ ~ ~ . .F. "
+      - "F                                             F  "
+      - "F. . : . . . . . . . . . . . C . . . . . . . .F. "
+      - "F                                             F  "
+      - "F. B . . . . . . . . . & . . . . . v . . . B .F. "
+      - "F                                             F  "
+      - "F. . . . * b * . . B . . . . . . . . . . & & DF. "
+      - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF  "
+      - " . . . . . . . . . . . . . . . . . . . . . . . . "
+      - "                                                 "
+    # The vegetable garden in the middle, the shed in the north-east corner,
+    # the fox's den behind the bushes in the south-east corner.
     rooms:
       - { rect: [3, 9, 9, 3], tags: [veggies] }
-      - { rect: [18, 1, 5, 5], tags: [shed] }
+      - { rect: [18, 0, 5, 5], tags: [shed] }

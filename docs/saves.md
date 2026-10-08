@@ -17,7 +17,7 @@ else show(r.errors);
 ```ts
 interface SaveFile {
   format: 'isolandia-save';
-  version: 2;
+  version: 3;
   /** Loaded packs, in load order. */
   packs: { namespace: string; version: string }[];
   /** Qualified id of the start map, and its size. */
@@ -30,9 +30,13 @@ interface SaveFile {
 `tick`, the RNG state, the world `seed`, the player's entity id,
 `nextContainer` (ids are never reused, so it cannot be derived once a
 ground pile has gone), the action queue, `lastAction`, `defeat` /
-`victory`, every entity, every container in id order, and the cells whose
+`victory`, every entity, every container in id order, the cells whose
 tile differs from the map as `[x, y, z, tileId]`, in cell order (floor by
-floor, row-major). Every cell carries its floor `z`: entity `z` and
+floor, row-major), and the edges whose tile differs from the map as
+`[x, y, z, side, tileId | null]` (`side` is `n` or `w`, null for a removed
+edge), in cell order with `n` before `w` (see
+[edge walls](packs.md#edge-walls)). An activity on an edge (barricading a
+window) records its `side` next to its target cell. Every cell carries its floor `z`: entity `z` and
 `fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
 `[x, y, z, tick]`, `heard` and the activity target with `z`, `lastGoto.z`,
 and container cells as `[x, y, z]` (see [floors](packs.md#floors)). Every reference
@@ -49,7 +53,7 @@ inside `state`:
 
 ```json
 { "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "town", "zmb"] },
-  "save": { "format": "isolandia-save", "version": 2, "...": "..." } }
+  "save": { "format": "isolandia-save", "version": 3, "...": "..." } }
 ```
 
 Every reader (browser import, `--load`, `check --save`) accepts both the
@@ -60,18 +64,23 @@ wrapper and a bare `SaveFile` (`unwrapSave`).
 `version` is bumped on any **breaking change to `state`** (a field removed,
 renamed or reinterpreted). Adding state that a restore needs is breaking
 too, since older files lack it. `World.restore` keeps reading every
-version listed in `SUPPORTED_SAVE_VERSIONS`, migrating older ones on read;
-an unlisted version is an error that names the supported ones. Later M6
+version listed in `SUPPORTED_SAVE_VERSIONS`, migrating older ones on read
+where that is possible; an unlisted version is an error that names the
+supported ones. Later M6
 work (`m6-chunked-world`) extends the format under this policy and must
 keep the round-trip invariant.
 
 | Version | Change | Read as |
 |---------|--------|---------|
-| 1 | first format | migrated on read: every `z` is `0` (cells become `[x, y, 0]`, the plan `[x, y, 0, tick]`, records gain `z: 0`), `map.floors` is 1 |
-| 2 | floors (`m6-floors`): `map.floors` and a `z` on every cell, as above | current |
+| 1 | first format | refused (see below) |
+| 2 | floors (`m6-floors`): `map.floors` and a `z` on every cell | refused (see below) |
+| 3 | edge walls (`edge-walls`): `state.edges` and the activity `side` | current |
 
-`save()` always writes the current version, so a version 1 file loaded
-and saved again becomes version 2.
+Versions 1 and 2 are refused with an error that says why: their maps had
+walls in cells, and the edge-wall conversion turned those cells into
+floor and ground, so their changed tiles (a barricaded window cell) and
+plans would point at cells that are no longer what they were. Start a new
+game.
 
 ## Validation
 
@@ -102,6 +111,8 @@ mean 'zmb:shambler'?)`).
   activity target, heard noise, or a behavior plan (`[-1, -1, -1]` is
   allowed: `investigate` plans without a goto).
 - A changed tile is on an empty cell of the map.
+- A changed edge has a side other than `n` or `w`, or a tile that is not
+  an edge tile.
 - A tile container's cell does not hold a container tile in the restored
   grid (changed tiles are applied first).
 - A field has the wrong type or range (e.g. a negative tick, an RNG state
@@ -133,8 +144,8 @@ spawning, container creation and loot, then gets its state from the save:
   from the save; loads are recomputed from the item weights.
 - `tick`, the RNG state, the action queue, `lastAction`, `defeat` /
   `victory`, every entity field in the snapshot (the remaining path starts
-  at `pathPos = 0`), and the changed tiles (through `Grid.setTile`, so
-  walkability and opacity follow).
+  at `pathPos = 0`), and the changed tiles and edges (through
+  `Grid.setTile` and `Grid.setEdge`, so walkability and opacity follow).
 - Activities are rebuilt from their source ids, target, `startTick` and
   `endTick`, with the same object shape `ActivityRunner` creates; their
   start checks are not run again.
@@ -162,10 +173,12 @@ and in a seeded fuzz over 600 ticks on every genre.
 
 ## Size
 
-Saves are plain JSON, without compression. A 256×256 town with 1025
-entities (each with an inventory) and about 2100 filled tile containers
-saves to about **0.6 M characters**, so the quicksave and three slots
-together stay well under the usual ~5 M-character `localStorage` quota.
+Saves are plain JSON, without compression. The 343×343 zombie city at
+creation (961 entities, about 1100 filled tile containers) saves to about
+**0.43 M characters**; the older 256×256 city with 1025 entities, each
+with an inventory, and about 2100 filled containers saved to about 0.6 M.
+Either way the quicksave and three slots together stay well under the
+usual ~5 M-character `localStorage` quota.
 The map itself is not saved, only the cells that changed.
 
 ## Shells

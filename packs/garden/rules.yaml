@@ -10,8 +10,8 @@ statuses:
     label: Hidden
     for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("hiding")'
-  # The cat's playful pounce (the `meow` system below) gives the bunny a
-  # little fright: the only cost in the garden.
+  # The cat's playful pounce (the `meow` system below) and the fox's `yip`
+  # give the bunny a little fright: the only cost in the garden.
   - id: startled
     label: Startled
     for: 'self.has_tag("bunny")'
@@ -23,6 +23,12 @@ statuses:
     for: 'self.has_tag("cat")'
     when: 'can_see(self, player, 5) and not has_status(player, "hidden")'
     until: 'not can_see(self, player, 8) or has_status(player, "hidden")'
+  # The fox does the same, but only once night falls.
+  - id: sly
+    label: Sly
+    for: 'self.has_tag("fox")'
+    when: 'not world.is_day and can_see(self, player, 6) and not has_status(player, "hidden")'
+    until: 'world.is_day or not can_see(self, player, 9) or has_status(player, "hidden")'
   - id: alert
     label: Alert
     for: 'self.has_tag("bug")'
@@ -36,7 +42,7 @@ systems:
     when: 'tile.has_tag("burrow") and self.energy < 90'
     effects:
       - { type: apply, measurement: energy, delta: 3 }
-  # Gravel crunches under little paws; cats hear it (behaviors.yaml).
+  # Gravel crunches under little paws; the cat and the fox hear it (behaviors.yaml).
   - id: hop
     every: 0.2
     for: 'self.has_tag("bunny")'
@@ -49,6 +55,13 @@ systems:
     every: 0.5
     for: 'self.has_tag("cat")'
     when: 'self.has_status("curious") and chebyshev(self, player) <= 1'
+    effects:
+      - { type: noise, radius: 1.5 }
+  # The fox's counterpart: a playful yip right next to the bunny.
+  - id: yip
+    every: 0.5
+    for: 'self.has_tag("fox")'
+    when: 'self.has_status("sly") and chebyshev(self, player) <= 1'
     effects:
       - { type: noise, radius: 1.5 }
 

@@ -12,6 +12,11 @@
  *
  * Floors: a group layer with an integer property `floor` holds that floor's
  * tile and object layers; layers outside any floor group belong to floor 0.
+ *
+ * Edges: a tile layer with the string property `edge` = `n` or `w` holds the
+ * edge tiles on that side of each cell of its floor (several such layers
+ * merge like tile layers, top-most wins). Edge layers take only edge tiles
+ * and other tile layers only the other tiles (`TiledInput.isEdge`).
  */
 
 import { EMPTY_TILE, type SpawnDef } from '../definition.ts';
@@ -37,6 +42,8 @@ export interface TiledInput {
   readonly path: string;
   readonly tile: TiledLookup;
   readonly archetype: TiledLookup;
+  /** Whether a resolved tile index is an edge tile. */
+  readonly isEdge: (tile: number) => boolean;
 }
 
 export interface TiledRoom {
@@ -55,6 +62,9 @@ export interface TiledMap {
   readonly floors: number;
   /** Tile index per cell (`EMPTY_TILE` for none), by cell index `(z * height + y) * width + x`. */
   readonly cells: number[];
+  /** Edge tile on the north / west side of each cell (`EMPTY_TILE` for none), by cell index. */
+  readonly edgeN: number[];
+  readonly edgeW: number[];
   readonly facings: (Facing | null)[];
   readonly spawns: SpawnDef[];
   readonly playerStart: { x: number; y: number; z: number } | null;
@@ -124,6 +134,8 @@ interface LayerScope {
   /** Inside a floor group (another one would be nested). */
   readonly inFloor: boolean;
   readonly tops: Uint32Array[];
+  /** Top-most gid per cell of the `edge: n` / `edge: w` layers, per floor. */
+  readonly edgeTops: { readonly n: Uint32Array[]; readonly w: Uint32Array[] };
   readonly objects: { obj: Obj; path: KeyPath; z: number }[];
   readonly groups: Map<number, KeyPath>;
 }
@@ -186,11 +198,12 @@ class Reader {
     const gids = new GidTable(this, tilesets);
     /** Top-most gid per cell, per floor (grown as floor groups are found). */
     const tops: Uint32Array[] = [new Uint32Array(w * h)];
+    const edgeTops = { n: [] as Uint32Array[], w: [] as Uint32Array[] };
     const objects: { obj: Obj; path: KeyPath; z: number }[] = [];
     /** Floor number → path of its group (for duplicates). */
     const groups = new Map<number, KeyPath>();
     if (!Array.isArray(root['layers'])) this.problem(['layers'], `map 'layers' must be a list`);
-    else this.layers(root['layers'], ['layers'], w, h, gids, { z: 0, inFloor: false, tops, objects, groups });
+    else this.layers(root['layers'], ['layers'], w, h, gids, { z: 0, inFloor: false, tops, edgeTops, objects, groups });
     const floors = Math.max(1, ...[...groups.keys()].map((z) => z + 1));
     for (let z = 0; z < floors; z++) {
       if (z > 0 && !groups.has(z)) this.problem(['layers'], `floor groups must be numbered 0, 1, 2, … without gaps: floor ${z} is missing (the map has a floor ${floors - 1})`);
@@ -199,6 +212,8 @@ class Reader {
 
     const area = w * h;
     const cells = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const edgeN = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const edgeW = new Array<number>(area * floors).fill(EMPTY_TILE);
     const facings = new Array<Facing | null>(area * floors).fill(null);
     for (let z = 0; z < floors; z++) {
       const top = tops[z]!;
@@ -210,6 +225,15 @@ class Reader {
           facings[z * area + i] = FACING_CODE[code % FACING_CODE.length]!;
         }
       }
+      for (const [side, out] of [['n', edgeN], ['w', edgeW]] as const) {
+        const etop = edgeTops[side][z];
+        if (!etop) continue;
+        for (let i = 0; i < area; i++) {
+          if (!etop[i]) continue;
+          const code = gids.code(etop[i]!);
+          if (code >= 0) out[z * area + i] = Math.floor(code / FACING_CODE.length);
+        }
+      }
     }
 
     const ux = root['tilewidth'] as number;
@@ -217,7 +241,7 @@ class Reader {
     // Tiled stores isometric object positions in tile-height units on both axes.
     const unit = orientation === 'isometric' ? [uy, uy] : [ux, uy];
     const { spawns, playerStart, rooms } = this.objects(objects, w, h, unit[0]!, unit[1]!);
-    return { width: w, height: h, floors, cells, facings, spawns, playerStart, rooms };
+    return { width: w, height: h, floors, cells, edgeN, edgeW, facings, spawns, playerStart, rooms };
   }
 
   private tilesets(root: Obj): Tileset[] {
@@ -316,15 +340,24 @@ class Reader {
       }
       if (type === 'group') {
         if (Array.isArray(layer['layers'])) this.layers(layer['layers'], [...lp, 'layers'], w, h, gids, scope);
-      } else if (type === 'tilelayer') this.tileLayer(layer, lp, w, h, gids, at.tops[at.z]!);
-      else if (type === 'objectgroup') {
+      } else if (type === 'tilelayer') {
+        const edge = property(layer, lp, 'edge');
+        if (edge && edge.value !== 'n' && edge.value !== 'w') {
+          this.problem(edge.path, `tile layer property 'edge' must be 'n' (north edges) or 'w' (west edges), got ${JSON.stringify(edge.value)}`);
+          return;
+        }
+        const side = edge ? (edge.value as 'n' | 'w') : null;
+        const top = side ? (at.edgeTops[side][at.z] ??= new Uint32Array(w * h)) : at.tops[at.z]!;
+        this.tileLayer(layer, lp, w, h, gids, top, side);
+      } else if (type === 'objectgroup') {
         const objs = layer['objects'];
         if (Array.isArray(objs)) objs.forEach((obj: unknown, j) => isObj(obj) && at.objects.push({ obj, path: [...lp, 'objects', j], z: at.z }));
       }
     });
   }
 
-  private tileLayer(layer: Obj, path: KeyPath, w: number, h: number, gids: GidTable, top: Uint32Array): void {
+  /** Read a tile layer into `top`; `side` is the edge side of an `edge` layer (null for cells). */
+  private tileLayer(layer: Obj, path: KeyPath, w: number, h: number, gids: GidTable, top: Uint32Array, side: 'n' | 'w' | null): void {
     const compression = layer['compression'];
     if (typeof compression === 'string' && compression !== '') {
       this.problem([...path, 'compression'], `compressed layer data ('${compression}') is not supported: set Map Properties → Tile Layer Format to 'CSV' or 'Base64 (uncompressed)'`);
@@ -376,6 +409,8 @@ class Reader {
       data = raw as number[];
     }
     let flippedReported = false;
+    /** Tiles already reported as misplaced in this layer. */
+    const misplaced = new Set<number>();
     for (let i = 0; i < w * h; i++) {
       const gid = data[i]!;
       const cpath: KeyPath = base64 ? dpath : [...dpath, i];
@@ -393,6 +428,23 @@ class Reader {
         continue;
       }
       gids.resolve(gid, cpath, cell);
+      const code = gids.code(gid);
+      if (code >= 0) {
+        const tile = Math.floor(code / FACING_CODE.length);
+        if (this.input.isEdge(tile) !== (side !== null)) {
+          if (!misplaced.has(tile)) {
+            misplaced.add(tile);
+            const name = typeof layer['name'] === 'string' ? `'${layer['name']}'` : '';
+            this.problem(
+              cpath,
+              side
+                ? `tile layer ${name} is an edge layer ('edge: ${side}') but holds tile ${gids.label(gid)}, which is not an edge tile ${cell}: edge layers take only edge tiles`
+                : `tile layer ${name} holds edge tile ${gids.label(gid)} ${cell}: put edge tiles (walls, doors, windows, fences) on a layer with the property 'edge' = 'n' or 'w'`,
+            );
+          }
+          continue;
+        }
+      }
       top[i] = gid;
     }
   }
@@ -510,6 +562,15 @@ class GidTable {
 
   code(gid: number): number {
     return gid < this.table.length ? this.table[gid]! : FAILED;
+  }
+
+  /** `'tile id'` named by a resolved gid's tileset tile (for messages). */
+  label(gid: number): string {
+    const ts = this.tileset(gid);
+    const entry = ts?.tiles.get(gid - ts.firstgid);
+    const p = entry ? entry.tile['properties'] : undefined;
+    const prop = Array.isArray(p) ? p.find((x: unknown) => isObj(x) && x['name'] === 'tile') : undefined;
+    return isObj(prop) && typeof prop['value'] === 'string' ? `'${prop['value']}'` : `gid ${gid}`;
   }
 
   resolve(gid: number, usePath: KeyPath, cell: string): void {

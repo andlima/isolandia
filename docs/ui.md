@@ -2,57 +2,158 @@
 
 ## Interaction
 
-Right-click a tile (or long-press it on a touch screen) to open the
-**context menu**: everything you can do at that cell, near or far. Press
-`E` to open it for your own cell, at your character.
+**Left click does the safe default.** A plain left click (or a tap) on an
+object runs what is safe there, and opens the menu when the object has
+actions that cost something. The rule is the pure function
+`clickPlan(world, target)` in `src/web/menu.ts`, over
+`world.interactionsAt(x, y, z)` for the target's cell:
 
-The menu is built from the core query `world.interactionsAt(x, y, z)` (see
-[packs](packs.md#actions)) by the pure function `contextMenu(world, x, y, z)`
-in `src/web/menu.ts`; `src/web/menu-dom.ts` only renders it. Entries, in
-order:
+- the **safe** entry is the first enabled **Open**, else **Go up** /
+  **Go down** when the cell has exactly one way, else **Walk here**;
+- when the cell has no enabled tile action or recipe, the click **runs**
+  the safe entry, exactly as choosing it in the menu would (walk up to a
+  fridge and show its contents, climb the stairs, walk);
+- when it has one (*Barricade* you can do now, *Cook* at a stove), or has
+  entries but nothing safe (only disabled actions, stairs that go both
+  ways), the click opens the **menu**;
+- a cell with nothing on it walks there, next to it when it cannot be
+  entered, as before (a plain wall: see [Clicking walls](#clicking-walls)); on your own cell with nothing to do the
+  click does nothing, and with only self actions (*Rest*) it opens the
+  menu.
 
-1. the pack's **tile actions** that match the cell's tile (e.g.
-   *Barricade* on a window);
-2. the **station recipes** whose station matches the cell (e.g.
-   *Cook: Hot beans* on a stove), with the same in-reach and walk-then-act
-   behaviour as tile actions;
-3. **Open** and, when not empty, **Take all from …** for each container on
-   the cell;
-4. **Go up** / **Go down** on a stairs (or landing) cell whose
-   [link](packs.md#floors) is open: it walks there first when needed, then
-   climbs to the far end;
-5. on your own cell, the **self actions** (e.g. *Rest*);
-6. **Walk here**, on any other walkable cell.
+**Shift + click** always just walks there. **Right-click**, a
+**long-press** and **`E`** always open the menu and never run the default.
+On a touch screen a tap is a left click and a long-press opens the menu.
 
-Entries that cannot be done stay in the list, greyed out, with the reason
-underneath (`Needs: Hammer, 2× Plank`, `Only in the crypt`, …), so you
-learn what exists.
+**The menu** is one model for both openings, `contextMenu(world, x, y, z,
+opening)` (`src/web/menu-dom.ts` only renders it). Rows, in order:
+
+1. the **default** (the safe entry, unless it is *Walk here*), with a
+   `click` tag;
+2. the other **enabled** entries in `interactionsAt` order: tile actions
+   (e.g. *Barricade* on a window), station recipes (*Cook: Hot beans* on a
+   stove), *Open* / *Take all from …* per container, *Go up* / *Go down*
+   on an open [link](packs.md#floors), and on your own cell the self
+   actions (*Rest*);
+3. **Walk here**, on a walkable cell other than yours, in the right-click
+   (long-press, `E`) menu only;
+4. one fold row, **Can't do now (N) ▸**, when N entries cannot be done.
+   Expanding it (click, `Enter` or `→` on it) lists them greyed out with
+   the reason underneath (`Needs: Hammer, 2× Plank`, `Only in the
+   crypt`, …), so you learn what exists; they are never chosen. A menu
+   with nothing enabled opens with the fold expanded.
+
+An enabled action or recipe shows after its label how long it takes and
+what it uses up (`Barricade · 6s · uses 2× Plank, 4× Nails`); tools are
+not listed, since they are not spent. A recipe that makes more than one
+unit says so (`Cook: Hot beans ×2`).
 
 **Walk-then-act.** Choosing an action that is out of reach walks there
 first: the shell queues a `goto` whose `then` is the action
 (`world.approachIntent`), and the simulation starts it on arrival. *Open*
-from afar walks up to the container and then shows it in the loot panel;
-*Take all* from afar takes the first stack on arrival and shows the
-container in the loot panel for the rest. Items are computed when the menu
+from afar walks up to the container and then opens it in the
+[transfer window](#transfer-window); *Take all* from afar takes the first
+stack on arrival and opens the container in the transfer window for the
+rest. Items are computed when the menu
 opens; the simulation checks everything again when the action runs, so a
 stale menu is harmless.
 
-**Controls.**
+**Menu keys.** Enabled rows are numbered `1`–`9`; pressing the digit
+chooses that row. The arrow keys move over the enabled rows and the fold
+row (and the greyed-out rows while expanded), `Enter` chooses, `→` / `←`
+on the fold row expand / collapse it, and `Escape` closes the menu. A
+click outside (which does nothing else), panning, zooming, opening
+another menu or the end of the game close it too. The target cell is
+outlined while it is open.
 
-- **Right-click** on the game canvas (the browser's own menu is
-  suppressed there only, not on the panels). The target is the tile under
-  the pointer, picked like a left click.
-- **Long-press:** one finger held within the drag threshold (8 px) for
-  500 ms opens the menu. A long-press never also counts as a tap, and a
-  drag or a second finger cancels it.
-- **`E`:** your own cell.
-- While the menu is open, the arrow keys move the selection, `Enter`
-  chooses, and `Escape` closes it. A click outside (which does nothing
-  else), panning, zooming, opening another menu or the end of the game
-  close it too. The target cell is outlined while it is open.
+**Hover** (mouse and pen only; touch has none). Pointing at the canvas
+outlines the target's cell faintly, sets the cursor (a hand when a click
+runs something or opens the menu, the normal arrow for a plain walk, and
+"not allowed" on your own cell with nothing to do) and, after the pointer
+rests ~150 ms on a target, shows a tooltip: the title (`Fridge · kitchen`;
+an entity's name; `Ground · Crackers, Water bottle` for a pile) and what a
+click does (`Click: Open`, `Click: Go up`, `Click: 3 actions`, nothing for
+a walk). It is the pure `hoverInfo(world, target)`, recomputed once per
+frame at most and only when the target, the tick, `containerVersion` or
+`tileVersion` changes. Hover is hidden while the menu is open, while
+dragging and when the pointer leaves the canvas; `H` hides the tooltip
+with the HUD.
 
-Left click still walks to a tile. Pack actions are no longer listed in the
-loot panel; item uses stay in the inventory panel (`I` / `Tab`).
+**Clicks target what is drawn under the pointer.** Left click,
+right-click, long-press and hover pick the object whose visible pixels are
+under the pointer: the top half of a fridge is the fridge, a zombie's head
+in front of a wall is the zombie (its cell), your own character is your
+cell (as `E`). Shadows, glass and blocks faded in front of you are clicked
+through; empty spots fall back to the ground cell. See
+[iso.md](iso.md#picking).
+
+Pack actions are not listed in the transfer window; item uses are its
+*Use* buttons (the item's `use.label`).
+
+### Clicking walls
+
+Walls, doors, windows and fences are [edges](packs.md#edge-walls), thin
+slabs between two cells. In the iso view each slab is its own target
+(`{ kind: 'edge', x, y, z, side }`): the edge on the `n` or `w` side of
+cell `(x, y)`.
+
+- **Hover** shows the edge tile's label (`Window`, `Barricaded window`)
+  and what a click does.
+- **The menu** for an edge lists the actions on it (*Barricade* on a
+  window, *Close shutters* on a vampire window), with the same default, fold row
+  and walk-then-act as a cell. It has no *Walk here*.
+- **A plain left click on a wall** (an edge with nothing to do) walks next
+  to it **on the clicked side**: the iso view shows an edge's south face
+  (`n`) or east face (`w`), which belongs to cell `(x, y)`, so the walk
+  ends there, or on the cell across the edge when `(x, y)` cannot be
+  entered (`edgeWalkIntent`). **Shift + click** does the same.
+- An edge action is in reach from either cell the edge separates, so you
+  can barricade a window from inside or outside.
+- An edge faded in front of you (the south and east sides of your cell
+  and the walls just past them) is clicked through, like a faded block.
+
+## Transfer window
+
+One window moves items between a container and your inventory: the
+container on the left, what you carry on the right, each stack with its
+icon (the item's `sprite` image, drawn pixel-crisp, or a swatch of its
+`color` and `glyph`), label, count and weight.
+
+- **Opening.** *Open* in the context menu (or a left click on a
+  container, see above) opens the window on that container. Chosen from
+  afar, it opens once you arrive. The window never opens by itself: the
+  HUD's `Nearby:` line is the passive cue. **`I` / `Tab`** opens it with
+  your inventory only, or switches an open window to inventory-only and
+  back.
+- **Moving.** Clicking a stack moves **all of it** to the other side (as
+  many units as fit); **Shift + click** moves **one**. Rows are buttons:
+  `Enter` on a focused row moves the stack, `Shift + Enter` one unit.
+  **Take all** and **Put all** sit above each pane. A move that fails
+  (`Too heavy`, …) shows the message under the weight bar for a few
+  seconds, as well as on the HUD. Inventory rows have small **Use** and
+  **Drop** buttons that do not move the row; in inventory-only mode
+  clicking a row does nothing, its buttons still work.
+- **Tabs.** Every reachable container has a tab (tile containers and
+  ground piles, the pile on your own cell included), with its load and
+  capacity. Clicking a tab shows that container. Dropping an item while
+  the window is open makes the ground pile appear as a tab. When the shown
+  container leaves reach (you walked away, the pile emptied), the next
+  tab is selected; with none left the window goes back to inventory-only
+  if `I` opened it, and closes otherwise.
+- **Closing.** `Escape`, the **×** button, or opening the crafting or
+  Game panel closes it.
+- **Layout.** The window sits at the bottom right and stays below the
+  middle of the screen, so it never covers your character at the default
+  zoom. The two panes scroll on their own; on screens narrower than
+  560 px they stack, container on top. After defeat or victory everything
+  is disabled.
+
+The view is the pure function `transferView(world, openContainer,
+readOnly, icons)` in `src/web/transfer.ts` (tabs, the selected
+container's stacks, the inventory with `Carrying: w/cap` and a fill
+fraction, and *Take all* / *Put all*); `src/web/transfer-dom.ts` renders
+it, re-rendering only when the view's JSON changes. Icon URLs come from
+the same pack asset URLs the renderer loads (`itemIconUrls`).
 
 ## Crafting panel
 
@@ -100,15 +201,21 @@ the browser, `MemoryStore` in tests).
 | Key | Action |
 |---|---|
 | Arrows, WASD, numpad | Move (screen-relative) |
-| Click / right-click / long-press | Walk there / context menu |
-| `E` | Context menu on your own cell |
+| Click / tap | Safe default (open, climb, walk) or the menu |
+| Shift + click | Walk there |
+| Right-click / long-press | Menu (with *Walk here*) |
+| `E` | Menu on your own cell |
+| `1`–`9` (menu open) | Choose that menu row |
+| Arrows / `Enter` / `Escape` (menu open) | Move, choose (or fold/unfold), close |
 | `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
 | `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
-| `I` / `Tab` | Inventory panel |
+| `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
+| `Escape` | Close the transfer window (or the menu, when open) |
+| Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
-| `H` | Toggle the HUD text |
+| `H` | Toggle the HUD text (and hover tooltips) |
 | `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
 

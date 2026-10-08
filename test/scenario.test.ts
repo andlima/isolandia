@@ -10,7 +10,7 @@ import { Looter, type LooterOptions } from './looter.ts';
 const DAY_TICKS = 14400; // 1440 s × 10 ticks/s
 const SEEDS = [1, 2, 3, 4, 5];
 /**
- * Seeds for the composite start maps (the 256×256 zombie city with ~1000
+ * Seeds for the composite start maps (the 343×343 zombie city with ~1000
  * entities, the vampire estate): two in-game days cost ~25× the old maps per
  * seed, so they run on fewer seeds to keep this file within a few seconds each.
  */

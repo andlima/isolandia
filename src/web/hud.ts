@@ -64,6 +64,11 @@ export class Hud {
     this.perf.textContent = perfLine(f);
   }
 
+  /** Whether the HUD (and with it hover tooltips) is shown. */
+  get visible(): boolean {
+    return !this.el.hidden;
+  }
+
   toggle(): void {
     this.el.hidden = !this.el.hidden;
     this.lastTick = -1;

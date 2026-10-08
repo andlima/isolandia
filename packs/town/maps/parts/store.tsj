@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "store",
   "spacing": 0,
-  "tilecount": 8,
+  "tilecount": 7,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -90,17 +90,6 @@
     },
     {
       "id": 6,
-      "image": "../../assets/road.svg",
-      "properties": [
-        {
-          "name": "tile",
-          "type": "string",
-          "value": "road"
-        }
-      ]
-    },
-    {
-      "id": 7,
       "image": "../../assets/window.svg",
       "properties": [
         {

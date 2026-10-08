@@ -5,19 +5,22 @@ tiles:
     color: "#8a8a8a"
     sprite: floor_img
     walkable: true
+  # Walls and doors are edge tiles: thin slabs on the edges between cells
+  # (docs/packs.md#edge-walls), not cells.
   - id: wall
     label: Wall
     glyph: "#"
     color: "#d0d0d0"
     sprite: wall_img
     walkable: false
+    edge: true
   - id: door
     label: Door
     glyph: "+"
     color: "#b5813d"
     sprite: door_img
-    walkable: true
-    raised: true                    # iso: a door in a wall-height frame
+    walkable: true                  # always open: you walk and see through it
+    edge: true
   # Floors: stairs link their cell to the same cell one floor up (`climb: up`);
   # the landing is the floor cell at the top of the stairs.
   - id: stairs

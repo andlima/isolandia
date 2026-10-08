@@ -22,9 +22,9 @@ import { FADE_ALPHA, fadeCells, fades, floorVisible, viewFloor } from '../src/is
 import { BLOCK_H, cameraAt, FLOOR_H, floorCamera, groundCentreIso, pickCell, pickTile } from '../src/iso/projection.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { climbKey, suppressesDefault } from '../src/web/keys.ts';
-import { contextMenu, menuTitle, runMenuItem } from '../src/web/menu.ts';
+import { clickPlan, contextMenu, menuTitle, runMenuItem } from '../src/web/menu.ts';
 import { clickIntent } from '../src/web/panels.ts';
-import { assertRoundTrip, fixture, GAMES } from './helpers.ts';
+import { assertRoundTrip, cellRows, fixture, GAMES } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -542,13 +542,13 @@ test('interactionsAt: Go up / Go down on link cells, before walk; the context me
   const up = w.interactionsAt(4, 1)[0]!;
   assert.deepEqual(up, { id: 'climb:up', label: 'Go up', kind: 'climb', ok: true, intent: { kind: 'goto', x: 4, y: 1, z: 1 }, inReach: false });
   // From afar, "Go up" walks to the stairs and climbs.
-  const menu = contextMenu(w, 4, 1);
+  const menu = contextMenu(w, 4, 1).items;
   assert.deepEqual(menu.map((m) => m.label), ['Go up', 'Walk here']);
   runMenuItem(w, menu[0]!);
   stepUntil(w, () => !p.path && p.z === 1);
   assert.deepEqual(at(p), [4, 1, 1]);
   // On the landing: Go down, then the self actions (none here).
-  assert.deepEqual(contextMenu(w, 4, 1).map((m) => m.label), ['Go down']);
+  assert.deepEqual(contextMenu(w, 4, 1).items.map((m) => m.label), ['Go down']);
   // Blocked by a set_tile: no entry.
   w.grid.setTile(w.grid.index(4, 1, 0), w.def.ids.tiles['t:wall']!);
   assert.deepEqual(kinds(4, 1), []);
@@ -591,8 +591,8 @@ test('terminal: < / > climb or say there is no way; the x list offers Go up; the
   // The view shows floor 1 only: the crate upstairs, the empty cells as spaces, the listener; not the chaser below.
   const frame = renderAscii(w, { width: 7, height: 5 });
   // Centred on the player at (4, 1): the view starts at (1, -1).
-  assert.deepEqual(frame.lines, ['       ', '###### ', '.B.@.# ', '.....# ', 'l  ..# ']);
-  assert.equal(frame.colors[4]![1], null, 'an empty cell has no colour');
+  assert.deepEqual(cellRows(frame), ['       ', '###### ', '.B.@.# ', '.....# ', 'l  ..# ']);
+  assert.equal(frame.colors[9]![3], null, 'an empty cell has no colour');
   const hud = hudLines(hudModel(w));
   assert.equal(hud[1], 'Floor 1');
   assert.equal(hudModel(World.create(loadPacksOrThrow([fixture()]), 1)).floor, null);
@@ -742,7 +742,7 @@ test('scenario (vampire): the player reaches the attic and opens the chest', () 
   assert.ok(chest.stacks.length > 0, 'the study chest rolled loot');
   assert.ok(w.entities.some((e) => e.archetype.id === 'vamp:bat' && e.z === 1), 'a bat in the attic');
   // The context menu's Open walks up the ladder to the chest.
-  const open = contextMenu(w, chest.x, chest.y, 1).find((m) => m.label === 'Open Oak chest')!;
+  const open = contextMenu(w, chest.x, chest.y, 1).items.find((m) => m.label === 'Open Oak chest')!;
   assert.ok(open.run.intent && open.run.openLoot);
   runMenuItem(w, open);
   for (let i = 0; i < 2000 && (p.path || p.intent); i++) {
@@ -757,4 +757,39 @@ test('scenario (vampire): the player reaches the attic and opens the chest', () 
   for (const a of takeAll.actions!) w.queueAction(a);
   w.step();
   assert.ok(chest.stacks.length < before, 'took from the chest');
+});
+
+test('clickPlan: stairs with one direction climb, with two open the menu; a crate with an action menus; nothing on the own cell', () => {
+  const w = world();
+  const up = clickPlan(w, { x: 4, y: 1, z: 0 });
+  assert.ok(up.kind === 'run');
+  assert.equal(up.entry.id, 'climb:up');
+  assert.deepEqual(up.item.run, { intent: { kind: 'goto', x: 4, y: 1, z: 1 } });
+  // The crate offers Kick (a real action): the menu, with Open first as the default.
+  assert.equal(clickPlan(w, { x: 3, y: 2, z: 0 }).kind, 'menu');
+  const crate = contextMenu(w, 3, 2, 0, 'click');
+  assert.deepEqual(
+    crate.items.map((i) => [i.label, i.default ?? false]),
+    [
+      ['Open Crate', true],
+      ['Kick', false],
+    ],
+  );
+  // The hero has no self actions: clicking yourself does nothing.
+  assert.deepEqual(clickPlan(w, { x: 1, y: 1, z: 0 }), { kind: 'none' });
+  // A middle floor whose stairs lead both ways.
+  const three = world([FLOOR0, ['#######', '#.B.<.#', '#.....#', '#   ..#', '#######'], ['#######', '#...>.#', '#.....#', '#.....#', '#######']]);
+  assert.deepEqual(
+    three.interactionsAt(4, 1, 1).map((e) => e.id),
+    ['climb:up', 'climb:down', 'walk'],
+  );
+  assert.equal(clickPlan(three, { x: 4, y: 1, z: 1 }).kind, 'menu');
+  assert.deepEqual(
+    contextMenu(three, 4, 1, 1, 'click').items.map((i) => i.label),
+    ['Go up', 'Go down'],
+  );
+  assert.deepEqual(
+    contextMenu(three, 4, 1, 1).items.map((i) => i.label),
+    ['Go up', 'Go down', 'Walk here'],
+  );
 });

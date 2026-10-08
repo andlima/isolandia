@@ -29,15 +29,40 @@ conventions. Asset fields, anchors and the facing table are documented in
 | Kind | Image | Anchor | Notes |
 |------|-------|--------|-------|
 | Flat tile (floor, road, carpet…) | 64×32 | `[0.5, 1]` (default) | Fills the diamond exactly; neighbours tile without gaps |
-| Raised tile (wall, door, window, furniture, car, coffin, crate) | 64×64 | `[0.5, 1]` (default) | A block whose top face sits 32 px above the ground diamond. Taller art is fine if its bottom still lines up with the diamond |
+| Raised tile (furniture, car, coffin, crate, stairs) | 64×64 | `[0.5, 1]` (default) | A block whose top face sits 32 px above the ground diamond. Taller art is fine if its bottom still lines up with the diamond |
+| Edge tile (wall, door, window, fence) | 40×64 | `[0.1, 0.65625]` | A thin slab on the cell's `n` side, see below |
 | Character | 32×48 | `[0.5, 0.92]` | Feet on a pixel drop shadow at the tile's ground centre |
 | Item ground pile | ≤ 32×32 | `[0.5, 0.5]` | Small, centred on the ground centre, with a small shadow |
 
 A raised tile replaces the ground under it, so a block's art covers its
 whole diamond: furniture stands on a full-cell base (the coffin's stone
-bier, the bed frame). The door, bed and crate are walkable but set
+bier, the bed frame). The bed and crate are walkable but set
 `raised: true` so that they are drawn as blocks and depth-sorted with
 entities.
+
+### Edge images
+
+Walls, doors, windows and fences are **edge tiles**
+([packs.md](packs.md#edge-walls)): thin slabs on the edge between two
+cells. One image is drawn, for the `n` edge, the diamond's top-right side;
+the renderer mirrors it for a `w` edge (the top-left side), since the two
+sides are horizontal mirrors of each other. A directional asset with its
+own `n` and `w` images is also accepted.
+
+- The image is **40×64** (20×32 art pixels). Its anchor `[0.1, 0.65625]`
+  is art pixel (2, 21), the cell's **top ground vertex**; the slab runs
+  from there 16 art pixels right and 8 down, along the side.
+- A slab is wall height (32 px, like a block) and 1/8 of a tile thick
+  (`ET = 1/16` either side of the edge line in `art/lib.mjs`). It runs
+  `ET` past both vertices, so neighbouring slabs overlap into a small
+  corner post and joints show no gaps (`slab()` and `edgeTile()` in
+  `art/lib.mjs`).
+- The visible long face is the slab's south face: the side the viewer
+  sees, lit mid-tone. Its east end is the dark face and the top is the
+  lightest, as on blocks.
+- A door is a frame with an **open doorway** (you see and walk through
+  it); a fence is low enough to see over; windows show their glass,
+  boards or shutters on the long face.
 
 ## Light and shading
 
@@ -162,7 +187,7 @@ the pack's `assets.yaml`.
 | `crypt` | `#3e3650` | `bat_lo` | `#563e66` |
 | `blood` | `#c0182c` | `wax` | `#f0e8c0` |
 
-### `garden` (30 colours)
+### `garden` (32 colours)
 
 A bright pastel palette for a cute look: round shapes, big eyes, a soft
 plum `outline` instead of near-black. The night tint is a light
@@ -185,9 +210,12 @@ blue-violet, so these colours stay readable after dark.
 | `gravel` | `#d8cbb0` | `lilac_lo` | `#9a78d4` |
 | `gravel_lo` | `#b4a68a` | `blue` | `#7ab8f2` |
 | `water_hi` | `#d0f2fc` | `blue_lo` | `#5288c8` |
+| `rust` | `#e0703a` | `rust_lo` | `#b4502e` |
 
-The bunny, the cat and the butterfly are drawn in `art/garden.mjs` as
-their own 16×24 text grids (not the shared humanoid body). The butterfly
+The bunny, the cat, the fox and the butterfly are drawn in `art/garden.mjs`
+as their own 16×24 text grids (not the shared humanoid body). The fox's
+`rust` coat, pointed snout, big ears and white-tipped tail keep it apart
+from the `orange` cat. The butterfly
 hovers above its shadow, like the vampire pack's bat. The fence is a single
 image whose rails run along both map axes, so neighbouring fence tiles join
 up whichever way the fence line runs.

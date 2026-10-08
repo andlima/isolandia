@@ -91,10 +91,26 @@ export interface TileDef {
   readonly container: ContainerSpec | null;
   /** Link to the same (x, y) one floor up (`up`) or down (`down`); null for none. */
   readonly climb: 'up' | 'down' | null;
+  /**
+   * An edge tile (a thin wall, door, window or fence): it goes on the edge
+   * between two cells, never in a cell. `walkable` means it can be crossed,
+   * `opaque` that it blocks sight across it.
+   */
+  readonly edge: boolean;
 }
 
 /** Tile index of an empty map cell: no tile, not walkable, not opaque, not drawn. */
 export const EMPTY_TILE = 0xffff;
+
+/**
+ * The side of a cell an edge is on: `n` (between (x, y-1) and (x, y)) or `w`
+ * (between (x-1, y) and (x, y)). A cell's south and east sides are the `n`
+ * of the cell below it and the `w` of the cell to its right.
+ */
+export type EdgeSide = 'n' | 'w';
+
+/** Both edge sides, in storage order. */
+export const EDGE_SIDES: readonly EdgeSide[] = ['n', 'w'];
 
 /** A weight-capped container declaration. */
 export interface ContainerSpec {
@@ -370,6 +386,13 @@ export interface MapDef {
    * `(z * height + y) * width + x`.
    */
   readonly cells: readonly number[];
+  /**
+   * Edge tile on the north side of each cell (`EMPTY_TILE` for none), by cell
+   * index; only edge tiles (`TileDef.edge`).
+   */
+  readonly edgeN: readonly number[];
+  /** Edge tile on the west side of each cell, like `edgeN`. */
+  readonly edgeW: readonly number[];
   /**
    * Legend `facing` per cell, by cell index; null where the legend does not set
    * one (shown as the default `s`). Render-only: the simulation ignores it.

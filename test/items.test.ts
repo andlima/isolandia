@@ -17,8 +17,9 @@ import {
   type Definition,
   type LoadError,
 } from '../src/core/index.ts';
-import { clickIntent, inventoryView, lootView } from '../src/web/panels.ts';
-import { fixture, loadFixture } from './helpers.ts';
+import { clickIntent } from '../src/web/panels.ts';
+import { transferView } from '../src/web/transfer.ts';
+import { cellRows, fixture, loadFixture } from './helpers.ts';
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 //
@@ -596,10 +597,11 @@ test('hudModel/ASCII: packs without items keep the HUD byte-identical; ground pi
   const frame = renderAscii(w, { width: 7, height: 5 });
   const text = frameToText(frame);
   // Viewport origin: (3 - 3, 2 - 2) = (0, 0), so screen = world coordinates.
-  assert.equal(frame.lines[2], '#..@*.#');
-  assert.equal(frame.colors[2]![4], 'gray');
+  // Cells are at odd lines and columns: viewport row 2 is line 5, column x is 2x + 1.
+  assert.equal(cellRows(frame)[2], '#..@*.#');
+  assert.equal(frame.colors[5]![9], 'gray');
   at(w, 4, 2);
-  assert.equal(renderAscii(w, { width: 7, height: 5 }).lines[2]![3], '@'); // entities draw over piles
+  assert.equal(cellRows(renderAscii(w, { width: 7, height: 5 }))[2]![3], '@'); // entities draw over piles
   assert.match(text, /Carrying: 0\/0\.6/);
   assert.match(text, /Inventory: empty/);
 });
@@ -637,26 +639,26 @@ test('terminal keys: g takes all that fits, digits use, d + digit drops; movemen
   assert.deepEqual([plain.player.x, plain.player.y], [1, 2]);
 });
 
-test('browser panels: views from hudModel, buttons become actions, read-only after defeat', () => {
+test('transfer window: views from hudModel, buttons become actions, read-only after defeat', () => {
   const w = world({ 'loot.yaml': LOOT });
   at(w, 2, 2);
-  const m = hudModel(w);
-  const iv = inventoryView(m, false)!;
-  assert.equal(iv.carrying, 'Carrying: 0.1/0.6');
-  assert.deepEqual(iv.rows[0]!.buttons.map((b) => [b.label, b.actions]), [['Drop', [{ kind: 'drop', item: 't:pebble', count: 1 }]]]);
-  const lv = lootView(m, false)!;
-  assert.deepEqual(lv.sections.map((s) => s.title), ['Box', 'Box']);
-  assert.deepEqual(lv.sections[0]!.rows[0]!.buttons[0]!.actions, [{ kind: 'take', container: 0, item: 't:apple', count: 1 }]);
-  assert.deepEqual(lv.sections[1]!.takeAll!.actions, [{ kind: 'take', container: 2, item: 't:coin' }]);
-  assert.deepEqual(lv.put[0]!.buttons.map((b) => b.label), ['Put → Box', 'Put → Box']);
-  for (const a of lv.sections[1]!.takeAll!.actions) w.queueAction(a);
+  const iv = transferView(w, null, false);
+  assert.equal(iv.inventory!.carrying, 'Carrying: 0.1/0.6');
+  assert.deepEqual(iv.tabs, []);
+  assert.deepEqual(iv.inventory!.stacks.map((s) => [s.use?.label, s.drop!.actions, s.move]), [[undefined, [{ kind: 'drop', item: 't:pebble', count: 1 }], null]]);
+  const lv = transferView(w, 2, false);
+  assert.deepEqual(lv.tabs.map((t) => [t.label, t.selected]), [['Box', false], ['Box', true]]);
+  assert.deepEqual(lv.container!.stacks[0]!.move, { kind: 'take', container: 2, item: 't:coin' });
+  assert.deepEqual(lv.takeAll!.actions, [{ kind: 'take', container: 2, item: 't:coin' }]);
+  assert.deepEqual(lv.putAll!.actions, [{ kind: 'put', container: 2, item: 't:pebble' }]);
+  for (const a of lv.takeAll!.actions) w.queueAction(a);
   w.step();
   assert.equal(countOf(inv(w), idx(w, 'coin')), 2);
 
-  const ro = lootView(hudModel(w), true)!;
-  assert.ok(ro.sections.every((s) => s.rows.every((r) => r.buttons.every((b) => b.disabled))));
-  assert.equal(lootView(hudModel(world()), false), null);
-  assert.equal(inventoryView(hudModel(World.create(loadFixture(), 1)), false), null);
+  const ro = transferView(w, 0, true);
+  assert.ok([...ro.container!.stacks, ...ro.inventory!.stacks].every((s) => s.disabled && (s.drop?.disabled ?? true)));
+  assert.equal(transferView(world(), 0, false).container, null);
+  assert.equal(transferView(World.create(loadFixture(), 1), null, false).inventory, null);
 });
 
 test('clickIntent: non-walkable containers are approached with adjacent: true', () => {

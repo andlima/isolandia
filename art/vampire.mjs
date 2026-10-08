@@ -1,7 +1,7 @@
 // vampire: a gothic mansion, its crypt, the vampire and the bats.
 
 import { bat, humanoid, item, FACINGS } from './characters.mjs';
-import { blockTile, flatTile, hash, px } from './lib.mjs';
+import { blockTile, edgeTile, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
   outline: '#16121a',
@@ -101,9 +101,9 @@ function font() {
 
 // ── Blocks ────────────────────────────────────────────────────────────────
 
-/** A stone wall with a tall gothic window on both visible faces. */
+/** A thin stone wall with a tall gothic window. */
 function windowBlock() {
-  const { c, I } = blockTile();
+  const { c, I } = edgeTile();
   const face = (lit) => (a, z) => {
     const [A, Z] = [px(a), px(z)];
     const inArch = A >= 4 && A <= 11 && Z >= 2 && Z <= 13 - (A <= 4 || A >= 11 ? 1 : 0) - (A <= 5 || A >= 10 ? 1 : 0);
@@ -111,13 +111,13 @@ function windowBlock() {
     if (Z % 4 === 3 || (A + (Math.floor(Z / 4) % 2) * 4) % 8 === 0) return lit ? 'stone_lo' : 'crypt';
     return lit ? 'stone' : 'stone_lo';
   };
-  I.box(0, 0, 1, 1, 0, 1, { left: face(true), right: face(false), top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'stone' : 'stone_hi') });
+  slab(I, { face: face(true), end: (v, z) => (px(z) % 4 === 3 ? 'crypt' : 'stone_lo'), top: 'stone_hi' });
   return c;
 }
 
 /** The gothic window with its oak shutters closed (the `shutter` action's result). */
 function shutteredWindow() {
-  const { c, I } = blockTile();
+  const { c, I } = edgeTile();
   const face = (lit) => (a, z) => {
     const [A, Z] = [px(a), px(z)];
     const inArch = A >= 4 && A <= 11 && Z >= 2 && Z <= 13 - (A <= 4 || A >= 11 ? 1 : 0) - (A <= 5 || A >= 10 ? 1 : 0);
@@ -129,7 +129,7 @@ function shutteredWindow() {
     if (Z % 4 === 3 || (A + (Math.floor(Z / 4) % 2) * 4) % 8 === 0) return lit ? 'stone_lo' : 'crypt';
     return lit ? 'stone' : 'stone_lo';
   };
-  I.box(0, 0, 1, 1, 0, 1, { left: face(true), right: face(false), top: (u, v) => (px(u) === 0 || px(v) === 0 ? 'stone' : 'stone_hi') });
+  slab(I, { face: face(true), end: (v, z) => (px(z) % 4 === 3 ? 'crypt' : 'stone_lo'), top: 'stone_hi' });
   return c;
 }
 
@@ -289,8 +289,8 @@ export function images() {
     { file: 'sunbeam.svg', canvas: boards(34, true), note: 'flat tile' },
     { file: 'crypt.svg', canvas: crypt(), note: 'flat tile' },
     { file: 'font.svg', canvas: font(), note: 'flat tile' },
-    { file: 'window.svg', canvas: windowBlock(), note: 'block' },
-    { file: 'shuttered_window.svg', canvas: shutteredWindow(), note: 'block' },
+    { file: 'window.svg', canvas: windowBlock(), note: 'edge' },
+    { file: 'shuttered_window.svg', canvas: shutteredWindow(), note: 'edge' },
     ...furn('coffin', coffin),
     ...furn('bookshelf', bookshelf),
     ...furn('chest', chest),
