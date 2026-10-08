@@ -62,7 +62,7 @@ try {
       console.log(`  ${name}: ${colors} distinct colors sampled, hit masks built in ${maskMs.toFixed(1)} ms`);
       if (colors < 6) problems.push(`canvas looks blank (${colors} distinct colors)`);
       const hud = await page.textContent('#hud');
-      if (!hud || !/Time: Day \d+ \d\d:\d\d/.test(hud)) problems.push(`HUD missing or malformed: ${JSON.stringify(hud)}`);
+      if (!hud || !/Day \d+ · \d\d:\d\d/.test(hud)) problems.push(`HUD missing or malformed: ${JSON.stringify(hud)}`);
     }
     const shot = resolve(outDir, `${name}.png`);
     await page.screenshot({ path: shot });

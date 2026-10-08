@@ -6,10 +6,12 @@ statuses:
     for: 'self.has_tag("bunny")'
     when: "self.energy <= 35"
     until: "self.energy >= 55"      # a snack or a nap perks the bunny up
+    hud: { tone: bad, description: Low on energy; a snack or a nap helps }
   - id: hidden
     label: Hidden
     for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("hiding")'
+    hud: { tone: good, description: Out of sight of the cat and the fox }
   # The cat's playful pounce (the `meow` system below) and the fox's `yip`
   # give the bunny a little fright: the only cost in the garden.
   - id: startled
@@ -17,23 +19,27 @@ statuses:
     for: 'self.has_tag("bunny")'
     when: "heard(self, 1)"
     rates: { energy: -0.5 }
+    hud: { tone: bad, description: A fright; losing energy }
   # The cat notices a bunny in the open, and loses interest once it hides.
   - id: curious
     label: Curious
     for: 'self.has_tag("cat")'
     when: 'can_see(self, player, 5) and not has_status(player, "hidden")'
     until: 'not can_see(self, player, 8) or has_status(player, "hidden")'
+    hud: { tone: neutral, description: The cat wants to play }
   # The fox does the same, but only once night falls.
   - id: sly
     label: Sly
     for: 'self.has_tag("fox")'
     when: 'not world.is_day and can_see(self, player, 6) and not has_status(player, "hidden")'
     until: 'world.is_day or not can_see(self, player, 9) or has_status(player, "hidden")'
+    hud: { tone: bad, description: The fox is watching you }
   - id: alert
     label: Alert
     for: 'self.has_tag("bug")'
     when: "can_see(self, player, 3)"
     until: "not can_see(self, player, 5)"
+    hud: { tone: neutral }
 
 systems:
   - id: nap

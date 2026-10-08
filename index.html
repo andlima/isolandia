@@ -8,9 +8,63 @@
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; }
       canvas { display: block; }
       #hud {
-        position: fixed; top: 8px; left: 8px; margin: 0; padding: 6px 8px;
-        font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
-        background: rgba(0, 0, 0, 0.6); border-radius: 4px; pointer-events: none;
+        position: fixed; top: 8px; left: 8px; box-sizing: border-box; width: 240px; max-width: calc(100vw - 120px);
+        max-height: calc(50vh - 16px); overflow: hidden; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px;
+        font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: rgba(12, 14, 20, 0.62); border: 1px solid rgba(120, 130, 150, 0.25); border-radius: 6px; pointer-events: none;
+      }
+      #hud[hidden] { display: none; }
+      #hud .hud-card { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: bold; margin-bottom: 2px; }
+      #hud .hud-icon { width: 16px; text-align: center; }
+      #hud .hud-sun { color: #ffd23f; }
+      #hud .hud-moon { color: #a8c0ff; }
+      #hud .hud-floor {
+        margin-left: auto; padding: 0 6px; font-size: 11px; font-weight: normal; color: #c9d2e3;
+        background: #333a44; border: 1px solid #556; border-radius: 8px;
+      }
+      #hud .hud-row { display: flex; align-items: center; gap: 6px; }
+      #hud .hud-label { flex: none; width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #hud .hud-label-abbr { display: none; }
+      #hud .hud-carry .hud-label { width: auto; flex: 1 1 auto; min-width: 0; }
+      #hud .hud-bar { flex: 1 1 auto; min-width: 30px; height: 8px; background: #262b35; border: 1px solid #454c5a; border-radius: 4px; overflow: hidden; }
+      #hud .hud-bar-none { visibility: hidden; }
+      #hud .hud-carry .hud-bar { flex: 0 0 90px; }
+      #hud .hud-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+      #hud .hud-ok { background: #5fbf5f; }
+      #hud .hud-warn { background: #e0a030; }
+      #hud .hud-danger { background: #e0503f; }
+      #hud .hud-neutral { background: #7d8fb0; }
+      #hud .hud-value { flex: none; min-width: 52px; text-align: right; color: #c9d2e3; }
+      #hud .hud-pulse .hud-bar { animation: hud-pulse 1.4s ease-in-out infinite; }
+      @keyframes hud-pulse { 50% { box-shadow: 0 0 6px 1px rgba(224, 80, 63, 0.75); opacity: 0.75; } }
+      @media (prefers-reduced-motion: reduce) {
+        #hud .hud-pulse .hud-bar { animation: none; }
+        #hud .hud-fill { transition: none; }
+      }
+      #hud .hud-chips { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; }
+      #hud .hud-chip {
+        pointer-events: auto; cursor: default; padding: 0 6px; font-size: 11px; line-height: 16px; border-radius: 8px; border: 1px solid;
+      }
+      #hud .hud-tone-bad { color: #ffd6d0; background: #6a2a24; border-color: #e0503f; }
+      #hud .hud-tone-good { color: #d6ffd6; background: #24502a; border-color: #5fbf5f; }
+      #hud .hud-tone-neutral { color: #e0e4ec; background: #3a404c; border-color: #6a7385; }
+      #hud .hud-nearby, #hud .hud-action { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #hud .hud-nearby { color: #9aa2b1; font-size: 11px; }
+      #hud .hud-action { color: #ffe9a8; }
+      #hud-tip {
+        position: fixed; z-index: 8; max-width: 240px; padding: 4px 8px; pointer-events: none;
+        font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: rgba(0, 0, 0, 0.88); border: 1px solid #556; border-radius: 4px;
+      }
+      #hud-tip[hidden] { display: none; }
+      #hud-tip .hud-tip-title { font-weight: bold; color: #ffd23f; }
+      @media (max-width: 560px) {
+        #hud { width: 170px; padding: 4px 6px; gap: 2px; }
+        #hud .hud-label { width: 28px; }
+        #hud .hud-label-full { display: none; }
+        #hud .hud-label-abbr { display: inline; }
+        #hud .hud-value { min-width: 44px; font-size: 11px; }
+        #hud .hud-carry .hud-bar { flex-basis: 50px; }
       }
       #perf {
         position: fixed; bottom: 8px; left: 8px; padding: 3px 6px;

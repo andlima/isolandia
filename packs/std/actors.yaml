@@ -4,6 +4,7 @@ measurements:
     min: 0
     max: 100
     initial: 100
+    hud: { bad: low }              # warn at 50, danger at 25
 
 archetypes:
   - id: humanoid

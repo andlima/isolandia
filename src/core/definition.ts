@@ -44,6 +44,50 @@ export interface MeasurementDef {
   readonly rateConst: number;
   /** Per-second drift evaluated per entity each tick. */
   readonly rateFn: Compiled | null;
+  /** HUD hints (presentation only: not saved or hashed). */
+  readonly hud: MeasurementHud;
+}
+
+/** A measurement's `hud` block: which direction is bad and where the warning levels are. */
+export interface MeasurementHud {
+  /** Which direction is bad; null for a neutral measurement (no levels). */
+  readonly bad: 'high' | 'low' | null;
+  /** Absolute warn level; null for the default (50 % of `[min, max]` toward the bad end). */
+  readonly warn: number | null;
+  /** Absolute danger level; null for the default (75 % toward the bad end). */
+  readonly danger: number | null;
+  /** Kept out of the HUD in both shells. */
+  readonly hide: boolean;
+}
+
+/** Fractions of `[min, max]` toward the bad end for the default warn and danger levels. */
+export const WARN_FRACTION = 0.5;
+export const DANGER_FRACTION = 0.75;
+
+/**
+ * A measurement's absolute warn and danger levels for a given max (the
+ * entity's current one): the explicit `hud` values, else 50 % / 75 % of the
+ * way from the good end of `[min, max]` toward the bad end. A default level
+ * is null when `max` is not finite; both are null for a neutral measurement.
+ */
+export function measurementLevels(md: { readonly min: number; readonly hud: MeasurementHud }, max: number): { warn: number | null; danger: number | null } {
+  const { bad, warn, danger } = md.hud;
+  if (bad === null) return { warn: null, danger: null };
+  const at = (fraction: number): number | null => {
+    if (!Number.isFinite(max)) return null;
+    const span = max - md.min;
+    return bad === 'high' ? md.min + fraction * span : max - fraction * span;
+  };
+  return { warn: warn ?? at(WARN_FRACTION), danger: danger ?? at(DANGER_FRACTION) };
+}
+
+export type StatusTone = 'bad' | 'good' | 'neutral';
+
+/** A status's `hud` block (presentation only: not saved or hashed). */
+export interface StatusHud {
+  readonly tone: StatusTone;
+  /** Free tooltip text; empty when absent. */
+  readonly description: string;
 }
 
 /** One image file of an asset. */
@@ -723,6 +767,7 @@ export interface StatusDef {
   /** Exit condition (defaults to `not when`). */
   readonly untilFn: Compiled;
   readonly rates: readonly StatusRate[];
+  readonly hud: StatusHud;
 }
 
 export interface TintKeyframe {

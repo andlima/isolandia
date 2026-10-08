@@ -7,6 +7,7 @@ measurements:
     initial: 50
     # Drains 0.05 per second at night, 0.1 in daylight.
     rate: "-0.05 - 0.05 * world.is_day"
+    hud: { bad: low }
 
 tiles:
   # The windows are the town's (`town:window`), in the mansion's colours.

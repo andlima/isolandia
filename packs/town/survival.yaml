@@ -10,6 +10,7 @@ statuses:
     for: 'self.has_tag("living")'
     when: 'self.count_item("canned_beans") + self.count_item("water_bottle") >= 4'
     rates: { fatigue: -0.01 }       # peace of mind
+    hud: { tone: good, description: Enough food and water put your mind at ease }
 
 systems:
   # Restoring: lie on a bed.

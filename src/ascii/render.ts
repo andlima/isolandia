@@ -8,7 +8,7 @@
  * edge positions without an edge are spaces.
  */
 
-import { EMPTY_TILE, hudLines, hudModel, type TileDef, type World } from '../core/index.ts';
+import { EMPTY_TILE, hudLineLevels, hudLines, hudModel, type TileDef, type World } from '../core/index.ts';
 
 export interface Viewport {
   /** Map area size in cells (the frame is 2·width + 1 characters by 2·height + 1 lines). */
@@ -23,6 +23,8 @@ export interface AsciiFrame {
   readonly colors: readonly (readonly (string | null)[])[];
   /** HUD: clock line, one line per player measurement, then inventory/status/nearby/action/defeat/victory lines if any. */
   readonly hud: readonly string[];
+  /** Per `hud` line: `warn` or `danger` when it should stand out (yellow / red in the terminal), else null. */
+  readonly hudLevels: readonly ('warn' | 'danger' | null)[];
 }
 
 export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
@@ -91,9 +93,9 @@ export function renderAscii(world: World, viewport: Viewport): AsciiFrame {
   for (const e of world.entities) if (e !== player) draw(e);
   draw(player);
 
-  const hud = hudLines(hudModel(world));
+  const m = hudModel(world);
 
-  return { lines: glyphs.map((r) => r.join('')), colors, hud };
+  return { lines: glyphs.map((r) => r.join('')), colors, hud: hudLines(m), hudLevels: hudLineLevels(m) };
 }
 
 /** Plain-text frame: map, blank line, HUD. */

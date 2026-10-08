@@ -124,6 +124,48 @@ cell `(x, y)`.
 - An edge faded in front of you (the south and east sides of your cell
   and the walls just past them) is clicked through, like a faded block.
 
+## HUD
+
+The HUD is a styled overlay at the top left, drawn from the pure
+`hudView(hudModel(world))` (`src/web/hud.ts`, a plain object with no DOM
+types; the terminal prints `hudLines` of the same model):
+
+- **Clock card**: `Day D · HH:MM`, a sun by day or a moon by night (from
+  `world.is_day`, `hudModel(world).isDay`) and a `Floor N` chip on maps with
+  more than one floor. The tick number shows only in the F3 perf line.
+- **Measurement bars**, one per player measurement not hidden with
+  [`hud.hide`](packs.md#measurements): label, a bar of the value's place in
+  `[min, max]` and the value (`23/100`, or `23` without a finite max, which
+  has no bar). The bar is **green** (`ok`), **amber** (`warn`) or **red**
+  (`danger`) by the measurement's `hud` levels, and a neutral grey-blue for
+  a measurement without `hud.bad`. A red row pulses gently (not under
+  `prefers-reduced-motion`).
+- **Status chips** under the bars, one per active player status in
+  definition order: red for tone `bad`, green for `good`, grey for
+  `neutral` (see [statuses](packs.md#statuses)). Hovering a chip with a
+  mouse or pen, or tapping it, shows a tooltip with the label, the
+  status's `hud.description` and its rates on your measurements now
+  (`Health −0.2/s`).
+- **Carrying bar** (when you have an inventory): `Carrying w/cap`, amber
+  from 80 % of capacity and red when full.
+- **Nearby**: the `Nearby: …` text as one muted line, cut with `…`.
+- The **latest action** text (`Took 2 Canned beans`, `Too heavy`), for 3
+  seconds.
+
+The activity bar, the defeat and victory banners, journal toasts and the
+perf line are separate elements and keep their places. The overlay is at
+most 240 px wide with a translucent background and takes no pointer
+events except on the chips. Below 560 px of viewport width it is compact:
+the bars carry a 2–3 letter abbreviation of the label (`Hun`, `Thi`)
+instead of the label, and the chips wrap. It re-renders only when the
+view changes; values are rounded (bars in whole percent) so a drifting
+measurement does not rebuild it every tick. `H` hides it with the hover
+tooltips.
+
+In the terminal the same levels colour the HUD lines: a measurement line
+is yellow at `warn` and red at `danger`, and the `Status:` line is red
+while any active status has tone `bad` (`hudLineLevels`).
+
 ## Transfer window
 
 One window moves items between a container and your inventory: the
@@ -298,7 +340,7 @@ the browser, `MemoryStore` in tests).
 | `J` | [Journal](#journal) panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
-| `H` | Toggle the HUD text (and hover tooltips) |
+| `H` | Toggle the HUD (and hover tooltips) |
 | `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
 

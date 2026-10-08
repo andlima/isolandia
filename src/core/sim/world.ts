@@ -2216,6 +2216,21 @@ export class World {
     return Number(md.maxFn(this.ctx));
   }
 
+  /**
+   * A status's `rates` on an entity's measurements, evaluated now (expression
+   * rates for that entity at the current tick); rates on measurements the
+   * entity lacks are skipped. Pure: draws no RNG and does not change `hash()`.
+   */
+  statusRatesOf(e: Entity, status: number): { measurement: number; rate: number }[] {
+    const has = this.hasM[e.archetype.index]!;
+    return this.pure(() => {
+      this.ctx.self = e;
+      return this.def.statuses[status]!.rates
+        .filter((r) => has[r.measurement] === 1)
+        .map((r) => ({ measurement: r.measurement, rate: r.fn ? Number(r.fn(this.ctx)) : r.constant }));
+    });
+  }
+
   private clamp(e: Entity): void {
     const ms = this.def.measurements;
     for (const idx of e.archetype.measurements) {
