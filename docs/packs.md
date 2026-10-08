@@ -800,16 +800,28 @@ are truthy, with `self` = that entity and `tile` = the tile under it.
 Systems run in definition order: pack load order, then the order of
 entries within the pack. A system that is not due costs nothing.
 
-**Effects** act on `self`:
+**Effects** act on `self`, or on the world:
 
 | Effect                                                  | Meaning |
 |---------------------------------------------------------|---------|
 | `{ type: apply, measurement: <id>, delta: <n or expr> }` | Add `delta` to the measurement |
 | `{ type: set, measurement: <id>, value: <n or expr> }`   | Replace the measurement's value |
 | `{ type: noise, radius: <n or expr> }`                   | Emit a noise at `self`'s cell (see below) |
+| `{ type: set_var, var: <id>, value: <n or expr> }`       | Write the world [var](#vars) (clamped) |
+| `{ type: add_var, var: <id>, delta: <n or expr> }`       | Add to the world var (clamped) |
+| `{ type: quest, quest: <id>, stage: <stage id> }`        | Move the [quest](#quests) forward to that stage |
+| `{ type: journal, entry: <id> }`                         | Add the [journal entry](#journal) (a no-op if it is already there) |
 
 (`set_tile`, which edits the map, is only allowed in the effects of
-tile-targeted [actions](#actions).)
+tile-targeted [actions](#actions).) The last four are valid in **every**
+effect list: systems, item uses, actions, recipes and quest stages.
+
+`set_var`, `add_var`, `quest` and `journal` touch no entity: `self` matters
+only inside their expressions, which are evaluated in the effect's usual
+scope. A system runs its effects **once per matching entity**, so an
+`add_var` in a system that matches 10 entities adds 10 times; filter with
+`for` (e.g. `'self.has_tag("living")'` for a player-only tag) when a system
+should count once.
 
 - An effect on a measurement the entity does not have is skipped.
 - Each effect sees the values left by the effects before it, and by the
@@ -1524,9 +1536,12 @@ are driven by their archetype's [behavior](#behaviors).
 5. clamp every measurement to `[min, max]`;
 6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
-7. outcome check: defeat first (see `start.defeat`), then victory (see
+7. **quests**: each quest that has not ended enters the last stage whose
+   `when` holds, at most once (see [quests](#quests)); skipped without
+   quests;
+8. outcome check: defeat first (see `start.defeat`), then victory (see
    `start.victory`) only if defeat did not trigger on this tick;
-8. `tick++`.
+9. `tick++`.
 
 Statuses are also evaluated once when the world is created, after the
 initial clamp. So a status entered on tick *t* first changes drift on tick
@@ -1653,6 +1668,150 @@ multiplied by it (`#ffffff` = unchanged). Without `lighting` nothing is
 tinted. Like `clock`, **one** loaded pack defines it; later packs may
 patch it with `override: true`.
 
+### `vars`
+
+Named **world-level** numbers: one value per world, not per entity (use a
+measurement for per-entity state). Story facts such as `bartender_paid` or
+`clues_found` live here.
+
+| Field     | Type              | Default     | Notes |
+|-----------|-------------------|-------------|-------|
+| `id`      | id                | required    | Own id space |
+| `label`   | string            | the id      | For tools and debugging only; never shown to players |
+| `initial` | number or boolean | `0`         | `true`/`false` are stored as `1`/`0` |
+| `min`     | number            | `-Infinity` | |
+| `max`     | number            | `Infinity`  | `min <= initial <= max`, or a load error |
+
+```yaml
+vars:
+  - { id: bartender_paid, initial: false }
+  - { id: clues_found, min: 0, max: 5 }
+```
+
+Packs write vars with the `set_var` and `add_var` [effects](#systems) and
+read them with [`var("id")`](expressions.md#world-state) in any expression.
+Values are clamped to `[min, max]` whenever they are written. Vars are
+part of `snapshot()`, `hash()` and saves.
+
+### `journal`
+
+One-time entries the player collects: clues, rumours, notes. Entries are
+domain entries, not free text: a pack defines them once and adds them with
+the `journal` effect.
+
+| Field      | Type   | Default  | Notes |
+|------------|--------|----------|-------|
+| `id`       | id     | required | Own id space |
+| `text`     | string | required | Non-empty |
+| `category` | string | `Notes`  | Grouping in the journal view, e.g. `Clues` |
+
+```yaml
+journal:
+  - id: travel_light
+    category: Notes
+    text: "Eat before hunger bites, and carry only what you need: a heavy pack wears you out."
+systems:
+  - id: survival_tip
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'not in_journal("travel_light") and (self.has_status("burdened") or self.has_status("hungry"))'
+    effects:
+      - { type: journal, entry: travel_light }
+```
+
+Adding an entry that is already there does nothing. Entries are never
+removed. [`in_journal("id")`](expressions.md#world-state) tests one.
+
+### `quests`
+
+Ordered **stages** the player moves through, ending in success or failure.
+Stages only move **forward**: on their own, when a stage's `when` holds, or
+through `quest` effects.
+
+| Field    | Type    | Default  | Notes |
+|----------|---------|----------|-------|
+| `id`     | id      | required | Own id space |
+| `title`  | string  | required | |
+| `stages` | list    | required | Non-empty, ordered |
+| `hidden` | boolean | `false`  | Not shown in the journal view until it ends |
+
+A **stage**:
+
+| Field     | Type                   | Default  | Notes |
+|-----------|------------------------|----------|-------|
+| `id`      | name                   | required | `[a-z][a-z0-9_]*`, unique within the quest |
+| `journal` | string                 | required | What the journal shows while the quest is at this stage |
+| `when`    | expression             | none     | Enters the stage automatically (the quest phase, below) |
+| `end`     | `success` or `failure` | none     | Entering this stage ends the quest |
+| `effects` | list                   | `[]`     | Run once on entering, with `self` = the player |
+
+```yaml
+# packs/zombie/escape.yaml
+quests:
+  - id: escape
+    title: Get out of town
+    stages:
+      - id: find_battery
+        when: "true"                # entered on the first tick
+        journal: The wrecks on the road might run with a fresh battery.
+      - id: battery
+        when: 'self.has_item("car_battery")'
+        journal: You have a car battery. Get it to a wreck in a garage.
+      - id: escaped
+        end: success
+        when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+        journal: The engine coughed into life. You got out of town.
+start:
+  override: true
+  victory: { when: 'quest_succeeded("escape")', message: "You got the car running!" }
+```
+
+Unknown fields and duplicate stage ids are load errors. So is a quest that
+can **never start**: none of its stages has a `when`, and no `quest`
+effect in any loaded pack names it.
+
+**The quest phase** runs after the status update and before the outcome
+check (see [tick order](#tick-order)), so `start.victory` can test
+`quest_succeeded` on the same tick:
+
+- quests are visited in definition order;
+- for each quest that has not ended, the **last** stage after the current
+  one whose `when` is truthy (with `self` = the player) is entered; any
+  stages in between are skipped. Stage order is therefore also priority
+  order: several `end` stages may follow one another (`solved`, then
+  `wrong_man`), and the later one wins when both hold;
+- each quest changes stage at most once per phase, also when a stage
+  effect of an earlier quest moved it;
+- entering a stage runs its `effects` in order, at once. They may change
+  vars, add journal entries or move other quests, so a later quest in the
+  same phase sees the change.
+
+A stage's `when` is never evaluated once the quest has passed it or ended:
+the phase costs at most one expression per not-yet-reached stage with a
+`when`, and nothing for packs without quests.
+
+**The `quest` effect** moves a quest forward only. A stage before or equal
+to the current one, or any stage of an ended quest, is a no-op; otherwise
+the stage is entered at once, running its effects, from wherever the effect
+runs (a system, an action, an item use, a recipe, another stage). Stages
+entered through stage effects nested more than 8 deep (stage effects that
+move quests whose stage effects move quests…) stop the simulation with an
+error naming the chain: a guard against pack mistakes, not a feature.
+
+Quest state (the current stage, the tick it was entered, whether it ended)
+is part of `snapshot()`, `hash()` and saves. The built-ins
+[`quest_active`, `quest_reached`, `quest_succeeded` and `quest_failed`](expressions.md#world-state)
+read it.
+
+**The journal.** `world.journal()` is the view the shells show (browser:
+`J` and the HUD button, see [docs/ui.md](ui.md#journal); terminal: `J`): the
+started quests that are not hidden, plus the ended hidden ones, active
+first and then the most recently changed, and the added entries in the
+order added. Each stage change and journal addition is also listed in
+`world.journalEvents` for the tick it happened (not saved or hashed), and
+bumps `world.journalVersion`; the shells show it as a toast (`Journal: Get
+out of town: You have a car battery…`).
+
 ## Standard packs
 
 The **stdpack** is a set of optional packs with generic content that many
@@ -1751,7 +1910,9 @@ clock:
 
 **Overrides.** Any entry of a list domain (`measurements`, `assets`,
 `tiles`, `archetypes`, `maps`, `systems`, `statuses`, `items`, `loot`,
-`behaviors`, `actions`, `recipes`) may carry `override: true`:
+`behaviors`, `actions`, `recipes`, `vars`, `quests`, `journal`) may carry
+`override: true` (a quest's `stages` is one field, so an override replaces
+the whole list):
 
 - The `id` must be **qualified**, and its namespace must be one of the
   pack's **direct `depends`** (the same rule as qualified references). A
@@ -1890,12 +2051,13 @@ start:
   override: true
   defeat: { when: "self.hp <= 0", message: "You did not survive the outbreak." }
   victory:
-    when: 'self.count_item("car_battery") >= 1 and tile.in_room("garage")'
+    when: 'quest_succeeded("escape")'   # the escape quest (escape.yaml, see #quests)
     message: "You got the car running!"
 ```
 
 `shambler` and `crawler` in these fields resolve in `zmb`'s scope (the pack
-that wrote them); `car_battery` and `garage` come from the town.
+that wrote them); the `escape` quest's `car_battery` and `garage` come from
+the town.
 
 **Vampire** keeps its own estate and reuses the town's generic content: its
 maps use `town:window` (its own window tile is gone), and its `shutter`
