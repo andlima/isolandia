@@ -2163,7 +2163,8 @@ resolved definition (ids → indices, expressions → closures).
   compiler), `load/` (pack parsing, namespaces, validation, and `stack.ts`: the pack
   catalog and stack resolver), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
-  `hud.ts` (renderer-independent HUD model), `sim/`
+  `hud.ts` (renderer-independent HUD model), `journal.ts` (journal
+  sections and toast text shared by both shells), `sim/`
   (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
   checks and lifecycle of timed actions, item uses and recipes, shared
   by every activity source). No Node built-ins, DOM or Pixi.
@@ -2173,8 +2174,8 @@ resolved definition (ids → indices, expressions → closures).
 - `src/iso/` — Pixi isometric renderer: projection, depth buckets,
   camera, textures and placeholders.
 - `src/web/` — browser shell: pack loading via Vite, input, HUD,
-  inventory, loot and crafting panels (`panels.ts`, `I`/`Tab` toggles the
-  inventory, `C` the crafting panel),
+  inventory, loot, crafting and journal panels (`panels.ts`, `I`/`Tab`
+  toggles the inventory, `C` the crafting panel, `J` the journal),
   title screen (`picker.ts`, `picker-dom.ts`), error screen, `main.ts`.
 - `src/ascii/` — pure ASCII renderer and the terminal shell.
 - `src/cli/` — `play`, `check` and `packs`; `common.ts` turns arguments
