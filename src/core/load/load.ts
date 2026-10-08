@@ -68,7 +68,7 @@ const DEFAULT_TICKS_PER_STEP = 2;
 const DEFAULT_TICKS_PER_TURN = 1;
 const DEFAULT_ANCHOR: readonly [number, number] = [0.5, 1];
 const ASSET_EXT_RE = /\.(svg|png)$/;
-const ASCII_MAP_FIELDS = ['legend', 'rows', 'floors', 'rooms'] as const;
+const ASCII_MAP_FIELDS = ['legend', 'rows', 'floors', 'rooms', 'edges'] as const;
 /** Fields only a composite map takes (`rooms` and `populate` are shared). */
 const COMPOSITE_MAP_FIELDS = ['size', 'fill', 'parts', 'player'] as const;
 const MAP_FIELDS = ['id', 'tiled', ...ASCII_MAP_FIELDS, ...COMPOSITE_MAP_FIELDS, 'populate', 'spawns'];
@@ -479,8 +479,14 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb'], 'tile');
+    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb', 'edge'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
+    const edge = f.boolean('edge', false) ?? false;
+    if (edge) {
+      for (const k of ['container', 'climb'] as const) {
+        if (f.has(k)) this.sink.add(f.at(k), `an edge tile ('edge: true') cannot take '${k}': edges are thin walls between cells, not cells`);
+      }
+    }
     if (d.index >= EMPTY_TILE) this.sink.add(d.entry.src, `too many tiles: at most ${EMPTY_TILE} tiles can be loaded`);
     let climb: TileDef['climb'] = null;
     const rawClimb = f.string('climb', false);
@@ -507,8 +513,9 @@ class Loader {
       opaque: f.boolean('opaque', false) ?? !walkable,
       sprite: this.sprite(f, d),
       tags: this.tags(f),
-      container,
-      climb,
+      container: edge ? null : container,
+      climb: edge ? null : climb,
+      edge,
     };
   }
 
@@ -667,6 +674,8 @@ class Loader {
         path,
         tile: (ref) => this.symbols.resolve('tile', ref, d.scopeOf('tiled')),
         archetype: (ref) => this.symbols.resolve('archetype', ref, d.scopeOf('tiled')),
+        // Tiles are built after the Tiled maps are read: read `edge` from the (merged) tile entry.
+        isEdge: (t) => this.defined.tiles[t]?.entry.value['edge'] === true,
       });
       const line = lineOf(src.source, src.path);
       const from = `in map '${d.id}', from ${src.source.file}${line !== undefined ? `:${line}` : ''} ${formatPath(src.path)}`;
@@ -681,9 +690,24 @@ class Loader {
       const f = this.fields(d, MAP_FIELDS, 'map');
       if (!tiled) return this.emptyMap(d);
       const rects = tiled.rooms.map((r) => ({ x: r.x, y: r.y, z: r.z, w: r.w, h: r.h, tags: [...new Set(r.tags.map((t) => this.roomTags.indexOf(t)))].sort((a, b) => a - b) }));
-      const { width, height, floors, cells, facings, spawns, playerStart } = tiled;
+      const { width, height, floors, cells, edgeN, edgeW, facings, spawns, playerStart } = tiled;
       this.checkLinks(cells, width, height, floors, () => f.at('tiled'));
-      const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: false };
+      const map: MapDef = {
+        id: d.id,
+        index: d.index,
+        width,
+        height,
+        floors,
+        cells,
+        edgeN,
+        edgeW,
+        facings,
+        spawns,
+        playerStart,
+        rooms: this.roomSets(rects, width, height, floors),
+        populate: [],
+        composite: false,
+      };
       return this.withPopulate(this.withSpawns(map, f, d.scopeOf('spawns')), f, d.scopeOf('populate'));
     }
     const before = this.sink.count;
@@ -726,8 +750,10 @@ class Loader {
     // A space is an empty cell unless the legend defines it.
     if (!legend.has(' ')) legend.set(' ', { tile: EMPTY_TILE, spawn: null, player: false, facing: null });
 
-    // Floors: `rows` (one floor) or `floors: [{ rows }]`, index = z. Each entry: the rows and their source path.
-    const layers: { rows: Json[] | undefined; at: (...more: (string | number)[]) => Src }[] = [];
+    // Floors: `rows` (one floor) or `floors: [{ rows }]`, index = z. Each entry: the rows, their source path, and
+    // whether they use the double-resolution `edges: true` notation (a floor's own `edges`, else the map's).
+    const layers: { rows: Json[] | undefined; edges: boolean; at: (...more: (string | number)[]) => Src }[] = [];
+    const mapEdges = f.boolean('edges', false) ?? false;
     if (f.has('rows') && f.has('floors')) this.sink.add(f.at('floors'), `a map takes either 'rows' (one floor) or 'floors', not both`);
     if (f.has('floors')) {
       const list = f.list('floors');
@@ -736,63 +762,111 @@ class Loader {
         const src = f.at('floors', z);
         if (!isObject(raw)) {
           this.sink.add(src, `floors must be mappings like { rows: [...] }`);
-          layers.push({ rows: undefined, at: (...more) => at(src, ...more) });
+          layers.push({ rows: undefined, edges: mapEdges, at: (...more) => at(src, ...more) });
           return;
         }
-        const ff = new Fields(this.sink, src, raw, ['rows'], 'floor');
+        const ff = new Fields(this.sink, src, raw, ['rows', 'edges'], 'floor');
         const rows = ff.list('rows');
         if (!rows && !ff.has('rows')) ff.string('rows'); // reports "missing required field"
-        layers.push({ rows, at: (...more) => ff.at('rows', ...more) });
+        layers.push({ rows, edges: ff.boolean('edges', false) ?? mapEdges, at: (...more) => ff.at('rows', ...more) });
       });
     } else {
       const rows = f.list('rows');
       if (!rows && !f.has('rows')) f.string('rows'); // reports "missing required field"
-      layers.push({ rows, at: (...more) => f.at('rows', ...more) });
+      layers.push({ rows, edges: mapEdges, at: (...more) => f.at('rows', ...more) });
     }
+    // Map size from floor 0: its rows, or (edges) the cells between its 2·h + 1 rows of 2·w + 1 characters.
     const rows0 = layers[0]?.rows;
-    const width = rows0 && typeof rows0[0] === 'string' ? [...rows0[0]].length : 0;
-    const height = rows0?.length ?? 0;
+    const edges0 = layers[0]?.edges ?? false;
+    const len0 = rows0 && typeof rows0[0] === 'string' ? [...rows0[0]].length : 0;
+    const width = edges0 ? Math.max(0, (len0 - 1) >> 1) : len0;
+    const height = rows0 ? (edges0 ? Math.max(0, (rows0.length - 1) >> 1) : rows0.length) : 0;
     const floors = Math.max(1, layers.length);
-    const cells: number[] = new Array<number>(width * height * floors).fill(0);
-    const facings: (Facing | null)[] = new Array<Facing | null>(width * height * floors).fill(null);
+    const area = width * height;
+    const cells: number[] = new Array<number>(area * floors).fill(0);
+    const edgeN: number[] = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const edgeW: number[] = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const facings: (Facing | null)[] = new Array<Facing | null>(area * floors).fill(null);
     const spawns: SpawnDef[] = [];
     let playerStart: { x: number; y: number; z: number } | null = null;
     const missing = new Set<string>();
     const multi = f.has('floors');
     const where = (y: number, x: number, z: number) => (multi ? `floor ${z}, row ${y}, column ${x}` : `row ${y}, column ${x}`);
+    const tileId = (t: number) => this.tileDefs[t]!.id;
+    const isEdge = (t: number) => t !== EMPTY_TILE && t >= 0 && this.tileDefs[t]?.edge === true;
 
-    layers.forEach(({ rows, at: rowAt }, z) => {
+    if (edges0 && rows0 && rows0.length > 0 && (rows0.length % 2 === 0 || len0 % 2 === 0)) {
+      this.sink.add(
+        layers[0]!.at(),
+        `a map with 'edges: true' needs an odd number of rows and of columns (2·height + 1 rows of 2·width + 1 characters), got ${rows0.length} rows of ${len0}`,
+      );
+    }
+    layers.forEach(({ rows, edges, at: rowAt }, z) => {
       if (!rows) return;
       if (rows.length === 0) {
         this.sink.add(rowAt(), `map must have at least one row`);
         return;
       }
-      if (z > 0 && rows.length !== height) {
-        this.sink.add(rowAt(), `floor ${z} has ${rows.length} rows, expected ${height} (the rows of floor 0): all floors must have the same size`);
+      const wantRows = edges ? 2 * height + 1 : height;
+      const wantCols = edges ? 2 * width + 1 : width;
+      if (z > 0 && rows.length !== wantRows) {
+        const what = edges ? `2·${height} + 1 for the ${height} rows of floor 0, as floor ${z} uses 'edges: true'` : edges0 ? `the ${height} rows of floor 0` : `the rows of floor 0`;
+        this.sink.add(rowAt(), `floor ${z} has ${rows.length} rows, expected ${wantRows} (${what}): all floors must have the same size`);
         return;
       }
-      rows.forEach((row, y) => {
-        const src = rowAt(y);
+      rows.forEach((row, r) => {
+        const src = rowAt(r);
         if (typeof row !== 'string') {
           this.sink.add(src, `map rows must be strings`);
           return;
         }
         const chars = [...row];
-        if (chars.length !== width) {
+        if (chars.length !== wantCols) {
           const of = multi ? `row 0 of floor 0` : `row 0`;
-          this.sink.add(src, `ragged map rows: row ${y} has length ${chars.length}, expected ${width} (the length of ${of})`);
+          this.sink.add(src, `ragged map rows: row ${r} has length ${chars.length}, expected ${wantCols} (${z > 0 && edges !== edges0 ? `2·${width} + 1 for floor ${z}'s 'edges: true'` : `the length of ${of}`})`);
           return;
         }
-        chars.forEach((ch, x) => {
+        chars.forEach((ch, c) => {
+          // Edges notation: cells at odd (row, column), `n` edges at (even, odd), `w` edges at (odd, even), vertices ignored.
+          let x = c;
+          let y = r;
+          let side: 'n' | 'w' | null = null;
+          if (edges) {
+            const oddR = r % 2 === 1;
+            const oddC = c % 2 === 1;
+            if (!oddR && !oddC) return;
+            x = oddC ? (c - 1) >> 1 : c >> 1;
+            y = oddR ? (r - 1) >> 1 : r >> 1;
+            if (!oddR) side = 'n';
+            else if (!oddC) side = 'w';
+            // The south and east borders of the map need no edges.
+            if (x >= width || y >= height) return;
+            if (side && ch === ' ') return; // no edge
+          }
           const l = legend.get(ch);
           if (!l) {
             if (!missing.has(ch)) {
               missing.add(ch);
-              this.sink.add(src, `map character '${ch}' (${where(y, x, z)}) is not in the legend`);
+              this.sink.add(src, `map character '${ch}' (${where(r, c, z)}) is not in the legend`);
             }
             return;
           }
           const i = (z * height + y) * width + x;
+          const pos = side ? `${where(r, c, z)}: the ${side === 'n' ? 'north' : 'west'} edge of cell (${x}, ${y})` : edges ? `${where(r, c, z)}: cell (${x}, ${y})` : where(r, c, z);
+          if (side) {
+            if (l.spawn !== null || l.player) this.sink.add(src, `map character '${ch}' (${pos}) has a ${l.player ? 'player start' : 'spawn'}: only cell positions (odd row and column) take them`);
+            else if (l.tile >= 0 && !isEdge(l.tile)) {
+              this.sink.add(src, `map character '${ch}' (${pos}) is '${tileId(l.tile)}', which is not an edge tile: edge positions take edge tiles (walls, doors, windows, fences) or a space`);
+            } else if (l.tile >= 0) (side === 'n' ? edgeN : edgeW)[i] = l.tile;
+            return;
+          }
+          if (isEdge(l.tile)) {
+            const hint = edges
+              ? `cell positions (odd row and column) take the other tiles; put it on an edge position`
+              : `edge tiles go on the edges between cells: set 'edges: true' and use the double-resolution rows, or convert the map with 'npm run map:edges' (docs/packs.md#edge-walls)`;
+            this.sink.add(src, `map character '${ch}' (${pos}) is '${tileId(l.tile)}', an edge tile: ${hint}`);
+            return;
+          }
           cells[i] = l.tile;
           facings[i] = l.facing;
           if (l.spawn !== null) spawns.push({ x, y, z, archetype: l.spawn });
@@ -803,14 +877,19 @@ class Loader {
         });
       });
     });
-    if (this.sink.count === before) this.checkLinks(cells, width, height, floors, (i) => layers[Math.floor(i / (width * height))]!.at(Math.floor(i / width) % height));
+    const rowSrc = (i: number) => {
+      const z = Math.floor(i / area);
+      const y = Math.floor(i / width) % height;
+      return layers[z]!.at(layers[z]!.edges ? 2 * y + 1 : y);
+    };
+    if (this.sink.count === before) this.checkLinks(cells, width, height, floors, rowSrc);
     const rooms = this.roomSets(this.roomRects(f, width, height, floors), width, height, floors);
-    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms, populate: [], composite: false };
+    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, edgeN, edgeW, facings, spawns, playerStart, rooms, populate: [], composite: false };
     return this.sink.count === before ? this.withPopulate(this.withSpawns(map, f, d.scopeOf('spawns')), f, d.scopeOf('populate')) : map;
   }
 
   private emptyMap(d: Defined, composite = false): MapDef {
-    return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), populate: [], composite };
+    return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], edgeN: [], edgeW: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), populate: [], composite };
   }
 
   /**
@@ -866,9 +945,10 @@ class Loader {
   }
 
   /**
-   * A composite map: part maps copied in at their `at`, `fill` on the
-   * uncovered floor-0 cells, the parts' spawns, rooms and populate entries
-   * offset, then the composite's own `rooms`, `populate` and `player`.
+   * A composite map: part maps copied in at their `at` (cells and edges),
+   * `fill` on the uncovered floor-0 cells (no edges), the parts' spawns,
+   * rooms and populate entries offset, then the composite's own `rooms`,
+   * `populate` and `player`.
    */
   private compositeMap(d: Defined, maps: readonly MapDef[]): MapDef {
     const before = this.sink.count;
@@ -942,6 +1022,8 @@ class Loader {
     const floors = Math.max(1, ...placed.map((p) => p.map.floors));
     const area = width * height;
     const cells = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const edgeN = new Array<number>(area * floors).fill(EMPTY_TILE);
+    const edgeW = new Array<number>(area * floors).fill(EMPTY_TILE);
     const facings = new Array<Facing | null>(area * floors).fill(null);
     const covered = new Uint8Array(area);
     const spawns: SpawnDef[] = [];
@@ -956,6 +1038,8 @@ class Loader {
             const from = (z * m.height + y) * m.width + x;
             const to = (z * height + p.y + y) * width + p.x + x;
             cells[to] = m.cells[from]!;
+            edgeN[to] = m.edgeN[from]!;
+            edgeW[to] = m.edgeW[from]!;
             facings[to] = m.facings[from] ?? null;
             if (z === 0) covered[(p.y + y) * width + p.x + x] = 1;
           }
@@ -975,7 +1059,8 @@ class Loader {
         const n = covered.reduce((a, c) => a + (c ? 0 : 1), 0);
         this.sink.add(d.entry.src, `missing required field 'fill': ${n} floor-0 cell${n === 1 ? ' is' : 's are'} not covered by any part (first at (${uncovered % width}, ${Math.floor(uncovered / width)}))`);
       } else if (fill) {
-        for (let i = 0; i < area; i++) if (!covered[i]) cells[i] = fill.index;
+        if (this.tileDefs[fill.index]?.edge) this.sink.add(f.at('fill'), `'fill' cannot be '${fill.id}': it is an edge tile, and 'fill' covers cells`);
+        else for (let i = 0; i < area; i++) if (!covered[i]) cells[i] = fill.index;
       }
     } else if (f.has('fill')) this.symbols.ref('tile', f.raw('fill'), d.scopeOf('fill'), f.at('fill'), this.sink);
 
@@ -996,7 +1081,22 @@ class Loader {
     }
     rects.push(...this.roomRects(f, width, height, floors));
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, () => d.entry.src);
-    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, facings, spawns, playerStart, rooms: this.roomSets(rects, width, height, floors), populate: [], composite: true };
+    const map: MapDef = {
+      id: d.id,
+      index: d.index,
+      width,
+      height,
+      floors,
+      cells,
+      edgeN,
+      edgeW,
+      facings,
+      spawns,
+      playerStart,
+      rooms: this.roomSets(rects, width, height, floors),
+      populate: [],
+      composite: true,
+    };
     const own = this.populateEntries(f, d.scopeOf('populate'), width, height, floors);
     const out = { ...map, populate: [...populate, ...own.map((o) => o.def)] };
     if (this.sink.count !== before) return this.emptyMap(d, true); // reported; keeps `start` quiet
@@ -1697,11 +1797,33 @@ class Loader {
     const duration = this.duration(f, d.scopeOf('duration'));
     const interruptFn = this.condition(f, 'interrupt', d.scopeOf('interrupt')) ?? null;
     const effects = this.effects(f, d.scopeOf('effects'), { optional: true, setTile: tileTarget });
+    if (target) this.checkSetTileKinds(f, target, effects, tiles);
     const rawEffects = f.raw('effects');
     if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && !(isObject(rawConsume) && Object.keys(rawConsume).length > 0)) {
       this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
     }
     return { id: d.id, index: d.index, label, progress, target, whenFn, unavailable, tools, consume, duration, interruptFn, effects };
+  }
+
+  /**
+   * `set_tile` on an edge target places an edge tile, and on a cell a cell
+   * tile: an action whose target matches edge tiles may only place edge
+   * tiles, and one matching cell tiles only cell tiles.
+   */
+  private checkSetTileKinds(f: Fields, target: TileFilterDef, effects: readonly EffectDef[], tiles: readonly TileDef[]): void {
+    const matched = tiles.filter((t) => target.match[t.index] === 1);
+    const edges = matched.filter((t) => t.edge);
+    const cells = matched.filter((t) => !t.edge);
+    const list = (ts: readonly TileDef[]) => ts.slice(0, 3).map((t) => `'${t.id}'`).join(', ') + (ts.length > 3 ? ', …' : '');
+    for (const e of effects) {
+      if (e.type !== 'set_tile') continue;
+      const placed = tiles[e.tile]!;
+      if (placed.edge && cells.length) {
+        this.sink.add(f.at('effects'), `set_tile places '${placed.id}', an edge tile, but the target also matches cell tiles (${list(cells)}): an edge tile only replaces an edge`);
+      } else if (!placed.edge && edges.length) {
+        this.sink.add(f.at('effects'), `set_tile places '${placed.id}', a cell tile, but the target matches edge tiles (${list(edges)}): an edge only takes an edge tile ('edge: true')`);
+      }
+    }
   }
 
   // ── Recipes ─────────────────────────────────────────────────────────────
@@ -1725,6 +1847,11 @@ class Loader {
     });
     const sv = f.raw('station');
     const station = sv === undefined || sv === null ? null : this.tileFilter(sv, f.at('station'), d.scopeOf('station'), tiles);
+    const edgeStations = station ? tiles.filter((t) => t.edge && station.match[t.index] === 1) : [];
+    if (edgeStations.length) {
+      const ids = edgeStations.map((t) => `'${t.id}'`).join(', ');
+      this.sink.warn(f.at('station'), `station matches edge tile${edgeStations.length === 1 ? '' : 's'} ${ids}: stations are cells, so ${edgeStations.length === 1 ? 'it' : 'they'} never match`);
+    }
     const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
     const unavailable = f.string('unavailable', false) ?? null;
     const duration = this.duration(f, d.scopeOf('duration'));

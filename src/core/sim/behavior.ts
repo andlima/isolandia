@@ -41,8 +41,11 @@ type Point = { x: number; y: number; z: number };
 
 const chebyshev = (ax: number, ay: number, bx: number, by: number) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 
-/** Whether (bx, by, bz) is the entity's cell or one of the 8 around it on its floor. */
-const near = (e: Entity, bx: number, by: number, bz: number) => e.z === bz && chebyshev(e.x, e.y, bx, by) <= 1;
+/**
+ * Whether (bx, by, bz) is the entity's cell or one of the 8 around it on its
+ * floor, with no non-walkable edge between (in reach, see `Grid.reaches`).
+ */
+const near = (g: Grid, e: Entity, bx: number, by: number, bz: number) => g.reaches(e.x, e.y, e.z, bx, by, bz);
 
 /** Run one entity's behavior for this tick (the entity must have one). */
 export function think(e: Entity, env: ThinkEnv): void {
@@ -65,7 +68,7 @@ function transition(e: Entity, s: BehaviorStateDef, env: ThinkEnv): number {
   for (const t of s.on) if (t.when(env.ctx)) return t.to;
   if (s.timeout && env.ctx.tick - e.stateTick >= s.timeout.afterTicks) return s.timeout.to;
   if (s.done !== null && e.planTick >= 0 && e.planTick < env.ctx.tick) {
-    if (arrived(e, s)) return s.done;
+    if (arrived(e, s, env.grid)) return s.done;
     const g = e.lastGoto;
     if (g && g.tick === e.planTick && !g.ok) return s.done;
   }
@@ -73,8 +76,8 @@ function transition(e: Entity, s: BehaviorStateDef, env: ThinkEnv): number {
 }
 
 /** `done` arrival test: on the home cell (`home`); adjacent to or on the heard cell, or never heard (`investigate`). */
-function arrived(e: Entity, s: BehaviorStateDef): boolean {
-  if (s.activity === 'investigate') return e.heardTick < 0 || near(e, e.heardX, e.heardY, e.heardZ);
+function arrived(e: Entity, s: BehaviorStateDef, g: Grid): boolean {
+  if (s.activity === 'investigate') return e.heardTick < 0 || near(g, e, e.heardX, e.heardY, e.heardZ);
   return atHome(e);
 }
 
@@ -115,7 +118,7 @@ function pursue(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   const tx = t.x;
   const ty = t.y;
   const tz = t.z;
-  if (near(e, tx, ty, tz)) {
+  if (near(env.grid, e, tx, ty, tz)) {
     e.path = null;
     return;
   }
@@ -169,7 +172,7 @@ function investigate(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   const hx = e.heardX;
   const hy = e.heardY;
   const hz = e.heardZ;
-  if (e.heardTick < 0 || near(e, hx, hy, hz)) {
+  if (e.heardTick < 0 || near(env.grid, e, hx, hy, hz)) {
     if (e.heardTick >= 0) e.path = null;
     if (e.planTick < 0) {
       e.planTick = tick;

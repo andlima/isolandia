@@ -4,14 +4,14 @@
  */
 
 import { clockAt, type ClockTime } from '../clock.ts';
-import { EMPTY_TILE, populateCandidates, type ArchetypeDef, type BehaviorDef, type Definition, type EffectDef, type MapDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
+import { EMPTY_TILE, populateCandidates, type ArchetypeDef, type BehaviorDef, type Definition, type EdgeSide, type EffectDef, type MapDef, type MeasurementDef, type NumberTerm } from '../definition.ts';
 import type { ExprContext, ExprEntity } from '../expr/index.ts';
 import { DEFAULT_FACING, facingOfStep, turnToward, type Facing } from '../facing.ts';
 import { actionSource, ActivityRunner, isTimed, recipeSource, useSource, type Activity, type ActivitySource, type ActivityStage } from './activity.ts';
 import { Pathfinder } from './astar.ts';
 import { think, type ThinkEnv } from './behavior.ts';
 import { add, countOf, createContainer, fits, GROUND_LABEL, remove, type Container, type ContainerKind } from './containers.ts';
-import { Grid } from './grid.ts';
+import { edgeOfKey, Grid } from './grid.ts';
 import { lineOfSight } from './sight.ts';
 import { Rng } from './rng.ts';
 import { restoreWorld, SAVE_VERSION } from './save.ts';
@@ -125,11 +125,17 @@ export interface GotoIntent {
   /** Goal floor; defaults to the entity's floor when the goto is resolved. */
   readonly z?: number;
   /**
-   * End on the walkable tile 8-adjacent to the goal (or the goal itself, if
-   * walkable) with the shortest path, e.g. to walk up to a fridge. Only the
-   * goal's own floor counts.
+   * End on the walkable tile with the shortest path from which the goal is
+   * in reach (8-adjacent with no non-walkable edge between, or the goal
+   * itself, if walkable), e.g. to walk up to a fridge. Only the goal's own
+   * floor counts.
    */
   readonly adjacent?: boolean;
+  /**
+   * The goal is the edge on this side of (x, y): end on whichever of the two
+   * cells it separates has the shortest path (`adjacent` is ignored).
+   */
+  readonly side?: EdgeSide;
   /**
    * Player only: queued as an action when the path ends on its last cell
    * (at once when the path is empty); dropped when no path is found or the
@@ -185,7 +191,8 @@ export interface UseAction {
 /**
  * Start a pack action (`actions` domain); `x`/`y` are required for tile
  * targets and forbidden for `self`. `z` (tile targets only) defaults to the
- * player's floor.
+ * player's floor. With `side`, the target is the edge on that side of
+ * (x, y) instead of the cell.
  */
 export interface ActAction {
   readonly kind: 'act';
@@ -194,6 +201,7 @@ export interface ActAction {
   readonly x?: number;
   readonly y?: number;
   readonly z?: number;
+  readonly side?: EdgeSide;
 }
 
 /**
@@ -247,6 +255,8 @@ export interface ActionRecord {
   readonly action?: string;
   /** Qualified recipe id (`craft` only). */
   readonly recipe?: string;
+  /** Edge side of an `act` that targeted an edge. */
+  readonly side?: EdgeSide;
   /** Units moved (take/put/drop), consumed (use/act) or produced (craft). */
   readonly moved: number;
   /** Produced units that did not fit and went to the ground pile (`craft`, only when > 0). */
@@ -274,6 +284,8 @@ export interface AvailableAction {
   readonly x?: number;
   readonly y?: number;
   readonly z?: number;
+  /** The target is the edge on this side of the cell. */
+  readonly side?: EdgeSide;
   readonly label: string;
   /** False when tools, consumed items, the inventory or `when` fail now. */
   readonly ok: boolean;
@@ -346,6 +358,8 @@ export interface ActivitySnapshot {
   x: number;
   y: number;
   z: number;
+  /** The target is the edge on this side of the cell. */
+  side?: EdgeSide;
   startTick: number;
   endTick: number;
 }
@@ -408,6 +422,11 @@ export interface WorldSnapshot {
   containers: ContainerSnapshot[];
   /** Cells whose tile differs from the map, as [x, y, z, qualified tile id], in cell index order. */
   tiles: [number, number, number, string][];
+  /**
+   * Edges whose tile differs from the map, as [x, y, z, side, qualified tile
+   * id or null for a removed edge], in cell index order (`n` before `w`).
+   */
+  edges: [number, number, number, EdgeSide, string | null][];
 }
 
 /** A world as a plain JSON-serializable object (`world.save()`, `World.restore`). */
@@ -644,9 +663,11 @@ export class World {
       ticksPerSecond: def.ticksPerSecond,
       clock: def.clock,
       random: () => world.rng.next(),
-      tileIdAt: (x, y, z) => world.grid.tileAt(x, y, z)?.id ?? '',
-      tileTagsAt: (x, y, z) => {
-        const t = world.grid.inBounds(x, y, z) ? world.grid.cells[world.grid.index(x, y, z)]! : EMPTY_TILE;
+      tileIdAt: (x, y, z, side) => (side ? world.grid.edgeAt(x, y, z, side) : world.grid.tileAt(x, y, z))?.id ?? '',
+      tileTagsAt: (x, y, z, side) => {
+        const g = world.grid;
+        const i = g.inBounds(x, y, z) ? g.index(x, y, z) : -1;
+        const t = i < 0 ? EMPTY_TILE : side === 'n' ? g.edgeN[i]! : side === 'w' ? g.edgeW[i]! : g.cells[i]!;
         return t === EMPTY_TILE ? NO_TAGS : world.tileTagSets[t]!;
       },
       inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
@@ -663,7 +684,7 @@ export class World {
       runEffects: (e, effects, target) => this.runEffects(e, effects, target),
       removeItem: (inv, item, count) => remove(inv, item, count, this.itemWeights[item]!),
       giveItem: (e, item, count) => this.giveItem(e, item, count),
-      record: (e, source, stage, ok, reason, moved, dropped) => this.recordActivity(e, source, stage, ok, reason, moved, dropped),
+      record: (e, source, stage, ok, reason, moved, dropped, side) => this.recordActivity(e, source, stage, ok, reason, moved, dropped, side),
     });
     if (restore) {
       // Saved values and statuses stay as they are; only the resolved max is rebuilt.
@@ -940,11 +961,14 @@ export class World {
     return ids ? ids.map((id) => this.containers.get(id)!) : [];
   }
 
-  /** Every container the player can reach now (its cell or the 8 around it, on its floor), in id order. */
+  /**
+   * Every container the player can reach now (its cell or the 8 around it,
+   * on its floor, with no non-walkable edge between: `Grid.reaches`), in id order.
+   */
   reachableContainers(): Container[] {
     const { x, y, z } = this.player;
     const out: Container[] = [];
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.push(...this.containersAt(x + dx, y + dy, z));
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (this.grid.reaches(x, y, z, x + dx, y + dy, z)) out.push(...this.containersAt(x + dx, y + dy, z));
     return out.sort((a, b) => a.id - b.id);
   }
 
@@ -1131,9 +1155,10 @@ export class World {
 
   /**
    * Run effects on `e` (= `ctx.self`), in order; measurement effects skip
-   * measurements it lacks. `set_tile` replaces the tile at `target`.
+   * measurements it lacks. `set_tile` replaces the tile at `target`, or its
+   * edge on `target.side`.
    */
-  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number } | null = null): void {
+  private runEffects(e: Entity, effects: readonly EffectDef[], target: { x: number; y: number; z: number; side: EdgeSide | null } | null = null): void {
     const ctx = this.ctx;
     const has = this.hasM[e.archetype.index]!;
     for (const eff of effects) {
@@ -1142,7 +1167,8 @@ export class World {
         continue;
       }
       if (eff.type === 'set_tile') {
-        if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
+        if (target?.side) this.grid.setEdge(this.grid.index(target.x, target.y, target.z), target.side, eff.tile);
+        else if (target) this.grid.setTile(this.grid.index(target.x, target.y, target.z), eff.tile);
         continue;
       }
       const idx = eff.measurement;
@@ -1288,7 +1314,11 @@ export class World {
       const sim = this.def.start.simulation;
       const isPlayer = p === this.player;
       const budget = isPlayer ? sim.playerPathBudget : sim.npcPathBudget;
-      const path = intent.adjacent ? pf.findPathAdjacent(p.x, p.y, intent.x, intent.y, p.z, z, budget) : pf.findPath(p.x, p.y, intent.x, intent.y, p.z, z, budget);
+      const path = intent.side
+        ? pf.findPathToEdge(p.x, p.y, intent.x, intent.y, intent.side, p.z, z, budget)
+        : intent.adjacent
+          ? pf.findPathAdjacent(p.x, p.y, intent.x, intent.y, p.z, z, budget)
+          : pf.findPath(p.x, p.y, intent.x, intent.y, p.z, z, budget);
       const st = this.pathStats;
       st.searches++;
       st.expanded += pf.lastExpanded;
@@ -1372,6 +1402,7 @@ export class World {
       item: a.kind === 'act' || a.kind === 'craft' ? '' : a.item,
       ...(a.kind === 'act' ? { action: a.action } : {}),
       ...(a.kind === 'craft' ? { recipe: a.recipe } : {}),
+      ...(a.kind === 'act' && a.side ? { side: a.side } : {}),
       moved: 0,
       ok: false,
       stage: 'complete',
@@ -1393,7 +1424,7 @@ export class World {
   }
 
   /** Record of an activity source's start or end (the player's becomes `lastAction`). */
-  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number): void {
+  private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number, side: EdgeSide | null): void {
     if (ok && stage === 'complete') this.containerVersion++;
     if (e !== this.player) return;
     this.lastAction = {
@@ -1401,6 +1432,7 @@ export class World {
       item: s.item >= 0 ? this.def.items[s.item]!.id : '',
       ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
       ...(s.recipe >= 0 ? { recipe: this.def.recipes[s.recipe]!.id } : {}),
+      ...(side ? { side } : {}),
       moved,
       ...(dropped > 0 ? { dropped } : {}),
       ok,
@@ -1417,15 +1449,17 @@ export class World {
     const inv = p.inv;
 
     if (a.kind === 'act') {
-      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'act', item: '', action: a.action, moved: 0, ok: false, stage, reason, tick });
+      const side = a.side === 'n' || a.side === 'w' ? a.side : null;
+      const fail = (reason: ActionFailure, stage: ActivityStage): ActionRecord => ({ kind: 'act', item: '', action: a.action, ...(side ? { side } : {}), moved: 0, ok: false, stage, reason, tick });
       const k = this.def.ids.actions[a.action];
       if (k === undefined) return fail('unknown_action', 'complete');
       const s = this.actionSources[k]!;
       const stage = isTimed(s) ? 'start' : 'complete';
       if (s.requires.length > 0 && !inv) return fail('no_inventory', stage);
-      const hasXY = a.x !== undefined || a.y !== undefined || a.z !== undefined;
+      const hasXY = a.x !== undefined || a.y !== undefined || a.z !== undefined || a.side !== undefined;
+      if (a.side !== undefined && !side) return fail('invalid_target', stage);
       if (s.filter ? !(Number.isInteger(a.x) && Number.isInteger(a.y) && (a.z === undefined || Number.isInteger(a.z))) : hasXY) return fail('invalid_target', stage);
-      if (s.filter) this.runner.start(s, p, a.x!, a.y!, a.z ?? p.z, tick);
+      if (s.filter) this.runner.start(s, p, a.x!, a.y!, a.z ?? p.z, tick, side);
       else this.runner.start(s, p, p.x, p.y, p.z, tick);
       return null;
     }
@@ -1484,7 +1518,7 @@ export class World {
 
     const c = this.containers.get(a.container);
     if (!c || c.kind === 'inventory') return fail('unknown_container');
-    if (c.z !== p.z || Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)) > 1) return fail('out_of_reach');
+    if (!this.grid.reaches(p.x, p.y, p.z, c.x, c.y, c.z)) return fail('out_of_reach');
     const [from, to] = a.kind === 'take' ? [c, inv] : [inv, c];
     const have = Math.min(want, countOf(from, item));
     if (have === 0) return fail('missing');
@@ -1605,6 +1639,12 @@ export class World {
         return out;
       }),
       tiles: [...this.grid.changed].sort((a, b) => a[0] - b[0]).map(([i, t]): [number, number, number, string] => [...this.cellTriple(i), this.def.tiles[t]!.id]),
+      edges: [...this.grid.changedEdges]
+        .sort((a, b) => a[0] - b[0])
+        .map(([key, t]): [number, number, number, EdgeSide, string | null] => {
+          const { i, side } = edgeOfKey(key);
+          return [...this.cellTriple(i), side, t === EMPTY_TILE ? null : this.def.tiles[t]!.id];
+        }),
     };
   }
 
@@ -1624,6 +1664,7 @@ export class World {
       x: a.x,
       y: a.y,
       z: a.z,
+      ...(a.side ? { side: a.side } : {}),
       startTick: a.startTick,
       endTick: a.endTick,
     };
@@ -1648,10 +1689,10 @@ export class World {
     }
   }
 
-  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y, z). */
-  private verdict(s: ActivitySource, x: number, y: number, z: number, skipReach: boolean): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
+  /** `ok`, `reason`, `missing` and `unavailable` of a source checked for the player on (x, y, z) (its edge on `side`). */
+  private verdict(s: ActivitySource, x: number, y: number, z: number, skipReach: boolean, side: EdgeSide | null = null): Pick<AvailableAction, 'ok' | 'reason' | 'missing' | 'unavailable'> {
     const p = this.player;
-    const reason = this.runner.check(s, p, x, y, z, skipReach);
+    const reason = this.runner.check(s, p, x, y, z, skipReach, side);
     if (!reason) return { ok: true };
     if (reason === 'missing') {
       const items = this.def.items;
@@ -1667,10 +1708,10 @@ export class World {
     return unavailable ? { ok: false, reason, unavailable } : { ok: false, reason };
   }
 
-  /** `duration` and `uses` of a source for the player on (x, y, z) (inside `pure`). */
-  private details(s: ActivitySource, x: number, y: number, z: number): Pick<Interaction, 'duration' | 'uses'> {
+  /** `duration` and `uses` of a source for the player on (x, y, z) (its edge on `side`; inside `pure`). */
+  private details(s: ActivitySource, x: number, y: number, z: number, side: EdgeSide | null = null): Pick<Interaction, 'duration' | 'uses'> {
     const out: { duration?: number; uses?: MissingItem[] } = {};
-    const ticks = this.runner.durationTicks(s, this.player, x, y, z);
+    const ticks = this.runner.durationTicks(s, this.player, x, y, z, side);
     if (ticks !== null) out.duration = ticks / this.def.ticksPerSecond;
     if (s.consume.length > 0) {
       const items = this.def.items;
@@ -1681,10 +1722,11 @@ export class World {
 
   /**
    * Everything the player could start now: every `self` action, every tile
-   * action on each matching cell in reach (on the player's floor, row-major), then each inventory
-   * stack with a `use`. Entries that match but fail on items, the inventory
-   * or `when` are included with `ok: false`. Pure: `random` in a `when` draws
-   * from a throwaway copy of the RNG, so `hash()` never changes.
+   * action on each matching cell in reach (on the player's floor, row-major)
+   * and then on each matching edge in reach (`edgesInReach` order), then each
+   * inventory stack with a `use`. Entries that match but fail on items, the
+   * inventory or `when` are included with `ok: false`. Pure: `random` in a
+   * `when` draws from a throwaway copy of the RNG, so `hash()` never changes.
    */
   availableActions(): AvailableAction[] {
     const p = this.player;
@@ -1705,6 +1747,12 @@ export class World {
             out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, z, label: s.label, ...v });
           }
         }
+        for (const [x, y, side] of this.edgesInReach()) {
+          if (!this.matches(s, x, y, z, side)) continue;
+          const v = this.verdict(s, x, y, z, false, side);
+          if (v.reason === 'out_of_reach' || v.reason === 'invalid_target') continue;
+          out.push({ kind: 'act', action: this.def.actions[s.action]!.id, x, y, z, side, label: s.label, ...v });
+        }
       }
       for (const st of p.inv?.stacks ?? []) {
         const s = this.useSources[st.item];
@@ -1714,20 +1762,38 @@ export class World {
     });
   }
 
-  /** Whether (x, y, z) is in bounds and holds a tile matching a tile-targeted source's filter. */
-  private matches(s: ActivitySource, x: number, y: number, z: number): boolean {
+  /** Whether (x, y, z) is in bounds and holds a tile (or an edge on `side`) matching a tile-targeted source's filter. */
+  private matches(s: ActivitySource, x: number, y: number, z: number, side: EdgeSide | null = null): boolean {
     const { grid } = this;
     if (!grid.inBounds(x, y, z)) return false;
-    const t = grid.cells[grid.index(x, y, z)]!;
+    const i = grid.index(x, y, z);
+    const t = side === 'n' ? grid.edgeN[i]! : side === 'w' ? grid.edgeW[i]! : grid.cells[i]!;
     return t !== EMPTY_TILE && s.filter![t] === 1;
   }
 
-  /** First cell in the player's reach (its floor, row-major) matching a station source's filter, or null. */
+  /**
+   * The edges the player can reach (in bounds), as [x, y, side]: the four
+   * sides of its cell — north (`n` of its cell), west (`w` of its cell),
+   * east (`w` of the cell to its right), south (`n` of the cell below).
+   */
+  edgesInReach(): [number, number, EdgeSide][] {
+    const { x, y, z } = this.player;
+    const g = this.grid;
+    const out: [number, number, EdgeSide][] = [
+      [x, y, 'n'],
+      [x, y, 'w'],
+      [x + 1, y, 'w'],
+      [x, y + 1, 'n'],
+    ];
+    return out.filter(([ex, ey]) => g.inBounds(ex, ey, z));
+  }
+
+  /** First cell in the player's reach (its floor, row-major, `Grid.reaches`) matching a station source's filter, or null. */
   private stationCell(s: ActivitySource): { x: number; y: number; z: number } | null {
     const p = this.player;
     for (let y = p.y - 1; y <= p.y + 1; y++) {
       for (let x = p.x - 1; x <= p.x + 1; x++) {
-        if (this.matches(s, x, y, p.z)) return { x, y, z: p.z };
+        if (this.matches(s, x, y, p.z) && this.grid.reaches(p.x, p.y, p.z, x, y, p.z)) return { x, y, z: p.z };
       }
     }
     return null;
@@ -1763,11 +1829,16 @@ export class World {
    * walkable cell. `[]` out of bounds or once the game has ended. `act` and
    * `craft` entries carry their `duration` and `uses`. Pure, like
    * `availableActions`.
+   *
+   * With `side`, the target is the edge on that side of the cell: only the
+   * tile actions whose filter matches its tile (`[]` where there is no
+   * edge), in reach from either cell it separates.
    */
-  interactionsAt(x: number, y: number, z: number = this.player.z): Interaction[] {
+  interactionsAt(x: number, y: number, z: number = this.player.z, side: EdgeSide | null = null): Interaction[] {
     const { grid, player: p } = this;
     if (!grid.inBounds(x, y, z) || this.ended) return [];
-    const inReach = z === p.z && Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1;
+    if (side) return this.edgeInteractions(x, y, z, side);
+    const inReach = grid.reaches(p.x, p.y, p.z, x, y, z);
     const own = x === p.x && y === p.y && z === p.z;
     return this.pure(() => {
       const out: Interaction[] = [];
@@ -1813,12 +1884,38 @@ export class World {
     });
   }
 
+  /** `interactionsAt` for the edge on `side` of (x, y, z) (in bounds, game not ended). */
+  private edgeInteractions(x: number, y: number, z: number, side: EdgeSide): Interaction[] {
+    const { grid, player: p } = this;
+    const i = grid.index(x, y, z);
+    const tile = side === 'n' ? grid.edgeN[i]! : grid.edgeW[i]!;
+    if (tile === EMPTY_TILE) return [];
+    const inReach = grid.reachesEdge(p.x, p.y, p.z, x, y, z, side);
+    return this.pure(() => {
+      const out: Interaction[] = [];
+      for (const s of this.actionSources) {
+        if (!s.filter || s.filter[tile] !== 1) continue;
+        const id = this.def.actions[s.action]!.id;
+        out.push({
+          id: `act:${id}`,
+          label: s.label,
+          kind: 'act',
+          ...this.verdict(s, x, y, z, true, side),
+          action: { kind: 'act', action: id, x, y, z, side },
+          inReach,
+          ...this.details(s, x, y, z, side),
+        });
+      }
+      return out;
+    });
+  }
+
   /**
    * The intent a shell should queue to do `action`, or null when it is
    * already in reach or needs none (`self` acts, recipes without a station
    * or cell, `use`, `drop`, and actions on unknown targets: the shell queues
-   * those directly). Otherwise a goto
-   * to the target cell (adjacent when it is not walkable) that queues the
+   * those directly). Otherwise a goto to the target cell (adjacent when it
+   * is not walkable; next to the edge for an edge target) that queues the
    * action on arrival.
    */
   approachIntent(action: Action): GotoIntent | null {
@@ -1826,6 +1923,13 @@ export class World {
     let x: number;
     let y: number;
     let z: number;
+    if (action.kind === 'act' && action.side && Number.isInteger(action.x) && Number.isInteger(action.y)) {
+      const s = this.actionSources[this.def.ids.actions[action.action] ?? -1];
+      if (!s?.filter) return null;
+      z = action.z ?? p.z;
+      if (this.grid.reachesEdge(p.x, p.y, p.z, action.x!, action.y!, z, action.side)) return null;
+      return { kind: 'goto', x: action.x!, y: action.y!, z, side: action.side, then: action };
+    }
     if (action.kind === 'take' || action.kind === 'put') {
       const c = this.containers.get(action.container);
       if (!c || c.kind === 'inventory') return null;
@@ -1837,7 +1941,7 @@ export class World {
       y = action.y!;
       z = action.z ?? p.z;
     } else return null;
-    if (z === p.z && Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) <= 1) return null;
+    if (this.grid.reaches(p.x, p.y, p.z, x, y, z)) return null;
     return { kind: 'goto', x, y, z, adjacent: !this.grid.walkable(x, y, z), then: action };
   }
 

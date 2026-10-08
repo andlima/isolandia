@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Grid, lineOfSight, loadPacksOrThrow, Rng, World, type MapDef, type TileDef } from '../src/core/index.ts';
+import { EMPTY_TILE, Grid, lineOfSight, loadPacksOrThrow, Rng, World, type MapDef, type TileDef } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES, genreCell, loadFixture } from './helpers.ts';
 
 function tileDef(index: number, id: string, walkable: boolean, opaque: boolean): TileDef {
-  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null };
+  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null, edge: false };
 }
 
 /** `.` floor, `#` wall, `+` door, `"` window (not walkable, not opaque). */
@@ -14,7 +14,8 @@ const CODES: Record<string, number> = { '.': 0, '#': 1, '+': 2, '"': 3 };
 
 function grid(rows: string[]): Grid {
   const cells = rows.flatMap((r) => [...r].map((ch) => CODES[ch]!));
-  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, floors: 1, cells } as unknown as MapDef;
+  const none = cells.map(() => EMPTY_TILE);
+  const map = { id: 'm', index: 0, width: rows[0]!.length, height: rows.length, floors: 1, cells, edgeN: none, edgeW: none } as unknown as MapDef;
   return new Grid(map, TILES);
 }
 

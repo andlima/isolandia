@@ -32,7 +32,7 @@ function grid(floors: string[][]): Grid {
   const height = floors[0]!.length;
   const width = floors[0]![0]!.length;
   const cells = floors.flatMap((rows) => rows.flatMap((row) => [...row].map((ch) => (ch === '.' ? 0 : ch === '#' ? 1 : EMPTY_TILE))));
-  return new Grid({ width, height, floors: floors.length, cells } as unknown as MapDef, [FLOOR, WALL]);
+  return new Grid({ width, height, floors: floors.length, cells, edgeN: cells.map(() => EMPTY_TILE), edgeW: cells.map(() => EMPTY_TILE) } as unknown as MapDef, [FLOOR, WALL]);
 }
 
 function blockAt(x: number, y: number, z: number, mask = FULL_BLOCK, mirrored = false): Drawn {
