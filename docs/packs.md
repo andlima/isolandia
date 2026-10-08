@@ -180,6 +180,7 @@ Generic numeric values (health, hunger, blood, suspicion…).
 | `max`     | number, measurement id, or expression | unbounded  | Evaluated per entity |
 | `initial` | number                                | required   | Default starting value |
 | `rate`    | number or expression                  | none       | Drift **per second** |
+| `hud`     | mapping                               | none       | HUD hints, see below |
 
 Each tick (10 ticks/s) every entity gets `rate / 10` added to each of its
 measurements; then all values are clamped to `[min, max]`. A numeric
@@ -195,6 +196,37 @@ measurements:
     initial: 50
     rate: -0.8
 ```
+
+**HUD hints.** The optional `hud` block says how the HUD shows the
+measurement; it is presentation only (not saved, not hashed) and an
+[override](#mods-and-overrides) replaces it like any other field.
+
+| Field    | Type          | Default | Notes |
+|----------|---------------|---------|-------|
+| `bad`    | `high`, `low` | none    | Which direction is bad; without it the measurement is neutral and has no levels |
+| `warn`   | number        | 50 %    | Absolute value; the default is 50 % of `[min, max]` toward the bad end |
+| `danger` | number        | 75 %    | Absolute value; the default is 75 % of the way toward the bad end |
+| `hide`   | boolean       | `false` | Keeps the measurement out of the HUD in both shells |
+
+```yaml
+measurements:
+  - id: hunger
+    label: Hunger
+    max: 100
+    hud: { bad: high, warn: 50, danger: 75 }
+  - id: hp
+    hud: { bad: low }          # warn at 50, danger at 25 of [0, 100]
+```
+
+A value at or past `danger` (toward the bad end) is `danger`, else at or
+past `warn` it is `warn`, else `ok`: the browser colours the bar green,
+amber or red and the terminal prints the line yellow or red (see
+[docs/ui.md](ui.md#hud)). With a per-entity `max` the defaults use the
+entity's current max; with no finite max there are no default levels
+(explicit ones still apply). Loading rejects unknown keys, `warn` or
+`danger` without `bad`, and an order that contradicts `bad` (`high`
+needs `warn ≤ danger`, `low` needs `warn ≥ danger`; a defaulted level is
+checked too when `max` is a number).
 
 ### `assets`
 
@@ -889,6 +921,7 @@ conditions and add drift while active.
 | `when`  | expression | required   | Enter condition |
 | `until` | expression | `not when` | Exit condition (use it for hysteresis) |
 | `rates` | map measurement id → number or expression | `{}` | Extra drift **per sim second** while active |
+| `hud`   | mapping    | none       | HUD hints: `tone` (`bad`, `good` or `neutral`, default `neutral`) and `description` (free tooltip text) |
 
 - An inactive status becomes active when `for` and `when` are truthy.
 - An active status becomes inactive when `until` is truthy or `for`
@@ -900,6 +933,12 @@ conditions and add drift while active.
   `self.has_status("id")` (see [expressions](expressions.md#functions)).
 - Active statuses are simulation state: they are part of `snapshot()` and
   `hash()`.
+- The `hud` block is presentation only (not saved, not hashed): the
+  browser shows the player's active statuses as chips coloured by `tone`
+  (red, green, grey), with a tooltip of the label, the `description` and
+  the status's current rates on the player's measurements (`Health
+  −0.2/s`); the terminal prints the `Status:` line in red while any
+  active status has tone `bad`.
 
 ```yaml
 statuses:
@@ -909,6 +948,7 @@ statuses:
     when: "self.hunger >= 70"
     until: "self.hunger < 40"      # stays hungry until well fed
     rates: { hp: -0.2 }
+    hud: { tone: bad, description: Losing health while hungry }
 ```
 
 Statuses can react to sight with
@@ -1641,7 +1681,7 @@ same result as checking every pair.
 The in-game calendar. Game time is derived from the tick count, so the
 clock adds no simulation state; expressions read it through `world.day`,
 `world.hour`, `world.is_day` and friends (see
-[expressions](expressions.md#scope)), and the HUD shows `Day D HH:MM`.
+[expressions](expressions.md#scope)), and the HUD shows `Day D HH:MM` (`Day D · HH:MM` in the browser).
 
 | Field        | Type             | Default   | Notes |
 |--------------|------------------|-----------|-------|

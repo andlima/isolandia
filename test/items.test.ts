@@ -553,6 +553,8 @@ test('hudModel: inventory, nearby, lastAction; lines only when present', () => {
     weight: 0.1,
     capacity: 0.6,
     carrying: 'Carrying: 0.1/0.6',
+    fraction: 0.1 / 0.6,
+    level: 'ok',
     line: 'Inventory: 1) Pebble x1',
   });
   assert.deepEqual(m.nearby, []);

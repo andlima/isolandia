@@ -3,19 +3,43 @@
  * overlay are built from `hudModel`, so they always show the same values.
  */
 
-import { clockAt, type ClockTime } from './clock.ts';
+import { clockAt, isDayAt, type ClockTime } from './clock.ts';
+import { measurementLevels, type StatusTone } from './definition.ts';
 import { GROUND_LABEL, type Container } from './sim/containers.ts';
 
 export { GROUND_LABEL };
 import type { ActionFailure, ActionRecord, AvailableRecipe, MissingItem, OutcomeRecord, World } from './sim/world.ts';
 
+/** How bad a value is (from a measurement's `hud` levels, or the inventory load). */
+export type HudLevel = 'ok' | 'warn' | 'danger';
+
 export interface HudMeasurement {
+  /** Qualified measurement id. */
+  readonly id: string;
   readonly label: string;
   readonly value: number;
+  readonly min: number;
   /** Infinity when unbounded. */
   readonly max: number;
   /** `label: value/max` (or `label: value` when unbounded), one decimal. */
   readonly text: string;
+  /** Position of `value` in `[min, max]`, in [0, 1]; null when `max` is not finite. */
+  readonly fraction: number | null;
+  /** Which direction is bad (`hud.bad`); null for a neutral measurement. */
+  readonly bad: 'high' | 'low' | null;
+  /** How bad the value is against the `hud` levels; null for a neutral measurement. */
+  readonly level: HudLevel | null;
+}
+
+/** One of the player's active statuses, for the browser's chips and the terminal's status colour. */
+export interface HudStatusChip {
+  readonly id: string;
+  readonly label: string;
+  readonly tone: StatusTone;
+  /** The status's `hud.description` (empty when absent). */
+  readonly description: string;
+  /** The status's rates on the player's measurements now, `Label −0.2/s, Other +0.1/s` (empty when none). */
+  readonly rates: string;
 }
 
 export interface HudModel {
@@ -31,6 +55,14 @@ export interface HudModel {
   readonly statuses: readonly string[];
   /** `Status: A, B`, or null when no status is active. */
   readonly statusLine: string | null;
+  /** The player's active statuses, in definition order. */
+  readonly statusChips: readonly HudStatusChip[];
+  /** Whether it is day now (`world.is_day`). */
+  readonly isDay: boolean;
+  /** Day number of the clock. */
+  readonly day: number;
+  /** Time of day of the clock, `HH:MM`. */
+  readonly timeOfDay: string;
   /** Set once the world is defeated. */
   readonly defeat: HudDefeat | null;
   /** Set once the world is won. */
@@ -78,6 +110,10 @@ export interface HudInventory {
   readonly capacity: number;
   /** `Carrying: w/cap`. */
   readonly carrying: string;
+  /** `weight / capacity`, clamped to [0, 1]. */
+  readonly fraction: number;
+  /** `warn` from 80 % of capacity, `danger` from 100 %. */
+  readonly level: HudLevel;
   /** `Inventory: 1) A x2  2) B x1`, or `Inventory: empty`. */
   readonly line: string;
 }
@@ -133,6 +169,29 @@ export function hudLines(m: HudModel): string[] {
   if (m.defeat) lines.push(m.defeat.text);
   if (m.victory) lines.push(m.victory.text);
   return lines;
+}
+
+/** Whether each `hudLines` line should stand out: `warn` (yellow) or `danger` (red) in the terminal, else null. */
+export function hudLineLevels(m: HudModel): ('warn' | 'danger' | null)[] {
+  const levels: ('warn' | 'danger' | null)[] = [null, ...(m.floor ? [null] : []), ...m.measurements.map((x) => (x.level === 'ok' ? null : x.level))];
+  if (m.inventory) levels.push(null, null);
+  if (m.statusLine) levels.push(m.statusChips.some((c) => c.tone === 'bad') ? 'danger' : null);
+  return [...levels, ...Array<null>(hudLines(m).length - levels.length).fill(null)];
+}
+
+/** Inventory load from which the carrying level is `warn`. */
+const CARRY_WARN = 0.8;
+
+/** Level of a value against warn/danger levels, bad toward `bad`. */
+function levelOf(value: number, bad: 'high' | 'low', warn: number | null, danger: number | null): HudLevel {
+  const reached = (at: number | null) => at !== null && (bad === 'high' ? value >= at : value <= at);
+  return reached(danger) ? 'danger' : reached(warn) ? 'warn' : 'ok';
+}
+
+/** `+0.1/s`, `−0.2/s` (one decimal, a real minus sign). */
+function rateText(rate: number): string {
+  const t = Math.abs(rate).toFixed(1);
+  return `${t === '0.0' ? '' : rate < 0 ? '−' : '+'}${t}/s`;
 }
 
 /** Weight in hundredths → normal units. */
@@ -364,31 +423,64 @@ export function actionText(world: World, a: ActionRecord): string {
 
 /** `Day D HH:MM`. */
 export function formatClock(t: ClockTime): string {
+  return `Day ${t.day} ${timeOfDayText(t)}`;
+}
+
+/** `HH:MM`. */
+function timeOfDayText(t: ClockTime): string {
   const pad = (v: number) => String(v).padStart(2, '0');
-  return `Day ${t.day} ${pad(t.hour)}:${pad(t.minute)}`;
+  return `${pad(t.hour)}:${pad(t.minute)}`;
 }
 
 export function hudModel(world: World): HudModel {
   const { player } = world;
-  const clock = formatClock(world.clock);
-  const measurements = player.archetype.measurements.map((idx): HudMeasurement => {
-    const label = world.def.measurements[idx]!.label;
-    const max = player.max[idx]!;
-    const value = player.m[idx]!;
-    const text = Number.isFinite(max) ? `${label}: ${fmt(value)}/${fmt(max)}` : `${label}: ${fmt(value)}`;
-    return { label, value, max, text };
-  });
-  const statuses = world.def.statuses.filter((s) => player.st[s.index] === 1).map((s) => s.label);
+  const now = world.clock;
+  const clock = formatClock(now);
+  const measurements = player.archetype.measurements
+    .filter((idx) => !world.def.measurements[idx]!.hud.hide)
+    .map((idx): HudMeasurement => {
+      const md = world.def.measurements[idx]!;
+      const { label, min } = md;
+      const max = player.max[idx]!;
+      const value = player.m[idx]!;
+      const finite = Number.isFinite(max);
+      const text = finite ? `${label}: ${fmt(value)}/${fmt(max)}` : `${label}: ${fmt(value)}`;
+      const fraction = finite ? (max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 1) : null;
+      const { bad } = md.hud;
+      let level: HudLevel | null = null;
+      if (bad !== null) {
+        const { warn, danger } = measurementLevels(md, max);
+        level = levelOf(value, bad, warn, danger);
+      }
+      return { id: md.id, label, value, min, max, text, fraction, bad, level };
+    });
+  const active = world.def.statuses.filter((s) => player.st[s.index] === 1);
+  const statuses = active.map((s) => s.label);
+  const statusChips = active.map(
+    (s): HudStatusChip => ({
+      id: s.id,
+      label: s.label,
+      tone: s.hud.tone,
+      description: s.hud.description,
+      rates: world
+        .statusRatesOf(player, s.index)
+        .map((r) => `${world.def.measurements[r.measurement]!.label} ${rateText(r.rate)}`)
+        .join(', '),
+    }),
+  );
   let inventory: HudInventory | null = null;
   if (player.inv) {
     const stacks = stacksOf(world, player.inv);
     const weight = units(player.inv.load);
     const capacity = units(player.inv.capacity);
+    const load = capacity > 0 ? weight / capacity : weight > 0 ? 1 : 0;
     inventory = {
       stacks,
       weight,
       capacity,
       carrying: `Carrying: ${weight}/${capacity}`,
+      fraction: Math.min(1, Math.max(0, load)),
+      level: load >= 1 ? 'danger' : load >= CARRY_WARN ? 'warn' : 'ok',
       line: `Inventory: ${stacks.length ? stacks.map((s, i) => `${i + 1}) ${s.text}`).join('  ') : 'empty'}`,
     };
   }
@@ -406,12 +498,16 @@ export function hudModel(world: World): HudModel {
   };
   return {
     clock,
+    day: now.day,
+    timeOfDay: timeOfDayText(now),
+    isDay: isDayAt(world.def.clock, world.tick, world.def.ticksPerSecond),
     tick: world.tick,
     time: `Time: ${clock} (tick ${world.tick})`,
     floor: world.grid.floors > 1 ? `Floor ${player.z}` : null,
     measurements,
     statuses,
     statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,
+    statusChips,
     defeat: outcome(world.defeat),
     victory: outcome(world.victory),
     inventory,

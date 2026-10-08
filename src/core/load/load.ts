@@ -49,6 +49,8 @@ import {
   type LightingDef,
   type MapDef,
   type MeasurementDef,
+  type MeasurementHud,
+  measurementLevels,
   type NumberTerm,
   type PackInfo,
   type PopulateDef,
@@ -60,6 +62,7 @@ import {
   type RoomsDef,
   type SpawnDef,
   type StatusDef,
+  type StatusHud,
   type StatusRate,
   type SystemDef,
   type TileDef,
@@ -108,6 +111,8 @@ const DEFAULT_JOURNAL_CATEGORY = 'Notes';
 const DEFAULT_HOSTILE_BELOW = -50;
 const DEFAULT_FRIENDLY_FROM = 50;
 const QUEST_ENDS = ['success', 'failure'] as const;
+const NO_MEASUREMENT_HUD: MeasurementHud = { bad: null, warn: null, danger: null, hide: false };
+const NO_STATUS_HUD: StatusHud = { tone: 'neutral', description: '' };
 const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
 const DEFAULT_RECIPE_VERB = 'Craft';
@@ -399,7 +404,7 @@ class Loader {
   // ── Stage 3: build definitions ──────────────────────────────────────────
 
   private measurement(d: Defined): MeasurementDef {
-    const f = this.fields(d, ['id', 'label', 'min', 'max', 'initial', 'rate'], 'measurement');
+    const f = this.fields(d, ['id', 'label', 'min', 'max', 'initial', 'rate', 'hud'], 'measurement');
     const label = f.string('label') ?? d.id;
     const min = f.number('min', false) ?? 0;
     const initial = f.number('initial') ?? min;
@@ -439,7 +444,40 @@ class Loader {
       this.sink.add(f.at('rate'), `field 'rate' must be a number or an expression`);
     }
 
-    return { id: d.id, index: d.index, label, min, maxConst, maxFn, initial, rateConst, rateFn };
+    const hud = this.measurementHud(f, min, maxConst);
+    return { id: d.id, index: d.index, label, min, maxConst, maxFn, initial, rateConst, rateFn, hud };
+  }
+
+  /** A measurement's optional `hud` block; `maxConst` checks the order of a defaulted level against an explicit one. */
+  private measurementHud(f: Fields, min: number, maxConst: number): MeasurementHud {
+    const raw = f.mapping('hud');
+    if (!raw) return NO_MEASUREMENT_HUD;
+    const hf = new Fields(this.sink, f.at('hud'), raw, ['bad', 'warn', 'danger', 'hide'], 'hud');
+    let bad: MeasurementHud['bad'] = null;
+    const rawBad = hf.string('bad', false);
+    if (rawBad !== undefined) {
+      if (rawBad === 'high' || rawBad === 'low') bad = rawBad;
+      else this.sink.add(hf.at('bad'), `field 'bad' must be 'high' or 'low', got ${JSON.stringify(rawBad)}`);
+    }
+    const warn = hf.number('warn', false) ?? null;
+    const danger = hf.number('danger', false) ?? null;
+    const hide = hf.boolean('hide', false) ?? false;
+    if (bad === null) {
+      if (rawBad === undefined) for (const k of ['warn', 'danger'] as const) if (hf.has(k)) this.sink.add(hf.at(k), `field '${k}' needs 'bad' (high or low)`);
+      return { bad: null, warn: null, danger: null, hide };
+    }
+    const levels = measurementLevels({ min, hud: { bad, warn, danger, hide } }, maxConst);
+    if ((warn !== null || danger !== null) && levels.warn !== null && levels.danger !== null) {
+      const ok = bad === 'high' ? levels.warn <= levels.danger : levels.warn >= levels.danger;
+      if (!ok) {
+        const key = danger !== null ? 'danger' : 'warn';
+        this.sink.add(
+          hf.at(key),
+          `'warn' (${levels.warn}) and 'danger' (${levels.danger}) contradict 'bad: ${bad}': ${bad === 'high' ? "'warn' must be ≤ 'danger'" : "'warn' must be ≥ 'danger'"}`,
+        );
+      }
+    }
+    return { bad, warn, danger, hide };
   }
 
   private asset(d: Defined): AssetDef {
@@ -1526,7 +1564,7 @@ class Loader {
   }
 
   private status(d: Defined): StatusDef {
-    const f = this.fields(d, ['id', 'label', 'for', 'when', 'until', 'rates'], 'status');
+    const f = this.fields(d, ['id', 'label', 'for', 'when', 'until', 'rates', 'hud'], 'status');
     const label = f.string('label') ?? d.id;
     const forExpr = this.conditionExpr(f, 'for', d.scopeOf('for'));
     const forFn = forExpr?.fn ?? null;
@@ -1542,7 +1580,21 @@ class Loader {
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
     }
-    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates };
+    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates, hud: this.statusHud(f) };
+  }
+
+  /** A status's optional `hud` block. */
+  private statusHud(f: Fields): StatusHud {
+    const raw = f.mapping('hud');
+    if (!raw) return NO_STATUS_HUD;
+    const hf = new Fields(this.sink, f.at('hud'), raw, ['tone', 'description'], 'hud');
+    let tone: StatusHud['tone'] = 'neutral';
+    const rawTone = hf.string('tone', false);
+    if (rawTone !== undefined) {
+      if (rawTone === 'bad' || rawTone === 'good' || rawTone === 'neutral') tone = rawTone;
+      else this.sink.add(hf.at('tone'), `field 'tone' must be 'bad', 'good' or 'neutral', got ${JSON.stringify(rawTone)}`);
+    }
+    return { tone, description: hf.string('description', false) ?? '' };
   }
 
   private system(d: Defined): SystemDef {

@@ -11,6 +11,7 @@ measurements:
     initial: 80
     # A slow drift: 0.06 per second by day, twice that at night.
     rate: "-0.12 + 0.06 * world.is_day"
+    hud: { bad: low }
 
 tiles:
   - id: grass

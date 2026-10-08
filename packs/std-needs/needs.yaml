@@ -4,15 +4,18 @@ measurements:
     max: 100
     initial: 10
     rate: 0.1            # +0.1 per second: hungry after ~10 minutes
+    hud: { bad: high, warn: 50, danger: 75 }
   - id: thirst
     label: Thirst
     max: 100
     initial: 10
     # Thirst builds faster once you are hungry, and a bit faster in daylight.
     rate: "0.1 + 0.05 * (self.hunger >= 50) + 0.05 * world.is_day"
+    hud: { bad: high, warn: 50, danger: 75 }
   - id: fatigue
     label: Fatigue
     max: 100
     initial: 0
     # Tiring faster at night.
     rate: "0.08 - 0.03 * world.is_day"
+    hud: { bad: high, warn: 50, danger: 75 }

@@ -6,6 +6,7 @@ statuses:
     for: 'self.has_tag("undead")'
     when: 'can_see(self, player, 8)'
     until: 'not can_see(self, player, 12)'
+    hud: { tone: bad, description: A zombie has seen you }
 
 # The undead shuffle around where they rose, chase a survivor they can see,
 # shuffle over to any noise they hear (the town's broken glass, alarm clocks

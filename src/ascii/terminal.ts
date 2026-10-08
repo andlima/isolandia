@@ -52,7 +52,11 @@ export function colorize(frame: AsciiFrame): string {
     });
     out.push(s + '\x1b[0m');
   });
-  return [...out, '', ...frame.hud].join('\n');
+  const hud = frame.hud.map((line, i) => {
+    const level = frame.hudLevels[i];
+    return level ? `${sgr(level === 'danger' ? 'red' : 'yellow')}${line}\x1b[0m` : line;
+  });
+  return [...out, '', ...hud].join('\n');
 }
 
 const d = (dx: -1 | 0 | 1, dy: -1 | 0 | 1): Intent => ({ kind: 'step', dx, dy });
@@ -362,7 +366,7 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
   return new Promise((resolve) => {
     const draw = () => {
       // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
-      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + world.player.archetype.measurements.length + 7 + 2;
+      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + hudModel(world).measurements.length + 7 + 2;
       if (keys.journal) {
         stdout.write('\x1b[H' + [...keys.journal, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
         return;
