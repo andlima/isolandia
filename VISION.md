@@ -251,6 +251,65 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 - Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
   (wasmoon/fengari)?
 - Combat: real time over ticks, or something more tactical?
+- YAML pain points (survey of `std`, `std-needs`, `town`, `hardship`,
+  `zombie`, `vampire` and `garden`, after M8's dialogues, quests and
+  factions; no pack uses dialogues, factions or vars yet). **Nothing here
+  needs a script hook**: each is a missing primitive or a verbose form, so
+  M9's evidence has to come from `m8-social-games`. Not decided; inputs
+  for future specs, roughly by weight:
+  - **Perception is copy-pasted five times.** `zombie:alert`, the bat's
+    `alert`, the cat's `curious`, the fox's `sly` and the butterfly's
+    `alert` are each a status entered on `can_see(self, player, N)` and
+    left beyond a wider range, and every behavior repeats the same
+    transition in most states (the shambler in 3, the cat in 4; the fox
+    repeats `world.is_day → den` in 4), keeping "sight beats sound" by
+    ordering `on` lists by hand. The stdpack candidate above has met its
+    third genre. Candidates: **any-state transitions** in `behaviors`
+    and a **sight sense with hysteresis** (`senses: { sight: [8, 12] }`,
+    as in §4).
+  - **Concealment is per observer.** `curious` and `sly` both append
+    `not has_status(player, "hidden")` to `when` and `until`; a new
+    observer that forgets it sees through bushes. Hiding belongs in
+    `can_see` (a tile or status that modifies sight).
+  - **Footsteps are polled.** `crunch` (`every: 0.2`), `creak` (`0.1`)
+    and `hop` (`0.2`) mean "noise on each step" but fire while standing
+    still, at a period guessed from the walking speed. Candidate:
+    **event triggers** (tile `on_enter`/`on_step` effects, or systems
+    `on: step`).
+  - **Tick order leaks into pack data.** The bandage's `interrupt:
+    "heard(self, 0.2)"` carries a comment explaining that hearing lands
+    after the work step. Candidate: interrupt on events (`on: noise`).
+  - **One-shot triggers are hand-built**: `survival_tip` polls `not
+    in_journal(...)` every tick; first quest stages use `when: "true"`.
+    Social games will multiply these. Candidate: `once: true`, or the
+    event triggers above.
+  - **Two spellings for changing a measurement**: statuses write `rates:
+    { hp: -0.2 }`, effects write `{ type: apply, measurement: hp, delta:
+    -0.2 }` (~25 times, mostly items). Candidate shorthand: `apply: {
+    hunger: -35, thirst: 3 }`.
+  - **Overrides force copying upstream values.** `hardship` doubles
+    thirst by copying the whole `std_needs` rate expression (it drifts
+    silently if upstream changes), restates all of `kitchen_food`'s
+    entries to change weights; `zombie` and `vampire` restate
+    `defeat.when` to change only the message. Candidates: **pack
+    parameters** read by expressions, a `scale` for numeric overrides,
+    or a deeper merge for `start.defeat` — a deliberate revisit of the
+    shallow merge of `m7-overrides`.
+  - **`for` is repeated on every rule**: `has_tag("living")` 9 times,
+    `undead` 5, `bunny` 4. Candidate: a default `for` per file or group.
+  - **Spawn grids are hand-computed**: `zombie/outbreak.yaml` has 36
+    `populate` rects over the city's 59×59 blocks. Candidates: density
+    by room or region tag, or a Tiled region layer.
+  - **Exposure is tagged tile by tile**: the vampire needs `shade` or
+    `sunlit` on every tile, and untagged floors burn as if outdoors. A
+    derived "roofed/indoors" property (§4 sketched
+    `tile.exposed_to_sky`) would replace the tags.
+  - Smaller: no count by item tag (`stocked` adds two `count_item`
+    calls); every item and archetype spells `sprite: <id>_img`; no
+    fraction-of-max for measurements (`scorched` hard-codes `hp < 25`);
+    NPCs can only target `player` (`can_see(self, player)`, `target:
+    player`), which the faction games will hit first (see the
+    `nearest(...)` note under `m8-factions`).
 - ~~Projection: classic 2:1 dimetric? Tile size?~~ **Decided in M1:**
   **classic 2:1 dimetric** with a **64×32 px** tile diamond
   (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); 32 px raised blocks; tile
