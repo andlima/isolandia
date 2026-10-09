@@ -11,14 +11,16 @@ import { CameraRig } from '../iso/camera.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
+import { bindingFor } from './bindings.ts';
 import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
+import { escapeTarget, hintText, readHelpSeen, trackWindows, writeHelpSeen, type InputKind, type WindowId } from './help.ts';
+import { FirstRunHint, HelpOverlay, PauseMenu } from './help-dom.ts';
 import { Hud, hudTimeView, type HudTimeHandlers } from './hud.ts';
 import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
 import { LogView } from './log-dom.ts';
 import { FixedTickLoop } from './loop.ts';
-import { PAUSE_KEYS, speedKey } from './keys.ts';
 import { PerfMeter } from './perf.ts';
 import { clickPlan, edgeWalkIntent } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
@@ -244,6 +246,79 @@ async function main(): Promise<void> {
   game.setAutoPause(autoPause);
   const logView = new LogView(document.body, log, { opened: () => session.panels.closeTransfer() });
 
+  // ── Controls overlay, pause menu, first-run hint ─────────────────────────
+  // The overlay's gesture column follows the last pointer used; a coarse pointer is the first guess.
+  let inputKind: InputKind = window.matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse';
+  window.addEventListener('pointerdown', (ev) => (inputKind = ev.pointerType === 'touch' ? 'touch' : 'mouse'), true);
+  const hint = new FirstRunHint(document.body);
+  const help = new HelpOverlay(document.body, () => inputKind, {
+    opened: () => {
+      hint.dismiss();
+      writeHelpSeen(store);
+    },
+  });
+  const helpToggle = document.createElement('button');
+  helpToggle.id = 'help-toggle';
+  helpToggle.textContent = 'Help [?]';
+  helpToggle.title = 'Controls (?)';
+  helpToggle.addEventListener('click', () => help.toggle());
+  document.body.append(helpToggle);
+  const pauseMenu = new PauseMenu(document.body, {
+    controls: () => help.show(),
+    game: () => {
+      game.show();
+      refreshGame();
+    },
+    titleScreen: () => location.assign(location.pathname),
+  });
+  // The first game start in this browser: the hint shows once (again when storage is blocked) and lands in the log.
+  if (!readHelpSeen(store)) {
+    const text = hintText(inputKind);
+    hint.show(text);
+    log.push([noteLine(session.world, text)], performance.now());
+    writeHelpSeen(store);
+  }
+  /** The open windows in opening order (`Escape` closes the last one). */
+  let windowOrder: WindowId[] = [];
+  const windows = () =>
+    (windowOrder = trackWindows(windowOrder, {
+      transfer: session.panels.transferOpen,
+      crafting: session.panels.craftingOpen,
+      journal: session.panels.journalOpen,
+      log: logView.open,
+      game: game.open,
+    }));
+  const closeWindow = (w: WindowId) => {
+    const { panels } = session;
+    if (w === 'transfer') panels.closeTransfer();
+    else if (w === 'crafting') panels.closeCrafting();
+    else if (w === 'journal') panels.closeJournal();
+    else if (w === 'log') logView.close();
+    else game.close();
+  };
+  /** `Escape`: the priority is `escapeTarget` (the overlay, menu and dialogue normally take the key before it gets here). */
+  const escape = () => {
+    const { menu, dialogue, world } = session;
+    const t = escapeTarget({ help: help.open, menu: menu.isOpen, dialogue: dialogue.isOpen, windows: windows() });
+    switch (t.kind) {
+      case 'help':
+        help.close();
+        break;
+      case 'menu':
+        menu.close();
+        break;
+      case 'dialogue':
+        dialogue.key('Escape');
+        break;
+      case 'window':
+        closeWindow(t.window);
+        break;
+      case 'pause':
+        pauseMenu.toggle(world.ended);
+        break;
+    }
+  };
+
   const input = new Input(app.canvas, () => session.world, {
     pan: (dx, dy) => {
       session.menu.close();
@@ -272,38 +347,66 @@ async function main(): Promise<void> {
     hover: (p) => hover.move(p),
     longPress: openMenu,
     menu: openMenu,
-    captureKey: (code) => session.menu.key(code) || session.dialogue.key(code),
+    // The overlay and the pause menu take every key while open; `?` always reaches the shell, even over a menu or a conversation.
+    captureKey: (code, key) => help.key(code, key) || pauseMenu.key(code, key) || (bindingFor(code, key) !== 'help' && (session.menu.key(code) || session.dialogue.key(code))),
     paused: () => pace.paused,
-    key: (code) => {
+    // One case per binding id of `BINDINGS` (a test checks the table against these cases).
+    key: (id) => {
       const { hud, panels, menu, world } = session;
-      if (PAUSE_KEYS.has(code)) pace.togglePause();
-      const speed = speedKey(code);
-      if (speed > 0) pace.faster();
-      if (speed < 0) pace.slower();
-      if (code === 'KeyH') {
-        hud.toggle();
-        logView.setHudVisible(hud.visible);
-      }
-      if (code === 'F3') hud.togglePerf();
-      if (code === 'Space') rig.recenter();
-      if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
-      if (code === 'KeyC') panels.toggleCrafting();
-      if (code === 'KeyJ') panels.toggleJournal();
-      if (code === 'KeyM') logView.toggle();
-      if (code === 'Escape') {
-        panels.closeTransfer();
-        logView.close();
-      }
-      if (code === 'KeyO') {
-        game.toggle();
-        refreshGame();
-      }
-      if (code === 'F5') game.command('save', 'quick');
-      if (code === 'F9') game.command('load', 'quick');
-      if (code === 'KeyE') {
-        const iso = playerIso(loop.alpha);
-        const p = isoToScreen(iso.x, iso.y, rig.cam);
-        menu.open(world.player.x, world.player.y, world.player.z, p.x, p.y);
+      switch (id) {
+        case 'pause':
+          pace.togglePause();
+          break;
+        case 'faster':
+          pace.faster();
+          break;
+        case 'slower':
+          pace.slower();
+          break;
+        case 'hud':
+          hud.toggle();
+          logView.setHudVisible(hud.visible);
+          break;
+        case 'perf':
+          hud.togglePerf();
+          break;
+        case 'recenter':
+          rig.recenter();
+          break;
+        case 'inventory':
+          panels.toggleInventory();
+          break;
+        case 'crafting':
+          panels.toggleCrafting();
+          break;
+        case 'journal':
+          panels.toggleJournal();
+          break;
+        case 'log':
+          logView.toggle();
+          break;
+        case 'game':
+          game.toggle();
+          refreshGame();
+          break;
+        case 'quicksave':
+          game.command('save', 'quick');
+          break;
+        case 'quickload':
+          game.command('load', 'quick');
+          break;
+        case 'help':
+          help.toggle();
+          break;
+        case 'escape':
+          escape();
+          break;
+        case 'menu': {
+          const iso = playerIso(loop.alpha);
+          const p = isoToScreen(iso.x, iso.y, rig.cam);
+          menu.open(world.player.x, world.player.y, world.player.z, p.x, p.y);
+          break;
+        }
       }
     },
     climb: (dz) => {
@@ -319,6 +422,9 @@ async function main(): Promise<void> {
   const frame = (now: number) => {
     input.frame(now);
     pace.windows(session.panels.windowOpen || game.open || logView.open, autoPause);
+    // The overlay and the pause menu pause the world (nothing is left to pause after defeat or victory).
+    pace.modal((help.open || pauseMenu.open) && !session.world.ended);
+    windows();
     const paused = pace.paused;
     // A movement key held into the pause must be pressed again afterwards.
     if (paused && !wasPaused) input.clearMoves();

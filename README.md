@@ -34,13 +34,15 @@ http://localhost:5173/?packs=vampire&seed=42
 http://localhost:5173/?packs=zombie,hardship
 ```
 
-Move with the arrow keys, WASD or the numpad, or click a tile to walk
-there. Right-click (or long-press) a tile for what you can do there, or
-press `E` for your own cell (see [docs/ui.md](docs/ui.md)). `C` opens the
-crafting panel. On stairs, `PageUp`/`<` and `PageDown`/`>` climb a
-floor (the floors above you are cut away). Space recenters the camera. `F5` quicksaves, `F9`
-quickloads and `O` opens the Game panel with three save slots and file
-export/import (see [docs/saves.md](docs/saves.md)).
+Press `?` (or the **Help [?]** button) for every key and gesture, and
+`Escape` for the pause menu. Move with the arrow keys, WASD or the numpad,
+or click a tile to walk there. Right-click (or long-press) a tile for what
+you can do there, or press `E` for your own cell (see
+[docs/ui.md](docs/ui.md)). `C` opens the crafting panel. On stairs,
+`PageUp`/`<` and `PageDown`/`>` climb a floor (the floors above you are cut
+away). Space recenters the camera. `F5` quicksaves, `F9` quickloads and `O`
+opens the Game panel with three save slots and file export/import (see
+[docs/saves.md](docs/saves.md)).
 
 ### Terminal
 
@@ -53,9 +55,9 @@ npm run play -- vampire hardship          # a genre mod plus a balance mod
 npm run play -- zombie --load isolandia-save.json
 ```
 
-`q` quits, `g` takes everything nearby, `1`–`9` uses an item, `d 1`–`9`
-drops one, `<`/`>` climb stairs. `S` saves to `--save-file` (default
-`isolandia-save.json`) and `L` loads it.
+`?` lists the keys. `q` quits, `g` takes everything nearby, `1`–`9` uses
+an item, `d 1`–`9` drops one, `<`/`>` climb stairs. `S` saves to
+`--save-file` (default `isolandia-save.json`) and `L` loads it.
 
 ## Packs
 

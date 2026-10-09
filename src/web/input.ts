@@ -8,22 +8,26 @@
  */
 
 import type { World } from '../core/index.ts';
+import { bindingFor } from './bindings.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
-import { climbKey, MOVE_KEYS, MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
+import { MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
+
+/** Binding ids `Input` handles itself (held movement, climbing); every other key binding reaches `key(id)`. */
+export const INPUT_BINDINGS: ReadonlySet<string> = new Set(['move', 'climb_up', 'climb_down']);
 
 export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
   /** A click or tap; `shift` when Shift was held on release. */
   click(sx: number, sy: number, shift: boolean): void;
   /** A mouse or pen pointer resting over the canvas with no button down, or null when it leaves, drags or presses. */
   hover?(p: { sx: number; sy: number } | null): void;
-  /** Non-movement key presses (`KeyboardEvent.code`), without auto-repeat. */
-  key(code: string): void;
+  /** A key press that dispatches to a binding (`bindingFor`, by its id), other than movement and climbing, without auto-repeat. */
+  key(id: string): void;
   /** A climb key (PageUp/PageDown, `<`/`>`): one floor up (1) or down (-1), without auto-repeat. */
   climb?(dz: 1 | -1): void;
   /** Right-click on the canvas (the browser's own menu is suppressed there only). */
   menu(sx: number, sy: number): void;
-  /** Offered every key press first (auto-repeat included); true consumes it (e.g. an open menu). */
-  captureKey?(code: string): boolean;
+  /** Offered every key press first (auto-repeat included) with its `code` and `key`; true consumes it (e.g. an open menu). */
+  captureKey?(code: string, key: string): boolean;
   /** True while the shell is paused: movement keys are ignored (no steps or turns). */
   paused?(): boolean;
 }
@@ -82,20 +86,21 @@ export class Input {
       // F5/F9 are quicksave/quickload: never reload the page, even with a modifier or on auto-repeat.
       if (suppressesDefault(ev.code)) ev.preventDefault();
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-      if (on.captureKey?.(ev.code)) {
+      if (on.captureKey?.(ev.code, ev.key)) {
         ev.preventDefault();
         return;
       }
-      const dz = climbKey(ev.key);
-      if (dz !== 0) {
+      const id = bindingFor(ev.code, ev.key);
+      if (id === null) return;
+      if (id === 'climb_up' || id === 'climb_down') {
         ev.preventDefault();
-        if (!ev.repeat) on.climb?.(dz);
-      } else if (MOVE_KEYS[ev.code]) {
+        if (!ev.repeat) on.climb?.(id === 'climb_up' ? 1 : -1);
+      } else if (id === 'move') {
         ev.preventDefault();
         if (on.paused?.()) return;
         this.queue(this.moves.down(ev.code, ev.repeat, this.now()));
       } else if (!ev.repeat) {
-        on.key(ev.code);
+        on.key(id);
       }
     });
     window.addEventListener('keyup', (ev) => this.moves.up(ev.code));

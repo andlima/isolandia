@@ -148,10 +148,57 @@
       }
       #crafting { left: 8px; right: auto; bottom: 40px; }
       #journal { top: 36px; right: 8px; max-width: 380px; }
-      #journal-toggle {
+      #journal-toggle, #help-toggle {
         position: fixed; top: 8px; right: 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
         background: #333a44; border: 1px solid #556; border-radius: 3px; padding: 2px 8px; cursor: pointer;
       }
+      #journal-toggle { right: 80px; }
+      .help-backdrop {
+        position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+        padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.45);
+      }
+      .help-backdrop[hidden] { display: none; }
+      /* The overlay paints above the pause menu (both are backdrops; the menu is the later sibling). */
+      #help { z-index: 21; }
+      .help-panel, .pause-panel {
+        box-sizing: border-box; display: flex; flex-direction: column;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: rgba(15, 17, 22, 0.96); border: 1px solid #556; border-radius: 6px;
+      }
+      .help-panel { width: min(600px, 100%); max-height: 100%; padding: 8px 12px 10px; }
+      .help-head { display: flex; align-items: flex-start; flex: none; }
+      .help-head .panel-title { flex: 1; margin: 0; font-size: 15px; }
+      .help-close {
+        font: inherit; font-size: 12px; color: #e8e8e8; background: #333a44; border: 1px solid #556; border-radius: 3px; padding: 0 7px; cursor: pointer;
+      }
+      .help-body { flex: 1; min-height: 0; overflow: auto; margin-top: 4px; }
+      .help-section-title { color: #c9a25a; font-weight: bold; margin-top: 8px; }
+      .help-context { color: #8a8f99; font-size: 11px; margin: 4px 0 0 4px; }
+      .help-row { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
+      .help-keys { flex: 0 0 42%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px; }
+      .help-keys kbd {
+        display: inline-block; padding: 0 5px; font: 12px/18px ui-monospace, Menlo, Consolas, monospace; color: #ffd23f;
+        background: #262b35; border: 1px solid #556; border-bottom-width: 2px; border-radius: 3px;
+      }
+      .help-gesture { font-size: 12px; color: #8fd3ff; }
+      .help-label { flex: 1; min-width: 0; }
+      .help-footer { flex: none; margin-top: 6px; font-size: 11px; color: #8a8f99; }
+      @media (max-width: 420px) {
+        .help-panel { padding: 6px 8px 8px; }
+        .help-row { flex-direction: column; gap: 0; }
+        .help-keys { flex-basis: auto; }
+      }
+      .pause-panel { gap: 6px; min-width: 200px; padding: 10px 14px 12px; }
+      .pause-panel .panel-title { margin: 0 0 4px; text-align: center; font-size: 15px; }
+      .pause-item { font: inherit; color: #e8e8e8; background: #333a44; border: 1px solid #556; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+      .pause-item:hover, .pause-item:focus-visible { background: #45506a; border-color: #ffd23f; outline: none; }
+      #help-hint {
+        position: fixed; top: 76px; left: 50%; transform: translateX(-50%); padding: 4px 12px; pointer-events: none;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+        background: rgba(0, 0, 0, 0.75); border: 1px solid #556; border-radius: 4px; transition: opacity 1s linear;
+      }
+      #help-hint[hidden] { display: none; }
+      #help-hint.help-hint-faded { opacity: 0; }
       #journal-toast {
         position: fixed; top: 44px; left: 50%; transform: translateX(-50%); max-width: min(560px, 90vw); padding: 4px 10px;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ffe9a8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
