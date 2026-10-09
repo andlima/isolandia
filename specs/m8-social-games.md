@@ -3,7 +3,7 @@ id: m8-social-games
 area: content
 priority: 40
 depends_on: [m8-flags-quests, m8-dialogues, m8-factions]
-description: M8 playable result — two new mods of the `town` base game built only from YAML, assets and the M8 primitives: `noir` (a night-time murder mystery in the old town block, with suspects to question, clues as journal entries, a witnessed crime, police/mob standing and an accusation that wins or loses) and `western` (High Noon, with aim/nerve measurements, target practice, favours that win the town over, a hostile gang and a duel settled by dialogue and a roll, talked down or bribed), with scenario tests and M8 marked done
+description: "M8 playable result — two new mods of the `town` base game built only from YAML, assets and the M8 primitives: `noir` (a night-time murder mystery in the old town block, with suspects to question, clues as journal entries, a witnessed crime, police/mob standing and an accusation that wins or loses) and `western` (High Noon, with aim/nerve measurements, target practice, favours that win the town over, a hostile gang and a duel settled by dialogue and a roll, talked down or bribed), with scenario tests and M8 marked done"
 ---
 
 # M8d — A noir mystery and a western duel

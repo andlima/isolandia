@@ -3,7 +3,7 @@ id: m8-dialogues
 area: sim
 priority: 40
 depends_on: [m8-flags-quests]
-description: M8 dialogues — a pack-defined `dialogues` domain (conditional entry nodes, nodes with speaker/text/effects, choices with when/unavailable/consume/give/effects/once/to), archetype `dialogue`, a `talk` action and *Talk to* interaction with walk-then-talk, a paused world while a conversation is open (`choose`/`leaveConversation`), an `npc` scope and `on: npc` effects, conversation in saves, a browser dialogue box and a terminal conversation view
+description: "M8 dialogues — a pack-defined `dialogues` domain (conditional entry nodes, nodes with speaker/text/effects, choices with when/unavailable/consume/give/effects/once/to), archetype `dialogue`, a `talk` action and *Talk to* interaction with walk-then-talk, a paused world while a conversation is open (`choose`/`leaveConversation`), an `npc` scope and `on: npc` effects, conversation in saves, a browser dialogue box and a terminal conversation view"
 ---
 
 # M8b — Dialogues

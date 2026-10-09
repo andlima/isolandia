@@ -8,6 +8,10 @@ description: Short one-line description of the feature
 
 To permanently exclude a spec from dispatch, add `obsolete: true` to frontmatter.
 
+The frontmatter must be valid YAML: quote `description` (`description: "…"`)
+whenever it contains `: ` or ` #` — e.g. `override: true` or `on: npc` inside
+backticks — or `spec list` silently drops the spec and it is never dispatched.
+
 # Example Feature
 
 ## Goal
