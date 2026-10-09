@@ -11,6 +11,8 @@ export const GAMES = {
   town: ['packs/std', 'packs/std-needs', 'packs/town'],
   zombie: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/zombie'],
   vampire: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/vampire'],
+  noir: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/noir'],
+  western: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/western'],
   garden: ['packs/std', 'packs/garden'],
 } as const;
 
@@ -24,6 +26,8 @@ export const GENRE_AT = {
   town: { x: 142, y: 157 },
   zombie: { x: 142, y: 157 },
   vampire: { x: 49, y: 54 },
+  noir: { x: 142, y: 157 },
+  western: { x: 142, y: 157 },
   garden: { x: 0, y: 0 },
 } as const;
 

@@ -392,20 +392,20 @@ their items, and player actions fail with `no_inventory`.
 
 ### `maps`
 
-A map comes either from **ASCII** fields (`legend`, `rows` or `floors`,
-`rooms`) or from a **Tiled** JSON map (`tiled`); mixing the two is a load
-error. Both load to the same map definition. ASCII is a fixture format (tests, small
+A map comes either from **ASCII** fields (`legend`, `rows` or `floors`)
+or from a **Tiled** JSON map (`tiled`); mixing the two is a load error.
+`rooms` and `spawns` work on both. Both load to the same map definition. ASCII is a fixture format (tests, small
 maps like `garden`); real worlds are edited in [Tiled](#tiled-maps).
 
 | Field    | Type                         | Notes |
 |----------|------------------------------|-------|
 | `id`     | id                           | |
-| `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`floors`/`rooms` (see [Tiled maps](#tiled-maps)) |
+| `tiled`  | path to a `.tmj`             | relative to the pack root, like asset `file`s; replaces `legend`/`rows`/`floors` (see [Tiled maps](#tiled-maps)) |
 | `legend` | map char → `{ tile, spawn?, player?, facing? }` | `tile`: tile id; `spawn`: archetype id placed on that cell; `player: true` marks the player start (exactly one per start map, on any floor); `facing`: orientation of the cell's tile (see below) |
 | `rows`   | list of equal-length strings | a one-floor map; every character must be in the legend, except the space (an [empty cell](#floors)) |
 | `floors` | list of `{ rows, edges? }`   | a map with stacked floors instead of `rows`: entry *z* is floor *z*, and every floor has the same size (see [Floors](#floors)) |
 | `edges`  | boolean, default `false`     | the rows use the double-resolution notation with [edges](#edge-walls) between the cells; on the map (every floor) or on one `floors` entry |
-| `rooms`  | list of `{ rect: [x, y, w, h], tags: [...], floor? }` | optional; see below |
+| `rooms`  | list of `{ rect: [x, y, w, h], tags: [...], floor? }` | optional, on ASCII and Tiled maps (added to a Tiled map's `room` objects) and on composites; see below |
 | `spawns` | list of `{ archetype, at: [x, y] \| [x, y, z] }` | optional, on ASCII and Tiled maps (not composites); see [Spawns](#spawns) |
 
 ```yaml
@@ -463,7 +463,11 @@ archetype tags. Expressions test them with `tile.in_room("kitchen")`, and
       - { rect: [10, 2, 6, 3], tags: [bedroom], floor: 1 }   # upstairs
 ```
 
-A room lies on one floor: `floor` (default `0`) must exist.
+A room lies on one floor: `floor` (default `0`) must exist. On a
+[Tiled map](#tiled-maps) the YAML `rooms` are **added** to the map's `room`
+objects, so a [mod](#mods-and-overrides) can tag a part's cells (a
+`crime_scene`) without touching the Tiled file, and `rooms` is an ordinary
+field: an override replaces the YAML list, never the Tiled rooms.
 
 #### Edge walls
 

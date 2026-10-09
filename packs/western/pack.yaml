@@ -1,0 +1,6 @@
+namespace: wst
+name: High Noon
+version: 0.1.0
+depends: [std, std_needs, town]
+kind: mod
+description: Black Jack's gang rides in at noon. Practise your aim, win the town over, steady your nerves, then face him on Main Street.

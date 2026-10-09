@@ -748,9 +748,10 @@ class Loader {
       if (v['tiled'] === undefined || isComposite(v)) continue;
       this.tiledMaps[d.index] = null;
       const src = at(d.srcOf('tiled'), 'tiled');
-      const mixed = ASCII_MAP_FIELDS.filter((k) => v[k] !== undefined);
+      // `rooms` is shared: YAML rooms are added to the Tiled room objects (like `spawns`).
+      const mixed = ASCII_MAP_FIELDS.filter((k) => k !== 'rooms' && v[k] !== undefined);
       if (mixed.length) {
-        this.sink.add(src, `a map takes either the ASCII fields (legend, rows or floors, rooms) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
+        this.sink.add(src, `a map takes either the ASCII fields (legend, rows or floors) or 'tiled', not both (remove ${mixed.map((k) => `'${k}'`).join(', ')})`);
         continue;
       }
       const raw = v['tiled'];
@@ -806,7 +807,8 @@ class Loader {
         facings,
         spawns,
         playerStart,
-        rooms: this.roomSets(rects, width, height, floors),
+        // The Tiled `room` objects, then any `rooms` written in YAML (a mod can tag a part's cells).
+        rooms: this.roomSets([...rects, ...this.roomRects(f, width, height, floors)], width, height, floors),
         populate: [],
         composite: false,
       };

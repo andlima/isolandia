@@ -1,0 +1,122 @@
+# The case (docs/packs.md#quests): clues as journal entries, the quest that
+# tracks the night, and searching the crime scene.
+#
+# ── The solution, for modders and reviewers ──────────────────────────────
+#
+#   Harold Vane lies dead in the upstairs bedroom of the north-east house.
+#   The killer is MR. PIKE, the lodger: Vane owed him two hundred, Pike came
+#   up to collect at ten and it ended with a bottle. Pike says he was out all
+#   night at cards.
+#
+#   Clues (journal category "Clues"), seven in all:
+#     dot_light     Dot (across the road): a light upstairs at ten, and a tall
+#                   man's shadow in a hat.                       → points at Pike
+#     widow_alibi   Mrs. Vane: at her sister's until eleven.     → neutral
+#     mickey_debt   Mickey (mob): Vane owed Pike two hundred.    → motive
+#     ledger        the LOCKED CABINET in the bathroom (search it slowly, or
+#                   force the drawer in a hurry): Vane's ledger with Pike's
+#                   debt and his threat.                         → motive, proof
+#     photograph    the upstairs dresser: Mrs. Vane on another man's arm,
+#                   torn in two.                                 → RED HERRING (the widow)
+#     betting_slip  under the mattress upstairs: three hundred owed to
+#                   Mickey's book.                               → RED HERRING (the mob)
+#     pike_lied     ask Pike about the light (needs dot_light): he changes
+#                   his story.                                   → the lie
+#
+#   Sgt. Hale hears the accusation at the front door. Naming Pike needs
+#   `pike_lied` and `ledger` (the lie and the motive) and wins. Naming the
+#   widow (with the photograph or her alibi) or the Family (with the slip or
+#   Mickey's word) is the WRONG MAN and loses. Dawn (06:00, day 2) with no
+#   name is a COLD CASE and loses. If the police turn Hostile (a forced
+#   drawer seen by the officer, a bribe to Mickey, a mouth on you in front of
+#   Hale), Hale will not hear a name at all, and dawn comes.
+#
+#   Intended flow (about half the night): Hale at the door → the widow in the
+#   kitchen and Pike in his room → Dot across the road → upstairs to search
+#   → the bathroom cabinet → back to Pike about the light → Hale.
+# ─────────────────────────────────────────────────────────────────────────
+
+vars:
+  - { id: talked_widow, initial: false }
+  - { id: talked_pike, initial: false }
+  - { id: talked_mickey, initial: false }
+
+journal:
+  - { id: dot_light, category: Clues, text: "Dot saw a light in the Vanes' upstairs window at ten sharp, and a tall man's shadow in a hat. Harold never wore a hat." }
+  - { id: widow_alibi, category: Clues, text: "Mrs. Vane says she was at her sister's until eleven and found him when she came in." }
+  - { id: mickey_debt, category: Clues, text: "Mickey says Vane owed the lodger two hundred, and Pike was getting loud about it." }
+  - { id: ledger, category: Clues, text: "Vane's ledger, locked in the bathroom cabinet: 'Pike — 200. Says he collects Tuesday, one way or another.'" }
+  - { id: photograph, category: Clues, text: "In the dresser upstairs: a photograph of Mrs. Vane on another man's arm, torn in two." }
+  - { id: betting_slip, category: Clues, text: "Under the mattress: a betting slip from Mickey's book. Three hundred down." }
+  - { id: pike_lied, category: Clues, text: "Pike said he was out all night. Pressed about the light, he said he came back at ten for his coat. Pike lied." }
+
+quests:
+  - id: elm_street
+    title: Death on Elm Street
+    stages:
+      # Hale's dialogue starts the case.
+      - id: sergeant
+        journal: "Sgt. Hale gave you the case: Harold Vane, dead upstairs. Question the widow in the kitchen and the lodger in his room, and have a name by dawn."
+      - id: household
+        when: 'var("talked_widow") and var("talked_pike")'
+        journal: "The widow and the lodger have told their stories. Search the house, ask the neighbours; somebody on this block is lying."
+      - id: name_killer
+        when: 'in_journal("dot_light") + in_journal("widow_alibi") + in_journal("mickey_debt") + in_journal("ledger") + in_journal("photograph") + in_journal("betting_slip") + in_journal("pike_lied") >= 3'
+        journal: "You know enough to put a name to it. Tell Sgt. Hale at the front door, before dawn."
+      - id: solved
+        end: success
+        journal: "Pike. The ledger gave him the motive and Dot's light gave him the lie. Hale had him in cuffs before the coffee was cold."
+      - id: wrong_man
+        end: failure
+        journal: "You named the wrong one. By noon the wrong man had a lawyer, Pike had a train ticket, and you had a desk."
+      - id: cold_case
+        end: failure
+        when: 'world.day >= 2 and world.time_of_day >= 6'
+        journal: "Dawn came up grey over Elm Street with no name on the sheet. The file went to the bottom of the drawer."
+
+# Searching the crime scene. Three pieces of furniture, one clue each; a
+# clue already in the journal makes the piece "Nothing more here". Only
+# cells in the `crime_scene` room count, so the rest of the town's
+# furniture is just furniture.
+actions:
+  - id: search_cabinet
+    label: Search
+    progress: Picking the lock
+    target: { tiles: [cabinet] }
+    when: 'tile.in_room("crime_scene") and not in_journal("ledger")'
+    unavailable: Nothing more here
+    duration: 150                     # a careful job with a hairpin: two and a half hours
+    effects:
+      - { type: journal, entry: ledger }
+  # The quick way into the locked cabinet: a crowbar's worth of noise, and a
+  # crime if a policeman sees it. The police mark it against you and the
+  # Family hears of it through `spread`.
+  - id: force_drawer
+    label: Force the drawer
+    progress: Forcing the drawer
+    target: { tiles: [cabinet] }
+    when: 'tile.in_room("crime_scene") and not in_journal("ledger")'
+    unavailable: Nothing more here
+    duration: 3
+    effects:
+      - { type: noise, radius: 10 }
+      - { type: journal, entry: ledger }
+      - { type: reputation, faction: police, delta: -30, witnessed: 8, spread: true }
+  - id: search_dresser
+    label: Search
+    progress: Going through the drawers
+    target: { tiles: [dresser] }
+    when: 'tile.in_room("crime_scene") and not in_journal("photograph")'
+    unavailable: Nothing more here
+    duration: 75
+    effects:
+      - { type: journal, entry: photograph }
+  - id: search_bed
+    label: Search
+    progress: Lifting the mattress
+    target: { tiles: [bed] }
+    when: 'tile.in_room("crime_scene") and not in_journal("betting_slip")'
+    unavailable: Nothing more here
+    duration: 75
+    effects:
+      - { type: journal, entry: betting_slip }

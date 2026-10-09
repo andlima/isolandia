@@ -1,0 +1,167 @@
+# Who says what (docs/packs.md#dialogues). The clues they give are journal
+# entries from case.yaml; the vars record who has been questioned.
+
+dialogues:
+  # Sgt. Hale, at the front door: gives the case, hears the accusation.
+  - id: hale
+    start:
+      - { when: 'quest_succeeded("elm_street") or quest_failed("elm_street")', node: closed }
+      - { when: 'hostile(npc, player)', node: refuses }
+      - { when: 'not quest_active("elm_street")', node: case }
+      - { node: report }
+    nodes:
+      case:
+        text: "Harold Vane. Upstairs, head stove in with his own bottle. The widow's in the kitchen, the lodger's in his room, and the neighbours saw nothing, as usual. You've got till dawn."
+        effects:
+          - { type: quest, quest: elm_street, stage: sergeant }
+        choices:
+          - { text: "I'll find your man.", to: end }
+          - id: insult
+            once: true
+            text: "I don't take orders from a desk sergeant."
+            effects:
+              - { type: reputation, faction: police, delta: -30 }
+            to: sour
+      sour:
+        text: "Then find him faster, detective. And watch your mouth on my block."
+      report:
+        text: "Got a name for me, or just cold feet?"
+        choices:
+          - text: "It was Pike. The ledger, and the lie about the light."
+            when: 'in_journal("pike_lied") and in_journal("ledger")'
+            unavailable: You need more than a hunch
+            effects:
+              - { type: quest, quest: elm_street, stage: solved }
+            to: solved
+          - text: "The widow did it."
+            when: 'in_journal("photograph") or in_journal("widow_alibi")'
+            unavailable: You need more than a hunch
+            effects:
+              - { type: quest, quest: elm_street, stage: wrong_man }
+            to: wrong
+          - text: "Mickey's people did it."
+            when: 'in_journal("betting_slip") or in_journal("mickey_debt")'
+            unavailable: You need more than a hunch
+            effects:
+              - { type: quest, quest: elm_street, stage: wrong_man }
+            to: wrong
+          - { text: "Not yet.", to: end }
+      solved:
+        text: "Hale reads the ledger twice and nods once. 'Book him.'"
+      wrong:
+        text: "Hale writes the name down without looking at you. 'Fine. It's your badge.'"
+      refuses:
+        text: "Hale doesn't look up. 'Get off my block before I run you in with the rest of them.'"
+      closed:
+        text: "The case is closed, detective. Go home."
+
+  # The officer on his beat.
+  - id: officer
+    start: beat
+    nodes:
+      beat:
+        text: "Keep moving, detective. Sergeant's orders."
+        choices:
+          - text: "Seen anything on your rounds?"
+            when: 'reputation("police") >= 10'
+            unavailable: He looks straight through you
+            to: rounds
+          - { text: "Carry on.", to: end }
+      rounds:
+        text: "Quiet, till the widow screamed. Lodger's door was shut every time I passed the window. For what that's worth."
+
+  # Mrs. Vane, in the kitchen.
+  - id: widow
+    start:
+      - { when: 'var("talked_widow")', node: again }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "She doesn't look up from the cup she isn't drinking. 'He's upstairs. I can't go up there again.'"
+        effects:
+          - { type: set_var, var: talked_widow, value: 1 }
+          - { type: reputation, faction: neighbours, delta: 10 }   # gentle with the widow: the street notices
+        choices:
+          - { text: "Where were you tonight?", to: alibi }
+          - { text: "Who'd want him dead?", to: enemies }
+          - { text: "I'm sorry for your loss.", to: end }
+      alibi:
+        text: "'At my sister's, across town. I came in at eleven and the door was open.' Her hands are steady. Too steady."
+        effects:
+          - { type: journal, entry: widow_alibi }
+      enemies:
+        text: "'Harold owed money to everyone on this street and the lodger upstairs. He was never short of enemies, only of cash.'"
+      again:
+        text: "'Find who did it, detective. Then leave us alone.'"
+        choices:
+          - { text: "Where were you tonight?", when: 'not in_journal("widow_alibi")', to: alibi }
+          - { text: "Leave her be.", to: end }
+
+  # Mr. Pike, the lodger, in his room.
+  - id: pike
+    start:
+      - { when: 'in_journal("pike_lied")', node: caught }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "'I was out all night. Cards at Mickey's, till two. Ask anyone.' He says it a little too fast."
+        effects:
+          - { type: set_var, var: talked_pike, value: 1 }
+        choices:
+          - { text: "About the light upstairs at ten.", when: 'in_journal("dot_light")', to: light }
+          - { text: "You and Vane get along?", to: debt }
+          - { text: "That'll do for now.", to: end }
+      debt:
+        text: "'He owed me rent, not the other way round. Ask the widow.' He does not say how much."
+      light:
+        text: "He goes white. 'I... came back for my coat around ten. I didn't go up. I never went up.' A minute ago he was out all night."
+        effects:
+          - { type: journal, entry: pike_lied }
+      caught:
+        text: "Pike sits on his bed and looks at the wall. 'I want a lawyer.'"
+
+  # Dot, the neighbour across the road.
+  - id: dot
+    start:
+      - { when: 'reputation("neighbours") < 0', node: cold }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "Dot peers past you at the Vane house. 'Terrible thing. Terrible. I told Harold that lodger was trouble.'"
+        choices:
+          - { text: "What did you see tonight?", when: 'not in_journal("dot_light")', to: saw }
+          - { text: "Who'd want him dead?", to: gossip }
+          - { text: "Goodnight, Dot.", to: end }
+      saw:
+        text: "'A light upstairs, ten o'clock sharp, I was putting the cat out. And a shadow on the blind, a tall man in a hat. Harold never wore a hat.'"
+        effects:
+          - { type: journal, entry: dot_light }
+      gossip:
+        text: "'Half this street owed Mickey, and Harold owed everyone. His wife has been seen with a man from the bank, but you didn't hear it from me.'"
+      cold:
+        text: "Dot opens the door a crack. 'I don't talk to crooks, badge or no badge.' The door shuts."
+
+  # Mickey the Fixer, outside the corner store. Talks to anyone the Family
+  # does not hold against it (Neutral or better), or to a man with a few
+  # bills; the bribe warms the Family and, through `spread`, chills the police.
+  - id: mickey
+    start:
+      - { when: 'var("talked_mickey")', node: again }
+      - { when: 'reputation("mob") >= -10', node: talk }
+      - { node: wary }
+    nodes:
+      wary:
+        text: "Mickey looks through you. 'Cops' friends don't get the time of day from me.'"
+        choices:
+          - text: "Slip him a few bills."
+            effects:
+              - { type: reputation, faction: mob, delta: 20, spread: true }
+            to: talk
+          - { text: "Walk away.", to: end }
+      talk:
+        text: "'Vane? Owed everybody. Owed his lodger two hundred, and Pike was getting loud about it. Loud men get quiet fast on this street.'"
+        effects:
+          - { type: journal, entry: mickey_debt }
+          - { type: set_var, var: talked_mickey, value: 1 }
+      again:
+        text: "'I said what I said. Beat it.'"

@@ -1,0 +1,87 @@
+# Who is on the block tonight: the police, the mob and the neighbours
+# (docs/packs.md#factions), and the people themselves (each with a
+# dialogue in dialogues.yaml).
+
+factions:
+  - id: police
+    label: Police
+    reputation: 20                    # Liked: the detective carries a badge
+    relations: { mob: -80 }
+  - id: mob
+    label: The Family
+    reputation: -20                   # Wary
+    relations: { police: -80 }        # what the police gain, the Family resents
+  # The witnesses. Hidden from the Standing view; the neighbours side with the
+  # police and have no love for the Family, so a crime seen by the law, or a
+  # bribe, also costs the detective their trust.
+  - id: neighbours
+    label: Neighbours
+    reputation: 10
+    relations: { police: 30, mob: -40 }
+    hidden: true
+
+archetypes:
+  - id: hale
+    label: Sgt. Hale
+    glyph: H
+    color: "#4a6ab0"
+    sprite: hale_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: police
+    dialogue: hale
+  - id: officer
+    label: Officer
+    glyph: O
+    color: "#4a6ab0"
+    sprite: officer_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: police
+    behavior: beat
+    dialogue: officer
+  - id: widow
+    label: Mrs. Vane
+    glyph: W
+    color: "#8a5a8a"
+    sprite: widow_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: neighbours
+    dialogue: widow
+  - id: pike
+    label: Mr. Pike
+    glyph: P
+    color: "#c0b090"
+    sprite: pike_img
+    tags: [humanoid]
+    measurements: [hp]
+    dialogue: pike
+  - id: dot
+    label: Dot
+    glyph: N
+    color: "#e0c080"
+    sprite: dot_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: neighbours
+    dialogue: dot
+  - id: mickey
+    label: Mickey the Fixer
+    glyph: M
+    color: "#808090"
+    sprite: mickey_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: mob
+    dialogue: mickey
+
+behaviors:
+  # The officer walks his beat: the road and yards around the Vane house,
+  # about ten tiles either way from where he started.
+  - id: beat
+    initial: patrol
+    states:
+      patrol:
+        do: wander
+        radius: 10

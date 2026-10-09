@@ -1,0 +1,6 @@
+namespace: noir
+name: Death on Elm Street
+version: 0.1.0
+depends: [std, town]
+kind: mod
+description: A night-time murder in the old town block. Question the household, find the clues and name the killer before dawn.

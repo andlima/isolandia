@@ -11,6 +11,8 @@ const STACKS = [
   ['std', 'std-needs', 'town', 'zombie'],
   ['std', 'std-needs', 'town', 'vampire'],
   ['std', 'std-needs', 'town', 'hardship'],
+  ['std', 'std-needs', 'town', 'noir'],
+  ['std', 'std-needs', 'town', 'western'],
   ['std', 'garden'],
 ];
 const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow', 'stairs', 'ladder'];

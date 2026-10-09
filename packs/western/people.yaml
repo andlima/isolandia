@@ -1,0 +1,110 @@
+# The town, the law and the gang (docs/packs.md#factions), the people (each
+# with a dialogue in dialogues.yaml), and how the gang moves.
+
+factions:
+  - id: townsfolk
+    label: Townsfolk
+    reputation: 0                     # Neutral: nobody knows the Stranger yet
+  - id: law
+    label: The Law
+    reputation: 10
+    relations: { gang: -100 }
+  - id: gang
+    label: Black Jack's gang
+    reputation: -60                   # Hostile from the start
+    relations: { townsfolk: -50, law: -100 }
+
+archetypes:
+  - id: sheriff
+    label: Sheriff Cobb
+    glyph: C
+    color: "#d2b282"
+    sprite: sheriff_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: law
+    dialogue: sheriff
+  - id: doc
+    label: Doc
+    glyph: D
+    color: "#a0a0b0"
+    sprite: doc_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: townsfolk
+    dialogue: doc
+  - id: bartender
+    label: Bartender
+    glyph: B
+    color: "#f2f2f6"
+    sprite: bartender_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: townsfolk
+    dialogue: bartender
+  - id: kid
+    label: The kid
+    glyph: k
+    color: "#5a7aaa"
+    sprite: kid_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: townsfolk
+    dialogue: kid
+  - id: rider
+    label: Gang rider
+    glyph: r
+    color: "#9c3a2a"
+    sprite: rider_img
+    tags: [humanoid, rider]
+    measurements: [hp]
+    faction: gang
+    behavior: rider
+    dialogue: rider
+  - id: black_jack
+    label: Black Jack
+    glyph: J
+    color: "#3a3a40"
+    sprite: black_jack_img
+    tags: [humanoid]
+    measurements: [hp]
+    faction: gang
+    behavior: black_jack
+    dialogue: black_jack
+
+behaviors:
+  # The riders sit their horses at the end of Main Street until ten, then
+  # crowd anyone the gang hates (the Stranger) as soon as they see them, and
+  # drift back when they lose sight.
+  - id: rider
+    initial: wait
+    states:
+      wait:
+        do: idle
+        on:
+          - { when: 'world.hour >= 10', to: loiter }
+      loiter:
+        do: wander
+        radius: 3
+        on:
+          - { when: 'hostile(self, player) and can_see(self, player, 8)', to: crowd }
+      crowd:
+        do: pursue
+        target: player
+        on:
+          - { when: 'not can_see(self, player, 12)', to: loiter }
+  # Black Jack waits at the far end of Main Street. The noon bell (the
+  # `noon_bell` system in duel.yaml, rung from the sheriff's spot in the
+  # middle of the street) brings him walking to it, and there he stays.
+  - id: black_jack
+    initial: wait
+    states:
+      wait:
+        do: idle
+        on:
+          - { when: 'world.hour >= 12 and heard(self, 1)', to: walk }
+      walk:
+        do: investigate
+        done: stand
+      stand:
+        do: idle
