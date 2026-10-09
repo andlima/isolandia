@@ -22,6 +22,19 @@
         margin-left: auto; padding: 0 6px; font-size: 11px; font-weight: normal; color: #c9d2e3;
         background: #333a44; border: 1px solid #556; border-radius: 8px;
       }
+      #hud .hud-body { display: contents; }
+      #hud .hud-time { display: flex; align-items: center; gap: 4px; min-height: 20px; }
+      #hud .hud-paused-label { color: #ffd23f; font-size: 13px; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; }
+      #hud .hud-paused-label[hidden] { display: none; }
+      #hud .hud-time button {
+        pointer-events: auto; cursor: pointer; min-width: 28px; height: 20px; padding: 0 6px; font: 12px ui-monospace, Menlo, Consolas, monospace;
+        color: #e8e8e8; background: #333a44; border: 1px solid #556; border-radius: 4px;
+      }
+      #hud .hud-time .hud-time-pause { margin-left: auto; }
+      #hud .hud-paused .hud-time-pause { color: #1b1d22; background: #ffd23f; border-color: #ffd23f; }
+      canvas { transition: filter 0.2s; }
+      canvas.paused { filter: saturate(0.4) brightness(0.85); }
+      @media (prefers-reduced-motion: reduce) { canvas { transition: none; } }
       #hud .hud-row { display: flex; align-items: center; gap: 6px; }
       #hud .hud-label { flex: none; width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #hud .hud-label-abbr { display: none; }

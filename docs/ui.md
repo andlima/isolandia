@@ -166,6 +166,51 @@ In the terminal the same levels colour the HUD lines: a measurement line
 is yellow at `warn` and red at `danger`, and the `Status:` line is red
 while any active status has tone `bad` (`hudLineLevels`).
 
+## Time
+
+The world runs at the pack's `ticks_per_second` (1×). The shell can
+**pause** it and run it at **2×, 4× or 8×**: the simulation still steps one
+fixed tick at a time, only more (or no) ticks are asked for per second of
+wall time. Pause and speed belong to the shell (the pure `Pace` in
+`src/core/pace.ts`, used by both shells): they are never saved or hashed,
+the same inputs at the same ticks give the same world at any speed, and a
+load keeps the current pause and speed.
+
+- **`P`** or the **`Pause`** key toggles pause; **`+`** / **`=`** / numpad
+  **`+`** go faster and **`-`** / numpad **`-`** slower (stopping at 8× and
+  1×). They work with the transfer window, crafting panel, journal or Game
+  panel open, but not while the context menu or the dialogue box has the
+  keys (a conversation already pauses the world).
+- **Clock card.** Under the clock, a **⏸ / ▶** button toggles pause and a
+  **⏩ 1×** button cycles `1× → 2× → 4× → 8× → 1×`; both are real buttons
+  (touch and keyboard). While paused the card shows **Paused** and the map is
+  dimmed and desaturated (visual only). After defeat or victory it shows
+  neither **Paused** nor a speed; the buttons still click but change nothing
+  you can see, since the world no longer steps.
+- **Speed.** At speed `s` the frame loop (`FixedTickLoop`) counts wall time
+  `s` times over and runs at most `5 × s` ticks a frame; changing speed or
+  unpausing never runs a burst of catch-up ticks. When the sim cannot keep
+  up, it slows down instead of spiralling (`droppedMs`), as at 1×.
+- **Auto-pause.** The Game panel's **Pause while windows are open**
+  checkbox (default off, stored in `localStorage` under
+  `isolandia:pause-while-windows`) pauses the world while the transfer
+  window, crafting panel, journal or Game panel is open. It is separate
+  from the manual pause: `P` always flips what the card shows, so pressing
+  it during a window pause resumes, and closing the window then does not
+  pause again; a manual pause stays when the window closes.
+
+**While paused** clicks, Shift-clicks, the context menu, the transfer
+window's buttons and Craft still queue intents and actions; they apply on
+the first tick after unpausing. Movement keys are ignored (no steps or
+turns), and a key held through the pause must be pressed again. Hover
+tooltips, the camera (pan, zoom, `Space` recenter) and the panels work. The
+latest-action line and the journal toast freeze with the world; wall-clock
+notes (the save message) keep their time.
+
+In the terminal, `p` toggles pause and `+` / `=` / `-` change speed; the
+help line shows `PAUSED`, or the speed when not 1× (`4×`), before the
+`active N, dormant M` status. Movement keys do nothing while paused.
+
 ## Transfer window
 
 One window moves items between a container and your inventory: the
@@ -343,6 +388,9 @@ the browser, `MemoryStore` in tests).
 | `H` | Toggle the HUD (and hover tooltips) |
 | `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
+| `P` / `Pause` | Pause or resume ([Time](#time)) |
+| `+` / `=` / numpad `+` | Faster (2×, 4×, 8×) |
+| `-` / numpad `-` | Slower (down to 1×) |
 
 The climb keys are matched by `KeyboardEvent.key`, so `<` and `>` follow
 the keyboard layout; with no link at your cell they do nothing. On a map
@@ -350,7 +398,7 @@ with more than one floor the HUD shows `Floor N` (your floor `z`, the
 ground floor being `Floor 0`).
 
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
-loads it, and `J` shows the journal; lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
+loads it, `p` pauses and `+` / `=` / `-` change the speed, and `J` shows the journal; lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add

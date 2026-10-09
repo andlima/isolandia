@@ -24,6 +24,8 @@ export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
   menu(sx: number, sy: number): void;
   /** Offered every key press first (auto-repeat included); true consumes it (e.g. an open menu). */
   captureKey?(code: string): boolean;
+  /** True while the shell is paused: movement keys are ignored (no steps or turns). */
+  paused?(): boolean;
 }
 
 export class Input {
@@ -90,6 +92,7 @@ export class Input {
         if (!ev.repeat) on.climb?.(dz);
       } else if (MOVE_KEYS[ev.code]) {
         ev.preventDefault();
+        if (on.paused?.()) return;
         this.queue(this.moves.down(ev.code, ev.repeat, this.now()));
       } else if (!ev.repeat) {
         on.key(ev.code);
@@ -97,6 +100,11 @@ export class Input {
     });
     window.addEventListener('keyup', (ev) => this.moves.up(ev.code));
     window.addEventListener('blur', () => this.moves.clear());
+  }
+
+  /** Forget held movement keys (the shell paused): a key held through the pause must be pressed again. */
+  clearMoves(): void {
+    this.moves.clear();
   }
 
   /** Call once per frame: fires a pending long-press. */

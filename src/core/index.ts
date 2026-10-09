@@ -88,3 +88,4 @@ export { nearMiss, attitude, regardingFaction, NO_FACTIONS, type FactionTable } 
 export { edgeKey, Grid } from './sim/grid.ts';
 export { lineOfSight } from './sim/sight.ts';
 export { Rng } from './sim/rng.ts';
+export * from './pace.ts';
