@@ -249,7 +249,7 @@ test('shell views: the browser strip and history rows; the terminal M screen', (
   );
   assert.equal(STRIP_LINES, 5);
   assert.match(historyRow(log.newest!), /^Day \d+ \d\d:\d\d {2}n7$/);
-  const screen = historyLines(log.entries, 6);
+  const screen = historyLines(log.entries, 8);
   assert.equal(screen[0], 'Messages');
   assert.deepEqual(
     screen.slice(2).map((l) => l.replace(/^\d\d:\d\d /, '')),

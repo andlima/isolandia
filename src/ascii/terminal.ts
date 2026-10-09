@@ -158,9 +158,13 @@ export interface KeyState {
   history?: boolean;
 }
 
-/** The `M` screen: the newest log entries that fit in `rows` lines (heading and footer included), each `HH:MM text`. */
+/**
+ * The `M` screen: the newest log entries that fit in `rows` lines, each `HH:MM text`.
+ * The frame drawn around them (`Messages`, a blank line, a blank line and the
+ * `(any key)` footer, plus the trailing newline) takes five rows.
+ */
 export function historyLines(entries: readonly LogEntry[], rows: number): string[] {
-  const fit = Math.max(1, rows - 3);
+  const fit = Math.max(1, rows - 5);
   const shown = entries.slice(-fit).map((e) => `${timeOfDay(e.clock)} ${entryText(e)}`);
   return ['Messages', '', ...(shown.length ? shown : ['  Nothing yet.'])];
 }
