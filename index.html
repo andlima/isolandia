@@ -158,6 +158,8 @@
         padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.45);
       }
       .help-backdrop[hidden] { display: none; }
+      /* The overlay paints above the pause menu (both are backdrops; the menu is the later sibling). */
+      #help { z-index: 21; }
       .help-panel, .pause-panel {
         box-sizing: border-box; display: flex; flex-direction: column;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;

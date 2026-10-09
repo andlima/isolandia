@@ -43,7 +43,11 @@ test('bindings: unique ids, sections in order, lookup by key then by code, time 
 
 test('bindings: every key binding has a handler (a switch case in main.ts, or Input itself)', () => {
   const main = readFileSync('src/web/main.ts', 'utf8');
-  const cases = new Set([...main.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]!));
+  // Only the `key: (id) => { switch (id) {…} }` block counts: the `escape()` switch has cases named like binding ids.
+  const block = /key: \(id\) => \{[^]*?switch \(id\) \{([^]*?)\n {6}\}\n {4}\}/.exec(main);
+  assert.ok(block, 'the key dispatch block in main.ts');
+  const cases = new Set([...block[1]!.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]!));
+  assert.ok(!cases.has('dialogue') && !cases.has('window'), 'the escape() switch is not part of the block');
   const missing = keyBindings()
     .map((b) => b.id)
     .filter((id) => !cases.has(id) && !INPUT_BINDINGS.has(id));
@@ -51,6 +55,17 @@ test('bindings: every key binding has a handler (a switch case in main.ts, or In
   for (const id of INPUT_BINDINGS) assert.ok(keyBindings().some((b) => b.id === id), `${id} is a key binding`);
   // The check is not vacuous.
   assert.ok(cases.has('inventory') && cases.has('help') && cases.has('escape'));
+});
+
+test('index.html: the controls overlay stacks above the pause menu', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const z = (selector: string) => {
+    const m = new RegExp(`\\n\\s*${selector.replace(/[.#]/g, '\\$&')} \\{[^}]*z-index: (\\d+)`).exec(html);
+    assert.ok(m, `${selector} has a z-index`);
+    return Number(m[1]);
+  };
+  // Both backdrops share `.help-backdrop`; the pause menu is the later sibling, so the overlay needs the higher z-index.
+  assert.ok(z('#help') > z('.help-backdrop'));
 });
 
 test('docs: the Keys table in docs/ui.md lists every key in BINDINGS; the README quick start mentions ?', () => {

@@ -44,6 +44,8 @@ function rowEl(r: HelpRow): HTMLDivElement {
  * The centred controls overlay over a full-screen backdrop. Opening it sets
  * the first-run flag (`opened`); a click on the backdrop, the × button,
  * `Escape` or `?` closes it. Every other key is swallowed while it is open.
+ * It stacks above the pause menu (`#help` has the higher z-index), so the
+ * × button and the backdrop stay clickable when opened from *Controls*.
  */
 export class HelpOverlay {
   private readonly el: HTMLDivElement;
