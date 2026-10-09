@@ -45,6 +45,7 @@ export {
   type SaveFile,
   type RestoreResult,
   type JournalEvent,
+  type StatusEvent,
   type JournalQuest,
   type JournalItem,
   type JournalView,
@@ -88,3 +89,4 @@ export { nearMiss, attitude, regardingFaction, NO_FACTIONS, type FactionTable } 
 export { edgeKey, Grid } from './sim/grid.ts';
 export { lineOfSight } from './sim/sight.ts';
 export { Rng } from './sim/rng.ts';
+export { logLines, noteLine, loadedNote, entryText, timeOfDay, MessageLog, LOG_MAX, type LogLine, type LogEntry, type LogTone } from './log.ts';

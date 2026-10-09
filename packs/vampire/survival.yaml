@@ -10,14 +10,14 @@ statuses:
     when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
     until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
     rates: { hp: -4 }
-    hud: { tone: bad, description: Burning in the sun; find shade or a cloak }
+    hud: { tone: bad, description: Burning in the sun; find shade or a cloak, enter: The sun sears your skin!, exit: Your skin stops smouldering. }
   - id: starving
     label: Starving
     for: 'self.has_tag("undead")'
     when: "self.blood <= 10"
     until: "self.blood >= 25"
     rates: { hp: -0.25 }
-    hud: { tone: bad, description: Out of blood; losing health }
+    hud: { tone: bad, description: Out of blood; losing health, enter: The thirst for blood claws at you., exit: The blood thirst is sated. }
   # Bats notice the vampire (through windows too) and lose interest slowly.
   - id: alert
     label: Alert

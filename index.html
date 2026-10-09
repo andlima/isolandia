@@ -48,9 +48,8 @@
       #hud .hud-tone-bad { color: #ffd6d0; background: #6a2a24; border-color: #e0503f; }
       #hud .hud-tone-good { color: #d6ffd6; background: #24502a; border-color: #5fbf5f; }
       #hud .hud-tone-neutral { color: #e0e4ec; background: #3a404c; border-color: #6a7385; }
-      #hud .hud-nearby, #hud .hud-action { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #hud .hud-nearby { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #hud .hud-nearby { color: #9aa2b1; font-size: 11px; }
-      #hud .hud-action { color: #ffe9a8; }
       #hud-tip {
         position: fixed; z-index: 8; max-width: 240px; padding: 4px 8px; pointer-events: none;
         font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
@@ -146,6 +145,32 @@
         background: rgba(0, 0, 0, 0.75); border: 1px solid #c9a25a; border-radius: 4px; pointer-events: none;
       }
       #journal-toast[hidden] { display: none; }
+      #log-strip {
+        position: fixed; left: 8px; bottom: 36px; max-width: min(480px, calc(100vw - 16px)); pointer-events: none;
+        font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #e8e8e8;
+      }
+      #log-strip[hidden] { display: none; }
+      #log-strip .log-line {
+        width: fit-content; max-width: 100%; margin-top: 2px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        background: rgba(0, 0, 0, 0.6); border-radius: 3px; transition: opacity 1s linear;
+      }
+      #log-strip .log-line.log-faded { opacity: 0; }
+      .log-good { color: #8fe08f; }
+      .log-bad { color: #ff8a8a; }
+      #log {
+        left: 50%; right: auto; bottom: 64px; transform: translateX(-50%); z-index: 4; box-sizing: border-box;
+        display: flex; flex-direction: column; width: min(520px, calc(100vw - 16px)); max-width: none; max-height: 50vh; overflow: hidden;
+      }
+      #log[hidden] { display: none; }
+      #log .log-head { display: flex; align-items: flex-start; flex: none; }
+      #log .log-head .panel-title { flex: 1; margin: 0; }
+      #log .log-close { padding: 0 7px; }
+      #log .log-list { flex: 1; min-height: 0; overflow: auto; margin-top: 4px; }
+      #log .log-row { white-space: pre-wrap; }
+      #log-toggle {
+        position: fixed; right: calc(50% + 46px); bottom: 8px; font: 12px ui-monospace, Menlo, Consolas, monospace;
+        color: #e8e8e8; background: #333a44; border: 1px solid #556; border-radius: 3px; padding: 2px 8px; cursor: pointer;
+      }
       .standing-bar { position: relative; height: 4px; margin: 1px 0 4px; background: #333a44; border-radius: 2px; }
       .standing-bar::after { content: ''; position: absolute; left: 50%; top: -1px; width: 1px; height: 6px; background: #889; }
       .standing-fill { position: absolute; top: 0; height: 100%; background: #7fbf7f; border-radius: 2px; }

@@ -387,6 +387,15 @@ export interface ActivityProgress {
   readonly fraction: number;
 }
 
+/** A player status that turned on or off in the last stepped tick (`world.statusEvents`). */
+export interface StatusEvent {
+  readonly tick: number;
+  /** Qualified status id. */
+  readonly status: string;
+  /** True when the status turned on, false when it turned off. */
+  readonly entered: boolean;
+}
+
 /** A quest stage change, journal addition or standing tier change of the last stepped tick (`world.journalEvents`). */
 export interface JournalEvent {
   readonly tick: number;
@@ -764,6 +773,17 @@ export class World {
    * order (for toasts; read right after `step`). Not state: not saved or hashed.
    */
   journalEvents: JournalEvent[] = [];
+  /**
+   * Every player action record of the last stepped tick (or conversation
+   * input), in order; `lastAction` is the latest. Cleared with
+   * `journalEvents`. Not state: not saved or hashed.
+   */
+  actionEvents: ActionRecord[] = [];
+  /**
+   * The player's statuses that turned on or off in the last stepped tick, in
+   * definition order. Cleared with `journalEvents`. Not state: not saved or hashed.
+   */
+  statusEvents: StatusEvent[] = [];
   /**
    * The open conversation, or null. While it is open the world is paused:
    * `step()` is a no-op, queued intents and actions are ignored, and only
@@ -1364,7 +1384,7 @@ export class World {
     this.ctx.tick = this.tick;
     if (this.noiseCarry) this.noiseCarry = false;
     else this.pendingCount = 0;
-    if (this.journalEvents.length > 0) this.journalEvents = [];
+    this.clearEvents();
     this.syncIndex();
     this.markDormant();
     this.think();
@@ -1727,9 +1747,16 @@ export class World {
       }
     }
     o = 0;
+    const player = this.player;
     for (const e of this.entities) {
       const st = e.st;
-      for (let k = 0; k < ns; k++, o++) st[k] = next[o]!;
+      if (e === player) {
+        for (let k = 0; k < ns; k++, o++) {
+          const v = next[o]!;
+          if (st[k] !== v) this.statusEvents.push({ tick: this.tick, status: statuses[k]!.id, entered: v === 1 });
+          st[k] = v;
+        }
+      } else for (let k = 0; k < ns; k++, o++) st[k] = next[o]!;
     }
   }
 
@@ -1778,7 +1805,7 @@ export class World {
       p.pathPos = 0;
       p.lastGoto = { x: intent.x, y: intent.y, z, ok: path !== null, tick: this.tick };
       p.then = path ? (intent.then ?? null) : null;
-      if (!path && intent.then) this.lastAction = this.unreachable(intent.then);
+      if (!path && intent.then) this.record(this.unreachable(intent.then));
       if (p.then && !p.path) this.arrive(p);
     } else if (intent?.kind === 'step') {
       p.path = null;
@@ -1868,15 +1895,21 @@ export class World {
     for (const a of queue) {
       this.runner.end(this.player, 'cancelled');
       const r = this.applyAction(a);
-      if (r) this.lastAction = r;
+      if (r) this.record(r);
     }
+  }
+
+  /** A player action record: the new `lastAction`, appended to `actionEvents`. */
+  private record(r: ActionRecord): void {
+    this.lastAction = r;
+    this.actionEvents.push(r);
   }
 
   /** Record of an activity source's start or end (the player's becomes `lastAction`). */
   private recordActivity(e: Entity, s: ActivitySource, stage: ActivityStage, ok: boolean, reason: ActionFailure | null, moved: number, dropped: number, side: EdgeSide | null): void {
     if (ok && stage === 'complete') this.containerVersion++;
     if (e !== this.player) return;
-    this.lastAction = {
+    this.record({
       kind: s.kind,
       item: s.item >= 0 ? this.def.items[s.item]!.id : '',
       ...(s.action >= 0 ? { action: this.def.actions[s.action]!.id } : {}),
@@ -1888,7 +1921,7 @@ export class World {
       stage,
       ...(reason ? { reason } : {}),
       tick: this.tick,
-    };
+    });
   }
 
   /** Apply one action; `act`/`use`/`craft` that reach the activity runner record themselves (null). */
@@ -2059,11 +2092,18 @@ export class World {
     this.ctx.npc = null;
   }
 
+  /** Fresh per-tick event lists (`journalEvents`, `actionEvents`, `statusEvents`). */
+  private clearEvents(): void {
+    if (this.journalEvents.length > 0) this.journalEvents = [];
+    if (this.actionEvents.length > 0) this.actionEvents = [];
+    if (this.statusEvents.length > 0) this.statusEvents = [];
+  }
+
   /** Before a conversation input changes the world: fresh journal events and noise list for shells and the next tick. */
   private beginInput(): void {
     this.conversationVersion++;
     this.ctx.tick = this.tick;
-    if (this.journalEvents.length > 0) this.journalEvents = [];
+    this.clearEvents();
     if (!this.noiseCarry) {
       this.pendingCount = 0;
       this.noiseCarry = true;

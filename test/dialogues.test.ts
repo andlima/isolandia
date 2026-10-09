@@ -9,6 +9,7 @@ import {
   LEAVE_REFUSED_TEXT,
   loadPacks,
   loadPacksOrThrow,
+  logLines,
   MAX_DIALOGUE_ENTRIES,
   SAVE_VERSION,
   World,
@@ -659,7 +660,7 @@ test('terminal: talk in the x list, the conversation screen, digits and Escape',
   assert.deepEqual([w.player.x, w.player.y, w.player.intent], [...where, null], 'movement keys do nothing');
   handleKey(w, '1', keys);
   assert.equal(nodeOf(w), 'rumor');
-  assert.match(keys.message ?? '', /cellar/i, 'the journal toast');
+  assert.match(logLines(w).map((l) => l.text).join('\n'), /cellar/i, 'the journal line');
   handleKey(w, '1', keys);
   handleKey(w, '\x1b', keys);
   assert.equal(w.conversation, null);

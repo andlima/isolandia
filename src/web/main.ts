@@ -6,7 +6,7 @@
  */
 
 import { Application, type Container } from 'pixi.js';
-import { journalToast, loadPacks, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
+import { journalToast, loadedNote, loadPacks, logLines, MessageLog, noteLine, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
@@ -16,6 +16,7 @@ import { GamePanel } from './game-panel.ts';
 import { Hud } from './hud.ts';
 import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
+import { LogView } from './log-dom.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
 import { clickPlan, edgeWalkIntent } from './menu.ts';
@@ -57,6 +58,7 @@ class GameSession {
     stage: Container,
     textures: TextureBank,
     icons: ItemIconUrls,
+    log: MessageLog,
   ) {
     this.scene = new IsoScene(world, textures);
     stage.addChild(this.scene.root);
@@ -70,6 +72,7 @@ class GameSession {
         this.panels.closeTransfer();
       },
       input: () => {
+        log.push(logLines(world), performance.now());
         const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
         if (toast) this.hud.toast(toast);
       },
@@ -131,7 +134,9 @@ async function main(): Promise<void> {
   );
   const textures = new TextureBank(app.renderer, def, await loadAssetTextures(def, urls));
   const icons = itemIconUrls(def, urls);
-  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons);
+  // The message log outlives sessions: a load clears it and leaves a note.
+  const log = new MessageLog();
+  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons, log);
 
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
@@ -160,8 +165,11 @@ async function main(): Promise<void> {
       input.beforeTick();
       const t0 = performance.now();
       const world = session.world;
+      const tick = world.tick;
       world.step();
       perf.tick(performance.now() - t0);
+      // A step that did nothing (game over, conversation open) leaves last tick's events in place.
+      if (world.tick !== tick) log.push(logLines(world), performance.now());
       // `journalEvents` holds only the last tick's events: read them right after each step.
       const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
       if (toast) session.hud.toast(toast);
@@ -179,9 +187,10 @@ async function main(): Promise<void> {
   const refreshGame = () => {
     if (game.open) game.render(gameView(slots.metas(), message, errors));
   };
-  const report = (text: string, list: readonly string[] = []) => {
+  const report = (text: string, list: readonly string[] = [], tone: 'info' | 'bad' = list.length ? 'bad' : 'info') => {
     message = text;
     errors = list;
+    log.push([noteLine(session.world, text, tone)], performance.now());
     if (!game.open) game.note(text);
     refreshGame();
   };
@@ -192,7 +201,10 @@ async function main(): Promise<void> {
       return report(r.message, r.errors);
     }
     session.dispose();
-    session = new GameSession(r.world, app.stage, textures, icons);
+    session = new GameSession(r.world, app.stage, textures, icons, log);
+    log.clear();
+    log.push([loadedNote(r.world)], performance.now());
+    logView.setHudVisible(true);
     loop.reset();
     rig.recenter();
     message = r.message;
@@ -204,7 +216,7 @@ async function main(): Promise<void> {
     command: (command, slot) => {
       if (command === 'load') return replace(slots.load(slot, def));
       const r = command === 'save' ? slots.save(slot, session.world, new Date()) : slots.remove(slot);
-      report(r.message);
+      report(r.message, [], r.ok ? 'info' : 'bad');
     },
     exportFile: () => {
       const f = exportFile(session.world, packs, new Date());
@@ -220,6 +232,7 @@ async function main(): Promise<void> {
     titleScreen: () => location.assign(location.pathname),
     opened: () => session.panels.closeTransfer(),
   });
+  const logView = new LogView(document.body, log, { opened: () => session.panels.closeTransfer() });
 
   const input = new Input(app.canvas, () => session.world, {
     pan: (dx, dy) => {
@@ -252,13 +265,20 @@ async function main(): Promise<void> {
     captureKey: (code) => session.menu.key(code) || session.dialogue.key(code),
     key: (code) => {
       const { hud, panels, menu, world } = session;
-      if (code === 'KeyH') hud.toggle();
+      if (code === 'KeyH') {
+        hud.toggle();
+        logView.setHudVisible(hud.visible);
+      }
       if (code === 'F3') hud.togglePerf();
       if (code === 'Space') rig.recenter();
       if (code === 'KeyI' || code === 'Tab') panels.toggleInventory();
       if (code === 'KeyC') panels.toggleCrafting();
       if (code === 'KeyJ') panels.toggleJournal();
-      if (code === 'Escape') panels.closeTransfer();
+      if (code === 'KeyM') logView.toggle();
+      if (code === 'Escape') {
+        panels.closeTransfer();
+        logView.close();
+      }
       if (code === 'KeyO') {
         game.toggle();
         refreshGame();
@@ -316,6 +336,7 @@ async function main(): Promise<void> {
       );
     }
     s.panels.update();
+    logView.update(now);
     app.renderer.render(app.stage);
     requestAnimationFrame(frame);
   };

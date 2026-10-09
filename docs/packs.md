@@ -921,7 +921,7 @@ conditions and add drift while active.
 | `when`  | expression | required   | Enter condition |
 | `until` | expression | `not when` | Exit condition (use it for hysteresis) |
 | `rates` | map measurement id → number or expression | `{}` | Extra drift **per sim second** while active |
-| `hud`   | mapping    | none       | HUD hints: `tone` (`bad`, `good` or `neutral`, default `neutral`) and `description` (free tooltip text) |
+| `hud`   | mapping    | none       | HUD hints: `tone` (`bad`, `good` or `neutral`, default `neutral`), `description` (free tooltip text), and the message-log texts `enter` / `exit` |
 
 - An inactive status becomes active when `for` and `when` are truthy.
 - An active status becomes inactive when `until` is truthy or `for`
@@ -939,6 +939,12 @@ conditions and add drift while active.
   the status's current rates on the player's measurements (`Health
   −0.2/s`); the terminal prints the `Status:` line in red while any
   active status has tone `bad`.
+- `hud.enter` / `hud.exit` are the [message log](ui.md#message-log) lines
+  when the **player** gains or loses the status (NPC statuses are not
+  logged). They default to `You are now <Label>.` and `You are no longer
+  <Label>.`; an empty string (`exit: ""`) keeps that change silent.
+  Entering is logged in the status's `tone` (red for `bad`, green for
+  `good`); leaving a `bad` status is logged green.
 
 ```yaml
 statuses:
@@ -948,7 +954,7 @@ statuses:
     when: "self.hunger >= 70"
     until: "self.hunger < 40"      # stays hungry until well fed
     rates: { hp: -0.2 }
-    hud: { tone: bad, description: Losing health while hungry }
+    hud: { tone: bad, description: Losing health while hungry, enter: Your stomach growls., exit: You feel fed. }
 ```
 
 Statuses can react to sight with
@@ -1513,6 +1519,11 @@ checked as described under [dialogues](#talking).
   cancellation or interruption; `actionText` (in `src/core/hud.ts`) turns
   it into a message such as `You start barricading.` or
   `Barricade interrupted.`.
+- `world.actionEvents` lists every player record of the last stepped tick
+  (or dialogue answer) in order, and `world.statusEvents` the player's
+  statuses that turned on or off (`{ tick, status, entered }`). Both are
+  cleared with `world.journalEvents` and, like it, are not saved or
+  hashed; the [message log](ui.md#message-log) reads them.
 - Pending actions and `lastAction` are part of `snapshot()`. Once the game
   has ended (after defeat or victory), and while a conversation is open,
   `queueAction` ignores its input.
@@ -2478,7 +2489,8 @@ resolved definition (ids → indices, expressions → closures).
   catalog and stack resolver), `clock.ts`
   (in-game calendar derived from the tick), `lighting.ts` (`tintAt`),
   `hud.ts` (renderer-independent HUD model and action texts), `journal.ts` (journal
-  sections, standing rows and toast text shared by both shells), `sim/`
+  sections, standing rows and toast text shared by both shells), `log.ts`
+  (message-log lines and the `MessageLog` buffer shared by both shells), `sim/`
   (world, grid, RNG, A*, containers, and `activity.ts`: the requirement
   checks and lifecycle of timed actions, item uses and recipes, shared
   by every activity source). No Node built-ins, DOM or Pixi.
