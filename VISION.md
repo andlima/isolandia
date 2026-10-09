@@ -583,6 +583,15 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     `attitude`, `hostile` and `friendly` work between NPCs, but nothing
     seeks out enemies until a `nearest(...)`-style target and combat are
     decided.
+- ~~Can the player pause or speed up time?~~ **Decided (spec
+  `ux-time-controls`):** **pause and speed belong to the shell.** A pure
+  `Pace` (`src/core/pace.ts`) shared by both shells holds a pause and one
+  of **four speeds (1×, 2×, 4×, 8×)**; the shell asks for that many fixed
+  ticks per wall second (none while paused) and the sim still steps one
+  tick at a time. They are **never saved or hashed** and do not affect
+  determinism; a load keeps them. No slow motion, no in-sim time skips
+  (sleep), no automatic drop to 1× on danger yet. The conversation pause
+  stays world state.
 
 ## 8. Next step
 

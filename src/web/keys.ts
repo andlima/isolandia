@@ -61,6 +61,19 @@ export function climbKey(key: string): 1 | -1 | 0 {
   return CLIMB_KEYS[key] ?? 0;
 }
 
+/** Pause toggles (`KeyboardEvent.code`): `P` and the `Pause` key. */
+export const PAUSE_KEYS: ReadonlySet<string> = new Set(['KeyP', 'Pause']);
+
+/**
+ * Speed keys (`KeyboardEvent.code`): `+` / `=` and the numpad `+` go faster
+ * (1), `-` and the numpad `-` slower (-1); else 0.
+ */
+export function speedKey(code: string): 1 | -1 | 0 {
+  if (code === 'Equal' || code === 'NumpadAdd') return 1;
+  if (code === 'Minus' || code === 'NumpadSubtract') return -1;
+  return 0;
+}
+
 /** Keys whose browser default (focus change, scrolling, page reload) the game suppresses. */
 export const SUPPRESSED_KEYS: ReadonlySet<string> = new Set(['Space', 'Tab', 'F3', 'F5', 'F9', 'PageUp', 'PageDown']);
 
@@ -92,8 +105,9 @@ export class MoveKeys {
 
   /** A movement keydown; returns the step to queue now, if any. */
   down(code: string, repeat: boolean, now: number): MoveStep | null {
-    this.held.add(code);
+    // An auto-repeat of a key that is not held (dropped by `clear`) stays ignored until pressed again.
     if (repeat) return null;
+    this.held.add(code);
     const d = heldDirection(this.held);
     if (!d) return null;
     this.pressedAt = now;

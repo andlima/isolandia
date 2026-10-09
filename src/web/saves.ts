@@ -83,6 +83,27 @@ export function slotKey(packs: readonly string[], slot: SlotId): string {
   return `isolandia:save:${packs.join(',')}:${slot}`;
 }
 
+/** Storage key of the Game panel's **Pause while windows are open** option (one for every pack list). */
+export const AUTO_PAUSE_KEY = 'isolandia:pause-while-windows';
+
+/** The auto-pause option (default off; storage errors read as off). */
+export function readAutoPause(store: SaveStore): boolean {
+  try {
+    return store.read(AUTO_PAUSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Store the auto-pause option; storage errors are ignored. */
+export function writeAutoPause(store: SaveStore, on: boolean): void {
+  try {
+    store.write(AUTO_PAUSE_KEY, on ? '1' : '0');
+  } catch {
+    // As for saves, a storage failure never stops the game; the option just is not remembered.
+  }
+}
+
 /** A short, player-facing text for a storage failure. */
 export function storageErrorMessage(e: unknown): string {
   const name = e instanceof Error ? e.name : '';
