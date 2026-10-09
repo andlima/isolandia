@@ -4,7 +4,7 @@
  * re-renders only when the view changes.
  */
 
-import { hudModel, type HudLevel, type HudModel, type StatusTone, type World } from '../core/index.ts';
+import { hudModel, type HudLevel, type HudModel, type Pace, type StatusTone, type World } from '../core/index.ts';
 import { perfLine, type PerfFigures } from './perf.ts';
 
 /** Bar colour: from a measurement's or the inventory's `level`, `neutral` for a neutral measurement. */
@@ -54,6 +54,25 @@ export interface HudView {
   readonly carrying: HudCarryView | null;
   /** `Nearby: …` (one muted line, cut with `…` by the overlay), or null. */
   readonly nearby: string | null;
+}
+
+/** The clock card's time controls. */
+export interface HudTimeView {
+  /** Shows **Paused** and a ▶ button (else ⏸). */
+  readonly paused: boolean;
+  /** The speed button's text (`1×`, `2×`, …), or null after defeat or victory. */
+  readonly speed: string | null;
+}
+
+/** The time controls from the shell's pace: neither **Paused** nor a speed once the game has ended. */
+export function hudTimeView(pace: Pick<Pace, 'paused' | 'speed'>, ended: boolean): HudTimeView {
+  return ended ? { paused: false, speed: null } : { paused: pace.paused, speed: `${pace.speed}×` };
+}
+
+/** Clicks on the clock card's buttons. */
+export interface HudTimeHandlers {
+  togglePause(): void;
+  cycleSpeed(): void;
 }
 
 /** `Energy` → `Ene`, `Max power` → `MP`. */
@@ -106,6 +125,15 @@ function div(className: string, text?: string): HTMLDivElement {
   return d;
 }
 
+/** A clock-card button (`data-time` is `pause` or `speed`). */
+function timeButton(kind: 'pause' | 'speed'): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `hud-time-${kind}`;
+  b.dataset['time'] = kind;
+  return b;
+}
+
 /** A bar of `percent` (null: none) coloured `color`. */
 function bar(percent: number | null, color: string): HTMLDivElement {
   const b = div(`hud-bar${percent === null ? ' hud-bar-none' : ''}`);
@@ -119,6 +147,13 @@ function bar(percent: number | null, color: string): HTMLDivElement {
 export class Hud {
   private readonly el: HTMLDivElement;
   private readonly tip: HTMLDivElement;
+  /** The clock card, the time controls (kept across renders, so a focused button stays focused) and the rest. */
+  private readonly clockEl: HTMLDivElement;
+  private readonly timeEl: HTMLDivElement;
+  private readonly pausedLabel: HTMLDivElement;
+  private readonly pauseButton: HTMLButtonElement;
+  private readonly speedButton: HTMLButtonElement;
+  private readonly body: HTMLDivElement;
   /** Chip id whose tooltip is shown, or null. */
   private tipChip: string | null = null;
   private view: HudView | null = null;
@@ -130,14 +165,34 @@ export class Hud {
   private readonly barLabel: HTMLSpanElement;
   private readonly perf: HTMLDivElement;
   private readonly toastEl: HTMLDivElement;
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Time the journal toast stays up (ms); it counts down only while the world runs. */
+  private toastLeft = 0;
+  private time: HudTimeView = { paused: false, speed: '1×' };
+  private timeKey = '';
   private lastTick = -1;
   private barTick = -1;
   private perfShown = 0;
 
-  constructor(parent: HTMLElement) {
+  constructor(
+    parent: HTMLElement,
+    private readonly on?: HudTimeHandlers,
+  ) {
     this.el = document.createElement('div');
     this.el.id = 'hud';
+    this.el.addEventListener('click', (ev) => {
+      const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-time]');
+      if (b?.dataset['time'] === 'pause') this.on?.togglePause();
+      else if (b?.dataset['time'] === 'speed') this.on?.cycleSpeed();
+    });
+    this.clockEl = div('hud-card');
+    this.timeEl = div('hud-time');
+    this.pausedLabel = div('hud-paused-label', 'Paused');
+    this.pauseButton = timeButton('pause');
+    this.speedButton = timeButton('speed');
+    this.timeEl.append(this.pausedLabel, this.pauseButton, this.speedButton);
+    this.body = div('hud-body');
+    this.el.append(this.clockEl, this.timeEl, this.body);
+    this.renderTime();
     this.tip = document.createElement('div');
     this.tip.id = 'hud-tip';
     this.tip.hidden = true;
@@ -174,7 +229,6 @@ export class Hud {
 
   /** Remove the overlay's elements (the world is being replaced). */
   dispose(): void {
-    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     document.removeEventListener('pointerdown', this.onPointerDown, true);
     for (const el of [this.el, this.tip, this.banner, this.victoryBanner, this.bar, this.perf, this.toastEl]) el.remove();
   }
@@ -223,7 +277,7 @@ export class Hud {
       row.append(label, bar(b.percent, b.color), div('hud-value', b.value));
       return row;
     });
-    const parts: HTMLElement[] = [clock, ...rows];
+    const parts: HTMLElement[] = [...rows];
     if (v.chips.length) {
       const chips = div('hud-chips');
       for (const c of v.chips) {
@@ -243,18 +297,30 @@ export class Hud {
       n.title = v.nearby;
       parts.push(n);
     }
-    this.el.replaceChildren(...parts);
+    this.clockEl.replaceChildren(...clock.childNodes);
+    this.body.replaceChildren(...parts);
   }
 
-  /** Show a journal toast (`journalToast`) for about 4 s; a newer one replaces it. */
+  /** Update the time controls from `this.time`. */
+  private renderTime(): void {
+    const t = this.time;
+    this.timeEl.classList.toggle('hud-paused', t.paused);
+    this.pausedLabel.hidden = !t.paused;
+    const pause = t.paused ? 'Resume (P)' : 'Pause (P)';
+    this.pauseButton.textContent = t.paused ? '▶' : '⏸';
+    this.pauseButton.title = pause;
+    this.pauseButton.setAttribute('aria-label', pause);
+    this.speedButton.textContent = t.speed ? `⏩ ${t.speed}` : '⏩';
+    const speed = t.speed ? `Game speed ${t.speed} (+ / -)` : 'Game speed (+ / -)';
+    this.speedButton.title = speed;
+    this.speedButton.setAttribute('aria-label', speed);
+  }
+
+  /** Show a journal toast (`journalToast`) for about 4 s of running time; a newer one replaces it. */
   toast(text: string): void {
-    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
     this.toastEl.textContent = text;
     this.toastEl.hidden = false;
-    this.toastTimer = setTimeout(() => {
-      this.toastEl.hidden = true;
-      this.toastTimer = null;
-    }, TOAST_MS);
+    this.toastLeft = TOAST_MS;
   }
 
   /** Show or hide the perf line (F3). */
@@ -285,7 +351,21 @@ export class Hud {
     if (this.el.hidden) this.showTip(null);
   }
 
-  update(world: World): void {
+  /**
+   * Once per frame: `time` is the clock card's controls, `elapsedMs` the
+   * frame's wall time (0 while the shell is paused, so the toast freezes).
+   */
+  update(world: World, time: HudTimeView = this.time, elapsedMs = 0): void {
+    if (this.toastLeft > 0) {
+      this.toastLeft -= elapsedMs;
+      if (this.toastLeft <= 0) this.toastEl.hidden = true;
+    }
+    const timeKey = JSON.stringify(time);
+    if (timeKey !== this.timeKey) {
+      this.timeKey = timeKey;
+      this.time = time;
+      this.renderTime();
+    }
     if (world.defeat && this.banner.hidden) {
       this.banner.textContent = hudModel(world).defeat!.text;
       this.banner.hidden = false;

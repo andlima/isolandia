@@ -13,6 +13,7 @@ import {
   logLines,
   MessageLog,
   noteLine,
+  Pace,
   reasonText,
   recipeHint,
   timeOfDay,
@@ -156,6 +157,8 @@ export interface KeyState {
   journal?: string[] | null;
   /** The message history screen (`M`, `historyLines`) is open, until any key. */
   history?: boolean;
+  /** The shell's pause and speed (`p`, `+` / `=`, `-`); absent: those keys do nothing. */
+  pace?: Pace;
 }
 
 /**
@@ -167,6 +170,15 @@ export function historyLines(entries: readonly LogEntry[], rows: number): string
   const fit = Math.max(1, rows - 5);
   const shown = entries.slice(-fit).map((e) => `${timeOfDay(e.clock)} ${entryText(e)}`);
   return ['Messages', '', ...(shown.length ? shown : ['  Nothing yet.'])];
+}
+
+/** Pace keys: `p` toggles pause, `+` / `=` go faster, `-` slower. */
+export const PACE_KEYS: ReadonlySet<string> = new Set(['p', '+', '=', '-']);
+
+/** The help line's pace tag: `PAUSED`, the speed when not 1× (`4×`), or '' (also once the game has ended). */
+export function paceStatus(pace: Pace, world: World): string {
+  if (world.ended) return '';
+  return pace.paused ? 'PAUSED' : pace.speed === 1 ? '' : pace.label;
 }
 
 /**
@@ -251,7 +263,7 @@ export function conversationLines(world: World): string[] | null {
 }
 
 /** What a key asks of the terminal loop, beyond changing the world. */
-export type KeyResult = 'quit' | 'save' | 'load' | void;
+export type KeyResult = 'quit' | 'save' | 'load' | 'pace' | void;
 
 /** The message-line text for the last stepped tick's journal events (`journalToast`), or null. */
 export function journalMessage(world: World): string | null {
@@ -272,7 +284,10 @@ export function journalMessage(world: World): string | null {
  * climb through the link at the player's cell (`climbIntent`), or set
  * `state.message` to `No way up here.` / `No way down here.`. Returns
  * `'quit'` for `q`/Ctrl-C, and `'save'` / `'load'` for `S` / `L` (the
- * caller does the file work; lowercase `s`/`l` still move).
+ * caller does the file work; lowercase `s`/`l` still move). With `state.pace`,
+ * `p` toggles pause and `+` / `=` / `-` change speed (returning `'pace'`, so
+ * the caller restarts its wall-time pacing; not during a conversation, which
+ * already pauses), and movement keys do nothing while paused.
  */
 export function handleKey(world: World, key: string, state: KeyState): KeyResult {
   state.message = null;
@@ -313,6 +328,12 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
       if (!world.leaveConversation().ok) state.message = LEAVE_REFUSED_TEXT;
     }
     return;
+  }
+  if (state.pace && PACE_KEYS.has(key)) {
+    if (key === 'p') state.pace.togglePause();
+    else if (key === '-') state.pace.slower();
+    else state.pace.faster();
+    return 'pace';
   }
   const open = state.actions ?? state.crafting?.entries;
   if (open) {
@@ -362,7 +383,7 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     }
   }
   const intent = KEYMAP[key] ?? KEYMAP[key.toLowerCase()];
-  if (intent) world.queueIntent(intent);
+  if (intent && !state.pace?.paused) world.queueIntent(intent);
 }
 
 export interface TerminalIO {
@@ -396,7 +417,9 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
   const { stdin, stdout } = io;
   let world = initial;
   const tickMs = 1000 / world.def.ticksPerSecond;
-  const keys: KeyState = { dropPending: false, actions: null, crafting: null };
+  // Pause and speed belong to the shell: never saved, and kept across loads.
+  const pace = new Pace();
+  const keys: KeyState = { dropPending: false, actions: null, crafting: null, pace };
   // The message log: action results, journal and status lines, and shell notes (saves, loads).
   const log = new MessageLog();
   const say = (text: string, tone: 'info' | 'bad' = 'info') => log.push([noteLine(world, text, tone)], Date.now());
@@ -413,7 +436,7 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
         stdout.write('\x1b[H' + [...screen, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
         return;
       }
-      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + '  J: journal  M: log' + (saves ? '  S: save  L: load' : '');
+      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + '  J: journal  M: log  p: pause  +/-: speed' + (saves ? '  S: save  L: load' : '');
       const newest = log.newest;
       const recent = newest && Date.now() - newest.at <= STATUS_MS ? newest : null;
       const message = recent ? entryText(recent) : '';
@@ -429,21 +452,29 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
         return;
       }
       const frame = renderAscii(world, { width, height });
-      const sim = simStatus(world);
+      const tags = [paceStatus(pace, world), simStatus(world)].filter((t) => t).map((t) => `  |  ${t}`).join('');
       const menu = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : null;
-      const line = (menu ?? (message || help)) + (menu === null && sim ? `  |  ${sim}` : '');
+      const line = menu ?? (message || help) + tags;
       const sgrLine = menu === null && recent ? TONE_SGR[recent.tone] : '\x1b[2m';
       stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n${sgrLine}${line}\x1b[0m\x1b[J`);
     };
 
-    // Sim time tracks wall time from (startMs, startTick); a load restarts the count.
+    // Sim time tracks wall time × speed from (startMs, startTick); a load, a pause, an unpause and a speed change restart the count.
     let startMs = Date.now();
     let startTick = world.tick;
+    const restart = () => {
+      startMs = Date.now();
+      startTick = world.tick;
+    };
 
     const onKey = (buf: Buffer) => {
       const input = world.conversationVersion;
       const r = handleKey(world, buf.toString('utf8'), keys);
       if (r === 'quit') return stop();
+      if (r === 'pace') {
+        restart();
+        return draw();
+      }
       // A conversation choice (or leaving) changed the world: log its events.
       if (world.conversationVersion !== input) logEvents();
       if (keys.message) say(keys.message);
@@ -452,8 +483,7 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
         const loaded = saves.load();
         if (loaded.world) {
           world = loaded.world;
-          startMs = Date.now();
-          startTick = world.tick;
+          restart();
           log.clear();
           say(loaded.message);
           log.push([loadedNote(world)], Date.now());
@@ -463,14 +493,11 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
     };
 
     const timer = setInterval(() => {
-      // Catch up on missed ticks so sim time tracks wall time; a conversation pauses the clock.
-      if (world.conversation) {
-        startMs = Date.now();
-        startTick = world.tick;
-      }
-      const due = startTick + Math.floor((Date.now() - startMs) / tickMs);
+      // Catch up on missed ticks so sim time tracks wall time × speed; a conversation or a shell pause stops the clock.
+      if (world.conversation || pace.paused) restart();
+      const due = startTick + Math.floor(((Date.now() - startMs) * pace.speed) / tickMs);
       let n = 0;
-      while (world.tick < due && n++ < 10) {
+      while (world.tick < due && n++ < 10 * pace.speed) {
         const t = world.tick;
         world.step();
         // A step that did nothing (game over, conversation open) leaves last tick's events in place.

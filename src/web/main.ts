@@ -6,18 +6,19 @@
  */
 
 import { Application, type Container } from 'pixi.js';
-import { journalToast, loadedNote, loadPacks, logLines, MessageLog, noteLine, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
+import { journalToast, loadedNote, loadPacks, logLines, MessageLog, noteLine, Pace, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
 import { IsoScene } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
 import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
-import { Hud } from './hud.ts';
+import { Hud, hudTimeView, type HudTimeHandlers } from './hud.ts';
 import { Hover } from './hover-dom.ts';
 import { Input } from './input.ts';
 import { LogView } from './log-dom.ts';
 import { FixedTickLoop } from './loop.ts';
+import { PAUSE_KEYS, speedKey } from './keys.ts';
 import { PerfMeter } from './perf.ts';
 import { clickPlan, edgeWalkIntent } from './menu.ts';
 import { ContextMenu } from './menu-dom.ts';
@@ -27,7 +28,7 @@ import { clickIntent, Panels } from './panels.ts';
 import { parseParams } from './params.ts';
 import { showPicker } from './picker-dom.ts';
 import { itemIconUrls, type ItemIconUrls } from './transfer.ts';
-import { exportFile, gameView, loadResult, restoreText, SaveSlots, storageStore, type LoadResult } from './saves.ts';
+import { exportFile, gameView, loadResult, readAutoPause, restoreText, SaveSlots, storageStore, writeAutoPause, type LoadResult } from './saves.ts';
 
 declare global {
   interface Window {
@@ -59,10 +60,11 @@ class GameSession {
     textures: TextureBank,
     icons: ItemIconUrls,
     log: MessageLog,
+    time: HudTimeHandlers,
   ) {
     this.scene = new IsoScene(world, textures);
     stage.addChild(this.scene.root);
-    this.hud = new Hud(document.body);
+    this.hud = new Hud(document.body, time);
     this.panels = new Panels(document.body, world, icons);
     this.menu = new ContextMenu(document.body, world, (id) => this.panels.openLoot(id));
     // While a conversation is open, map clicks, movement, the context menu and the transfer window are off.
@@ -136,7 +138,10 @@ async function main(): Promise<void> {
   const icons = itemIconUrls(def, urls);
   // The message log outlives sessions: a load clears it and leaves a note.
   const log = new MessageLog();
-  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons, log);
+  // Pause and speed belong to the shell: never saved, and kept across loads.
+  const pace = new Pace();
+  const time: HudTimeHandlers = { togglePause: () => pace.togglePause(), cycleSpeed: () => pace.cycleSpeed() };
+  let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons, log, time);
 
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
@@ -174,14 +179,14 @@ async function main(): Promise<void> {
       const toast = world.journalEvents.length ? journalToast(world.journalEvents, world) : null;
       if (toast) session.hud.toast(toast);
     },
+    // At speed s the cap is 5 × s (FixedTickLoop.setPace).
     { ticksPerSecond: def.ticksPerSecond, maxTicksPerFrame: 5 },
   );
 
   // ── Saves ────────────────────────────────────────────────────────────────
-  const slots = new SaveSlots(
-    storageStore(() => window.localStorage),
-    packs,
-  );
+  const store = storageStore(() => window.localStorage);
+  const slots = new SaveSlots(store, packs);
+  let autoPause = readAutoPause(store);
   let message: string | null = null;
   let errors: readonly string[] = [];
   const refreshGame = () => {
@@ -201,7 +206,7 @@ async function main(): Promise<void> {
       return report(r.message, r.errors);
     }
     session.dispose();
-    session = new GameSession(r.world, app.stage, textures, icons, log);
+    session = new GameSession(r.world, app.stage, textures, icons, log, time);
     log.clear();
     log.push([loadedNote(r.world)], performance.now());
     logView.setHudVisible(true);
@@ -231,7 +236,12 @@ async function main(): Promise<void> {
     },
     titleScreen: () => location.assign(location.pathname),
     opened: () => session.panels.closeTransfer(),
+    autoPause: (on) => {
+      autoPause = on;
+      writeAutoPause(store, on);
+    },
   });
+  game.setAutoPause(autoPause);
   const logView = new LogView(document.body, log, { opened: () => session.panels.closeTransfer() });
 
   const input = new Input(app.canvas, () => session.world, {
@@ -263,8 +273,13 @@ async function main(): Promise<void> {
     longPress: openMenu,
     menu: openMenu,
     captureKey: (code) => session.menu.key(code) || session.dialogue.key(code),
+    paused: () => pace.paused,
     key: (code) => {
       const { hud, panels, menu, world } = session;
+      if (PAUSE_KEYS.has(code)) pace.togglePause();
+      const speed = speedKey(code);
+      if (speed > 0) pace.faster();
+      if (speed < 0) pace.slower();
       if (code === 'KeyH') {
         hud.toggle();
         logView.setHudVisible(hud.visible);
@@ -300,12 +315,22 @@ async function main(): Promise<void> {
   });
 
   let last = performance.now();
+  let wasPaused = false;
   const frame = (now: number) => {
     input.frame(now);
-    loop.advance(Math.min(now - last, 1000));
+    pace.windows(session.panels.windowOpen || game.open || logView.open, autoPause);
+    const paused = pace.paused;
+    // A movement key held into the pause must be pressed again afterwards.
+    if (paused && !wasPaused) input.clearMoves();
+    wasPaused = paused;
+    loop.setPace(paused, pace.speed);
+    const elapsed = Math.min(now - last, 1000);
+    loop.advance(elapsed);
     last = now;
     const s = session;
     const { world, scene } = s;
+    const timeView = hudTimeView(pace, world.ended);
+    app.canvas.classList.toggle('paused', timeView.paused);
     if (world.ended) s.menu.close();
     s.dialogue.update();
     if (world.lastGoto !== s.lastGoto) {
@@ -318,7 +343,7 @@ async function main(): Promise<void> {
     const stats = scene.update(cam, width, height, loop.alpha, now);
     // Hover picks against the camera just applied; its outline shows from this frame on.
     scene.markHover(hover.update(world, targetAt, now, !s.menu.isOpen && !world.ended && !world.conversation, s.hud.visible));
-    s.hud.update(world);
+    s.hud.update(world, timeView, paused ? 0 : elapsed);
     perf.frame(now);
     if (s.hud.perfVisible) {
       const active = world.activeCount;

@@ -200,6 +200,11 @@ export class Panels {
     this.transfer.openContainer(id);
   }
 
+  /** Whether the transfer window, crafting panel or journal is open (the auto-pause option). */
+  get windowOpen(): boolean {
+    return this.transfer.isOpen || !this.craft.hidden || !this.journal.hidden;
+  }
+
   /** `Escape`, or the Game panel opening: close the transfer window. */
   closeTransfer(): void {
     this.transfer.close();

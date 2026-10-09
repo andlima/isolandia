@@ -1,6 +1,7 @@
 /**
  * DOM rendering of the Game panel (`O` or the HUD button): the quicksave and
- * three slots with Save / Load / Delete, plus Export, Import and Title screen. The view is
+ * three slots with Save / Load / Delete, plus Export, Import, Title screen
+ * and the **Pause while windows are open** option. The view is
  * `gameView` in `saves.ts`; this class only renders it and reports clicks.
  * It lives for the whole page, across loaded worlds.
  */
@@ -15,6 +16,8 @@ export interface GamePanelHandlers {
   titleScreen(): void;
   /** The panel was shown (other windows close). */
   opened?(): void;
+  /** The **Pause while windows are open** checkbox changed. */
+  autoPause?(on: boolean): void;
 }
 
 /** How long an info note stays up (warnings stay until dismissed). */
@@ -26,6 +29,7 @@ export class GamePanel {
   private readonly noteEl: HTMLDivElement;
   private readonly noteText: HTMLDivElement;
   private noteTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly autoPauseBox: HTMLInputElement;
 
   constructor(
     parent: HTMLElement,
@@ -63,7 +67,14 @@ export class GamePanel {
     titleBtn.title = 'Back to the title screen (unsaved progress is lost)';
     titleBtn.addEventListener('click', () => this.on.titleScreen());
     files.append(exportBtn, ' ', importLabel, ' ', titleBtn);
-    this.el.append(title, this.body, files);
+    const options = document.createElement('label');
+    options.className = 'panel-row game-option';
+    const box = (this.autoPauseBox = document.createElement('input'));
+    box.type = 'checkbox';
+    box.id = 'auto-pause';
+    box.addEventListener('change', () => this.on.autoPause?.(box.checked));
+    options.append(box, ' Pause while windows are open');
+    this.el.append(title, this.body, files, options);
     this.el.addEventListener('click', (ev) => {
       const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-command]');
       if (b && !b.disabled) this.on.command(b.dataset['command'] as GameCommand, b.dataset['slot'] as SlotId);
@@ -90,6 +101,11 @@ export class GamePanel {
   /** Run a slot command as if its button was clicked (F5 / F9). */
   command(command: GameCommand, slot: SlotId): void {
     this.on.command(command, slot);
+  }
+
+  /** Show the auto-pause option's stored value. */
+  setAutoPause(on: boolean): void {
+    this.autoPauseBox.checked = on;
   }
 
   get open(): boolean {
