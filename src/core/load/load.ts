@@ -112,7 +112,6 @@ const DEFAULT_HOSTILE_BELOW = -50;
 const DEFAULT_FRIENDLY_FROM = 50;
 const QUEST_ENDS = ['success', 'failure'] as const;
 const NO_MEASUREMENT_HUD: MeasurementHud = { bad: null, warn: null, danger: null, hide: false };
-const NO_STATUS_HUD: StatusHud = { tone: 'neutral', description: '' };
 const NO_DURATION: DurationDef = { ticks: 0, fn: null };
 const DEFAULT_USE_LABEL = 'Use';
 const DEFAULT_RECIPE_VERB = 'Craft';
@@ -1580,21 +1579,23 @@ class Loader {
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
     }
-    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates, hud: this.statusHud(f) };
+    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates, hud: this.statusHud(f, label) };
   }
 
   /** A status's optional `hud` block. */
-  private statusHud(f: Fields): StatusHud {
+  private statusHud(f: Fields, label: string): StatusHud {
+    const enter = `You are now ${label}.`;
+    const exit = `You are no longer ${label}.`;
     const raw = f.mapping('hud');
-    if (!raw) return NO_STATUS_HUD;
-    const hf = new Fields(this.sink, f.at('hud'), raw, ['tone', 'description'], 'hud');
+    if (!raw) return { tone: 'neutral', description: '', enter, exit };
+    const hf = new Fields(this.sink, f.at('hud'), raw, ['tone', 'description', 'enter', 'exit'], 'hud');
     let tone: StatusHud['tone'] = 'neutral';
     const rawTone = hf.string('tone', false);
     if (rawTone !== undefined) {
       if (rawTone === 'bad' || rawTone === 'good' || rawTone === 'neutral') tone = rawTone;
       else this.sink.add(hf.at('tone'), `field 'tone' must be 'bad', 'good' or 'neutral', got ${JSON.stringify(rawTone)}`);
     }
-    return { tone, description: hf.string('description', false) ?? '' };
+    return { tone, description: hf.string('description', false) ?? '', enter: hf.string('enter', false) ?? enter, exit: hf.string('exit', false) ?? exit };
   }
 
   private system(d: Defined): SystemDef {

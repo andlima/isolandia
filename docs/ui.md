@@ -149,11 +149,13 @@ types; the terminal prints `hudLines` of the same model):
 - **Carrying bar** (when you have an inventory): `Carrying w/cap`, amber
   from 80 % of capacity and red when full.
 - **Nearby**: the `Nearby: …` text as one muted line, cut with `…`.
-- The **latest action** text (`Took 2 Canned beans`, `Too heavy`), for 3
-  seconds.
 
-The activity bar, the defeat and victory banners, journal toasts and the
-perf line are separate elements and keep their places. The overlay is at
+Action results (`Took 2 Canned beans`, `Too heavy`) are in the
+[message log](#message-log) strip at the bottom left; the terminal's HUD
+lines still end with the latest action for 3 seconds.
+
+The activity bar, the defeat and victory banners, journal toasts, the
+message log and the perf line are separate elements and keep their places. The overlay is at
 most 240 px wide with a translucent background and takes no pointer
 events except on the chips. Below 560 px of viewport width it is compact:
 the bars carry a 2–3 letter abbreviation of the label (`Hun`, `Thi`)
@@ -194,7 +196,7 @@ load keeps the current pause and speed.
 - **Auto-pause.** The Game panel's **Pause while windows are open**
   checkbox (default off, stored in `localStorage` under
   `isolandia:pause-while-windows`) pauses the world while the transfer
-  window, crafting panel, journal or Game panel is open. It is separate
+  window, crafting panel, journal, message history or Game panel is open. It is separate
   from the manual pause: `P` always flips what the card shows, so pressing
   it during a window pause resumes, and closing the window then does not
   pause again; a manual pause stays when the window closes.
@@ -334,7 +336,52 @@ hidden factions never toast.
 The terminal has the same journal: `J` (uppercase; lowercase `j` still
 moves) shows it as text in the same layout until any key, with the
 standing lines (`Police: Wary (-22)`) last, and a stage change, entry or
-tier change puts the same toast text on the message line.
+tier change puts the same toast text on the message line (through the
+[message log](#message-log)).
+
+## Message log
+
+Both shells keep a **message log** of the last 100 lines of what happened
+to the player. Each tick (and each dialogue answer) the pure
+`logLines(world)` (`src/core/log.ts`) turns the tick's events into lines
+`{ tick, clock, text, tone }`, in this order:
+
+- **Action results** from `world.actionEvents` (every player action
+  record of the tick, so two takes in one tick give two lines), as
+  `actionText`: completions, and starts that failed. A started activity is
+  not logged (the activity bar shows it); its end is.
+- **Journal events** from `world.journalEvents`, one line each, with the
+  toast texts (`Journal: …`, `Police: Neutral → Wary`; no `(+N)`).
+- **Status changes** of the player from `world.statusEvents`: the status's
+  [`hud.enter` / `hud.exit`](packs.md#statuses) text (`You are now Hungry.`
+  by default; an empty text is silent).
+- **Defeat or victory**, with its message, on the tick it happens.
+
+Shells add their own **notes** in the same shape: save, delete, export and
+import results, load and storage errors. Tones colour the lines: `info`
+(default), `good` (green: leaving a bad status, entering a good one,
+victory) and `bad` (red: failed, cancelled or interrupted actions,
+entering a bad status, defeat, failed saves and loads). Consecutive
+identical lines collapse into one with a count (`Too heavy (×3)`), and
+`You can't get there.` is logged once while a goto keeps failing. The log
+(`MessageLog`) is not saved; a load clears it and adds `Loaded Day N
+HH:MM`.
+
+**Browser.** The **recent strip** at the bottom left, above the buttons,
+shows the newest 5 lines, oldest at the top, each fading out about 8 s
+after it arrived; it takes no pointer events and hides with the HUD (`H`).
+`M` or the **Log [M]** button (left of **Game [O]**) toggles the
+**history panel**: every buffered line with its `Day D HH:MM`, newest at
+the bottom, scrolled to the bottom when it opens. `Escape` or its `×`
+closes it, opening it closes the transfer window, `H` leaves it alone, and
+the strip is hidden while it is open. Both re-render only when the log's
+version changes; the fades are one CSS transition (`src/web/log-dom.ts`).
+
+**Terminal.** The message line shows the newest log line for 4 s (red for
+`bad`, green for `good`), so journal toasts, status changes and save
+messages land in the history too. `M` (uppercase; lowercase `m` is free)
+shows the last lines that fit the screen, each as `HH:MM text`, until any
+key.
 
 ## Saving and loading
 
@@ -379,13 +426,14 @@ the browser, `MemoryStore` in tests).
 | `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
 | `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
 | `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
-| `Escape` | Close the transfer window (or the menu, when open) |
+| `Escape` | Close the transfer window and the log history (or the menu, when open) |
 | Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
 | `J` | [Journal](#journal) panel |
+| `M` | [Message log](#message-log) history panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
-| `H` | Toggle the HUD (and hover tooltips) |
+| `H` | Toggle the HUD, the message log strip and hover tooltips |
 | `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
 | `P` / `Pause` | Pause or resume ([Time](#time)) |
@@ -398,7 +446,9 @@ with more than one floor the HUD shows `Floor N` (your floor `z`, the
 ground floor being `Floor 0`).
 
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
-loads it, `p` pauses and `+` / `=` / `-` change the speed, and `J` shows the journal; lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
+loads it, `p` pauses and `+` / `=` / `-` change the speed, `J` shows the
+journal and `M` the [message log](#message-log) (the help line lists
+`M: log`); lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add

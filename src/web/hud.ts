@@ -54,7 +54,6 @@ export interface HudView {
   readonly carrying: HudCarryView | null;
   /** `Nearby: …` (one muted line, cut with `…` by the overlay), or null. */
   readonly nearby: string | null;
-  readonly lastAction: string | null;
 }
 
 /** The clock card's time controls. */
@@ -108,7 +107,6 @@ export function hudView(m: HudModel): HudView {
       ? { text: `Carrying ${m.inventory.weight}/${m.inventory.capacity}`, percent: pct(m.inventory.fraction), color: m.inventory.level }
       : null,
     nearby: m.nearbyLine,
-    lastAction: m.lastAction,
   };
 }
 
@@ -299,7 +297,6 @@ export class Hud {
       n.title = v.nearby;
       parts.push(n);
     }
-    if (v.lastAction) parts.push(div('hud-action', v.lastAction));
     this.clockEl.replaceChildren(...clock.childNodes);
     this.body.replaceChildren(...parts);
   }

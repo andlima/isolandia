@@ -88,6 +88,10 @@ export interface StatusHud {
   readonly tone: StatusTone;
   /** Free tooltip text; empty when absent. */
   readonly description: string;
+  /** Message-log text when the player gains the status (default `You are now <Label>.`; empty: silent). */
+  readonly enter: string;
+  /** Message-log text when the player loses the status (default `You are no longer <Label>.`; empty: silent). */
+  readonly exit: string;
 }
 
 /** One image file of an asset. */

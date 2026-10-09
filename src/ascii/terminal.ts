@@ -3,7 +3,27 @@
  * a fixed 10 ticks/s loop, and ANSI coloring of the pure render output.
  */
 
-import { hudModel, journalLines, journalToast, LEAVE_REFUSED_TEXT, Pace, reasonText, recipeHint, type Action, type EdgeSide, type Intent, type World } from '../core/index.ts';
+import {
+  entryText,
+  hudModel,
+  journalLines,
+  journalToast,
+  LEAVE_REFUSED_TEXT,
+  loadedNote,
+  logLines,
+  MessageLog,
+  noteLine,
+  Pace,
+  reasonText,
+  recipeHint,
+  timeOfDay,
+  type Action,
+  type EdgeSide,
+  type Intent,
+  type LogEntry,
+  type LogTone,
+  type World,
+} from '../core/index.ts';
 import { renderAscii, type AsciiFrame } from './render.ts';
 
 const NAMED: Record<string, string> = {
@@ -135,8 +155,21 @@ export interface KeyState {
   message?: string | null;
   /** The open journal screen (`J`, `journalLines`), shown until any key; null/absent when closed. */
   journal?: string[] | null;
+  /** The message history screen (`M`, `historyLines`) is open, until any key. */
+  history?: boolean;
   /** The shell's pause and speed (`p`, `+` / `=`, `-`); absent: those keys do nothing. */
   pace?: Pace;
+}
+
+/**
+ * The `M` screen: the newest log entries that fit in `rows` lines, each `HH:MM text`.
+ * The frame drawn around them (`Messages`, a blank line, a blank line and the
+ * `(any key)` footer, plus the trailing newline) takes five rows.
+ */
+export function historyLines(entries: readonly LogEntry[], rows: number): string[] {
+  const fit = Math.max(1, rows - 5);
+  const shown = entries.slice(-fit).map((e) => `${timeOfDay(e.clock)} ${entryText(e)}`);
+  return ['Messages', '', ...(shown.length ? shown : ['  Nothing yet.'])];
 }
 
 /** Pace keys: `p` toggles pause, `+` / `=` go faster, `-` slower. */
@@ -240,8 +273,8 @@ export function journalMessage(world: World): string | null {
 /**
  * Apply one key to the world. While a conversation is open, `1`–`9` choose
  * a visible choice and Escape leaves (or says `LEAVE_REFUSED_TEXT`); other
- * keys except `q`, `J`, `S` and `L` do nothing. `J` opens the journal screen (lowercase `j`
- * still moves), closed again by any key. `x` opens the list of pack actions and
+ * keys except `q`, `J`, `M`, `S` and `L` do nothing. `J` opens the journal screen and
+ * `M` the message history (lowercase `j` still moves, `m` is free), closed again by any key. `x` opens the list of pack actions and
  * `take all`s that can be done here, `c` the list of recipes that can be
  * made now (`1`–`9` start one, any other key closes either). With an
  * inventory, `g` takes everything that fits from every reachable container,
@@ -259,8 +292,9 @@ export function journalMessage(world: World): string | null {
 export function handleKey(world: World, key: string, state: KeyState): KeyResult {
   state.message = null;
   if (key === '\x03') return 'quit';
-  if (state.journal) {
+  if (state.journal || state.history) {
     state.journal = null;
+    state.history = false;
     return;
   }
   if (key === 'q' || key === 'Q') return 'quit';
@@ -269,6 +303,13 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     state.crafting = null;
     state.dropPending = false;
     state.journal = journalLines(world.journal());
+    return;
+  }
+  if (key === 'M') {
+    state.actions = null;
+    state.crafting = null;
+    state.dropPending = false;
+    state.history = true;
     return;
   }
   if (key === 'S' || key === 'L') {
@@ -282,10 +323,8 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     state.actions = null;
     state.crafting = null;
     state.dropPending = false;
-    if (/^[1-9]$/.test(key)) {
-      world.choose(Number(key) - 1);
-      state.message = journalMessage(world);
-    } else if (key === '\x1b') {
+    if (/^[1-9]$/.test(key)) world.choose(Number(key) - 1);
+    else if (key === '\x1b') {
       if (!world.leaveConversation().ok) state.message = LEAVE_REFUSED_TEXT;
     }
     return;
@@ -367,8 +406,11 @@ export function simStatus(world: World): string {
   return dormant > 0 ? `active ${active}, dormant ${dormant}` : '';
 }
 
-/** How long a save/load message stays on the help line. */
+/** How long the newest log line stays on the message line. */
 const STATUS_MS = 4000;
+
+/** Message-line colour per log tone (info stays dim). */
+const TONE_SGR: Record<LogTone, string> = { info: '\x1b[2m', good: '\x1b[32m', bad: '\x1b[31m' };
 
 /** Run an interactive session until `q`/Ctrl-C. Resolves when the session ends. */
 export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSaves, status = ''): Promise<void> {
@@ -378,22 +420,26 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
   // Pause and speed belong to the shell: never saved, and kept across loads.
   const pace = new Pace();
   const keys: KeyState = { dropPending: false, actions: null, crafting: null, pace };
-  let message = status;
-  let messageAt = Date.now();
-  const say = (text: string) => {
-    message = text;
-    messageAt = Date.now();
-  };
+  // The message log: action results, journal and status lines, and shell notes (saves, loads).
+  const log = new MessageLog();
+  const say = (text: string, tone: 'info' | 'bad' = 'info') => log.push([noteLine(world, text, tone)], Date.now());
+  /** Log the events of the last stepped tick or conversation input. */
+  const logEvents = () => log.push(logLines(world), Date.now());
+  if (status) say(status);
 
   return new Promise((resolve) => {
     const draw = () => {
       // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
       const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + hudModel(world).measurements.length + 7 + 2;
-      if (keys.journal) {
-        stdout.write('\x1b[H' + [...keys.journal, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
+      const screen = keys.journal ?? (keys.history ? historyLines(log.entries, stdout.rows ?? 24) : null);
+      if (screen) {
+        stdout.write('\x1b[H' + [...screen, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
         return;
       }
-      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + '  J: journal  p: pause  +/-: speed' + (saves ? '  S: save  L: load' : '');
+      const help = (world.player.inv ? 'q: quit  g: take all  1-9: use  d 1-9: drop  x: act  c: craft' : 'q: quit  x: act') + '  J: journal  M: log  p: pause  +/-: speed' + (saves ? '  S: save  L: load' : '');
+      const newest = log.newest;
+      const recent = newest && Date.now() - newest.at <= STATUS_MS ? newest : null;
+      const message = recent ? entryText(recent) : '';
       // The view is double resolution (cells between edges): 2·w + 1 columns by 2·h + 1 lines.
       const width = Math.max(5, Math.floor(((stdout.columns ?? 80) - 1) / 2));
       const height = Math.max(2, Math.floor(((stdout.rows ?? 24) - hudRows - 1) / 2));
@@ -406,10 +452,11 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
         return;
       }
       const frame = renderAscii(world, { width, height });
-      if (message && Date.now() - messageAt > STATUS_MS) message = '';
       const tags = [paceStatus(pace, world), simStatus(world)].filter((t) => t).map((t) => `  |  ${t}`).join('');
-      const line = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : (message || help) + tags;
-      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n\x1b[2m${line}\x1b[0m\x1b[J`);
+      const menu = keys.actions ? actionMenuText(keys.actions) : keys.crafting ? craftMenuText(keys.crafting) : keys.dropPending ? 'drop which? 1-9' : null;
+      const line = menu ?? (message || help) + tags;
+      const sgrLine = menu === null && recent ? TONE_SGR[recent.tone] : '\x1b[2m';
+      stdout.write('\x1b[H' + colorize(frame).replace(/\n/g, '\x1b[K\n') + `\x1b[K\n${sgrLine}${line}\x1b[0m\x1b[J`);
     };
 
     // Sim time tracks wall time × speed from (startMs, startTick); a load, a pause, an unpause and a speed change restart the count.
@@ -421,27 +468,28 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
     };
 
     const onKey = (buf: Buffer) => {
+      const input = world.conversationVersion;
       const r = handleKey(world, buf.toString('utf8'), keys);
       if (r === 'quit') return stop();
       if (r === 'pace') {
         restart();
         return draw();
       }
-      if (keys.message) {
-        say(keys.message);
-        draw();
-      }
-      if (!saves) return;
-      if (r === 'save') say(saves.save(world));
-      else if (r === 'load') {
+      // A conversation choice (or leaving) changed the world: log its events.
+      if (world.conversationVersion !== input) logEvents();
+      if (keys.message) say(keys.message);
+      if (saves && r === 'save') say(saves.save(world));
+      else if (saves && r === 'load') {
         const loaded = saves.load();
-        say(loaded.message);
         if (loaded.world) {
           world = loaded.world;
           restart();
-        }
+          log.clear();
+          say(loaded.message);
+          log.push([loadedNote(world)], Date.now());
+        } else say(loaded.message, 'bad');
       }
-      if (r) draw();
+      draw();
     };
 
     const timer = setInterval(() => {
@@ -450,9 +498,10 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
       const due = startTick + Math.floor(((Date.now() - startMs) * pace.speed) / tickMs);
       let n = 0;
       while (world.tick < due && n++ < 10 * pace.speed) {
+        const t = world.tick;
         world.step();
-        const note = journalMessage(world);
-        if (note) say(note);
+        // A step that did nothing (game over, conversation open) leaves last tick's events in place.
+        if (world.tick !== t) logEvents();
       }
       draw();
     }, tickMs);
