@@ -175,7 +175,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M5 | Actions with duration, context menu, recipes | Bandaging, cooking, barricading | ✅ done |
 | M6 | Chunked world, multiple floors, Tiled maps, save/load | An explorable small town | ✅ done |
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base | ✅ done |
-| M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel |  |
+| M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel | ✅ done |
 | M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
 
 ¹ S0: the headless simulation benchmark is measured; the **browser fps**
@@ -248,6 +248,53 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   (`can_see` the player, lose track further out) driving a behavior, and a
   sight-and-sound NPC state machine. Not moved yet; a third genre that
   repeats them should promote them to a stdpack.
+- What the two M8 games taught (spec `m8-social-games`: `noir`, *Death on
+  Elm Street*, and `western`, *High Noon*, both mods of `town` written from
+  pack data alone; the one engine change was generic: YAML `rooms` on a
+  Tiled map are added to its room objects, so a mod can tag a part's cells).
+  **Patterns both repeated**, candidates for a stdpack or a shorter form:
+  - *A named NPC who waits at home and talks.* Nine of the twelve new
+    archetypes have no behavior at all: a `spawns` entry, a `faction` and a
+    `dialogue`. That is already minimal; the one worth sharing is "wait,
+    then go somewhere on a cue" (Black Jack: `idle` until `heard`, then
+    `investigate`, then `idle`), with the cue a `noise` from a system.
+  - *A `start` list that dispatches on state*: quest over → `closed`,
+    `hostile(npc, player)` → `refuses`, a var for "already talked" →
+    `again`. Every dialogue of both packs opens this way.
+  - *A favour or a bribe*: one choice with `consume`/`give`, a `set_var`
+    that marks it done, a `reputation` with `spread`, and a `to`. The doc,
+    the kid, the bartender, Mickey and the widow are all this shape.
+  - *The accusation*: choices gated by `in_journal(...)` with one shared
+    `unavailable` line, each firing a `quest` effect to an end stage; the
+    duel's three ways out are the same shape with `when`s on reputation and
+    items.
+
+  **Awkward in YAML** (none needs a script hook; each is a missing primitive
+  or a verbose form, as in the pain points survey below):
+  - *Two choices with the same text and exclusive `when`s* (the duel's
+    *Fire!* → `won` or `shot`) read as a trick. An argument for a
+    conditional `to` (a list of `{ when, node }`, as `start` already is);
+    not added in M8.
+  - *A composite map takes no `spawns`*, so Mickey and the bartender are
+    placed with a one-cell `populate` rect in city coordinates.
+  - *Counting clues* is a sum of seven `in_journal(...)` terms; a count by
+    journal category would be one call.
+  - *An NPC cannot touch the player's measurements*: the riders count
+    themselves into a `crowded` var (`add_var`, one system for riders) and a
+    player system drains `nerve` from it, relying on systems running in
+    definition order. An effect target would be direct.
+  - *Deadlines* are arithmetic on `world.day` and `world.time_of_day`
+    (`world.day >= 2 and world.time_of_day >= 6` for dawn); a clock
+    comparison would read better.
+  - *A measurement as a timer* (`liquor`, `rate: -1`, drives `tipsy`) works
+    but has to be hidden from the HUD by hand.
+  - The duel's odds (about 90 % prepared, 30 % cold) took a Monte Carlo over
+    300 seeds in a test to tune a one-line formula; a tool for that would
+    be a nicety, not a hook.
+
+  M9's evidence therefore cannot be "a story": its mod has to need real
+  logic (state the YAML cannot express), and the hook spec should say what
+  that is before picking a language.
 - Script hook language: sandboxed JS (Worker/`ShadowRealm`) or Lua
   (wasmoon/fengari)?
 - Combat: real time over ticks, or something more tactical?
@@ -654,6 +701,24 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 
 ## 8. Next step
 
+M8 is delivered: **vars, quests and the journal** (spec `m8-flags-quests`),
+**dialogues** (spec `m8-dialogues`), **factions and reputation** (spec
+`m8-factions`) and **two games from pack data** (spec `m8-social-games`).
+`noir`, *Death on Elm Street*, is a night-time murder on the old town block:
+question the widow, the lodger, a neighbour and a mob fixer, search the
+crime scene, mind the patrol, and name the killer to the sergeant before
+dawn. `western`, *High Noon*, is a morning of target practice, favours and
+Dutch courage before a duel at noon, settled by a dialogue and a seeded
+roll, talked down or paid off. Both are mods of `town`, as `zombie` and
+`vampire` are, and the only engine change was a generic one (YAML `rooms`
+on Tiled maps). §7 records what they taught.
+
+The next step is to author, via `spec-orchestrator`, the **M9 spec**:
+**sandboxed script hooks**, with a mod that is impossible in pure YAML as
+its playable result. §7 says what the M8 games found awkward, and none of
+it needs a hook, so the spec has to pick its evidence mod with care, and
+decide the language (sandboxed JS or Lua).
+
 M7 is delivered: **overrides and removals** by qualified id (spec
 `m7-overrides`), **stacks** with a pack catalog, a resolver and a title
 screen (spec `m7-stacks`), and **one town, two mods** (spec
@@ -667,10 +732,6 @@ town's generic content (its windows, needs systems that skip non-`living`
 entities) but plays on its own estate by overriding `start`, `clock` and
 `lighting`; `hardship` is a balance mod that works with either. Mixed
 stacks load with warnings only for the fields both mods write.
-
-The next step is to author, via `spec-orchestrator`, the **M8 spec**: the
-social layer (factions, dialogues, quests, journal), for a short noir
-mystery or a wild-west duel.
 
 M6 is delivered: **floors** (spec `m6-floors`), **Tiled maps** (spec
 `m6-tiled-maps`), **save/load** (spec `m6-save-load`) and the **chunked

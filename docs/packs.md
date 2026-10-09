@@ -2183,12 +2183,18 @@ are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
 | `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
 | `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`, status `alert`); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
 | `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
+| `noir` | `noir` | mod | `std`, `town` | *Death on Elm Street*: a night-time murder on the old town block; factions `police`, `mob` and the hidden `neighbours`; Sgt. Hale, an `officer` on a `beat` (`wander`), the widow, the lodger, Dot and Mickey the Fixer, each with a dialogue; seven clues as `Clues` journal entries, from dialogue and from `search`/`force_drawer` actions on the crime scene's own furniture (a witnessed `reputation` effect with `spread`); quest `elm_street` ending in `solved`, `wrong_man` or `cold_case` (dawn); overrides `town_center` (`rooms` adds `crime_scene`, `spawns`), `city` (`player`, `populate`), the resident's label (*Detective*), `start`, `clock` (starts at 21:00) and `lighting` (cold blue-grey nights). See the [worked example](#worked-example-a-story-from-vars-quests-dialogues-and-factions) |
+| `western` | `wst` | mod | `std`, `std_needs`, `town` | *High Noon*: measurements `aim`, `nerve` and `liquor`; items `coin`, `bullet`, `revolver` and `whiskey` (status `tipsy`); factions `townsfolk`, `law` and the `gang` (Hostile from the start); Sheriff Cobb, Doc, the bartender in the `saloon`, the kid, two `rider`s (behavior `rider`: idle until ten, then `pursue` on sight; systems drain `nerve` while they crowd the player) and Black Jack (waits at the end of Main Street, walks to the noon bell); action `shoot_bottles` on the yards' crates; loot `garage_ammo` with a `distributions` entry for the garages; quest `high_noon` ending in `won`, `talked_down`, `paid_off`, `shot` or `coward`, the duel being a dialogue with a seeded `roll`; overrides `town_center` (`spawns`), `city` (`rooms` adds `saloon`, `populate`), the resident (*Stranger*, measurements, inventory), `start`, `clock` (starts at 06:00) and `lighting` (a bleached noon) |
 | `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
 | `garden` | `gdn` | game | `std` | a bunny gathers carrots in a garden; shares nothing with the town |
 
 Stacking both genres (`zombie vampire`) loads too: each mod writes its own
 fields, and the one field both write, `start.defeat`, warns and goes to the
-later pack (see [Mods and overrides](#mods-and-overrides)).
+later pack (see [Mods and overrides](#mods-and-overrides)). `noir` and
+`western` stack on the town the same way, alone with no warnings; mixed with
+each other or with `zombie` they load with warnings for every field both
+write (`start`, `clock`, `lighting`, the resident and `town_center`'s
+`spawns`), and the mix is not meant to make sense.
 
 ## Namespaces and references
 
@@ -2413,6 +2419,71 @@ zombie's `victory` is inherited, because each was written by one mod only.
 `vampire zombie` gives the mirror warning and the zombie's defeat message,
 but still the estate and the vampire: load order settles only the
 conflicting fields.
+
+### Worked example: a story from vars, quests, dialogues and factions
+
+`noir` (*Death on Elm Street*, `packs/noir/`) tells a murder mystery on the
+town's old block with no engine code, from the social domains only. Write
+the story as data first (who knows what, which clue proves what; the comment
+block at the top of `case.yaml` is that table), then as YAML:
+
+- **Facts are vars** named for what happened (`talked_widow`, `talked_pike`),
+  set by the dialogues that reveal them, and **clues are journal entries**
+  (category `Clues`): a dialogue node or a tile action adds one with
+  `{ type: journal, entry: ledger }`, and `in_journal("ledger")` gates
+  everything after it, so the journal is the single source of truth and no
+  clue counts twice.
+- **The quest tracks the night.** The stages of `elm_street` enter on
+  expressions over those facts (`var("talked_widow") and var("talked_pike")`
+  for *Question the household*; three `in_journal(...)` for *Name the
+  killer*). The end stages are reached by `quest` effects in the sergeant's
+  dialogue (`solved`, `wrong_man`) or by a deadline `when` (`cold_case`:
+  `world.day >= 2 and world.time_of_day >= 6`), and `start.victory` and
+  `start.defeat` only ask `quest_succeeded` and `quest_failed`.
+- **Dialogues dispatch on state.** Each `start` is a list: Hale's goes to
+  `closed` once the quest is over, to `refuses` when `hostile(npc, player)`,
+  to `case` before the quest starts, else to `report`. There the accusation
+  choices are gated by `when` on the clues, share an `unavailable` line and
+  each fire a `quest` effect:
+
+  ```yaml
+  report:
+    text: "Got a name for me, or just cold feet?"
+    choices:
+      - text: "It was Pike. The ledger, and the lie about the light."
+        when: 'in_journal("pike_lied") and in_journal("ledger")'
+        unavailable: You need more than a hunch
+        effects: [{ type: quest, quest: elm_street, stage: solved }]
+        to: solved
+      - text: "The widow did it."
+        when: 'in_journal("photograph") or in_journal("widow_alibi")'
+        unavailable: You need more than a hunch
+        effects: [{ type: quest, quest: elm_street, stage: wrong_man }]
+        to: wrong
+  ```
+
+- **Factions make shortcuts cost something.** `police` (20, *Liked*) and
+  `mob` (-20, *Wary*) regard each other at -80, so a `reputation` effect
+  with `spread: true` moves them apart: a bribe to Mickey warms the Family
+  and chills the police, and forcing the cabinet's drawer in sight of the
+  patrolling officer (`witnessed: 8`) costs police standing. Once the police
+  are *Hostile*, Hale's `start` list sends the detective to `refuses` and
+  dawn closes the case. The hidden `neighbours` faction gates Dot's door the
+  same way.
+- **Searching is a room-gated tile action** on the town's own furniture:
+  `target: { tiles: [cabinet] }` with
+  `when: 'tile.in_room("crime_scene") and not in_journal("ledger")'` and
+  `unavailable: Nothing more here`. The `crime_scene` room comes from the
+  mod's `town_center` override, whose YAML `rooms` are added to the Tiled
+  part's own rooms, so the town's loot stays where it was.
+
+`npm run check -- noir --overrides` lists the six patches, and
+`test/social.test.ts` plays the direct solve, the wrong man, the cold case
+and the witnessed drawer headlessly. `western` (`packs/western/`) uses the
+same pieces for a duel: three favours that each `consume`, `give`, set a var
+and raise `townsfolk` with `spread`, and a `leave: false` node whose two
+*Fire!* choices have exclusive `when`s on the `draw` var, so exactly one is
+ever shown.
 
 ## Validation
 

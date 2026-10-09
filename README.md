@@ -9,10 +9,12 @@ The engine knows no genre. Hunger, health, coffins and shambling hordes
 are all declared by packs; switching genre means switching pack. See
 [`VISION.md`](VISION.md) for the goals, decisions and roadmap.
 
-> **Status:** early development. Milestones S0–M3 are done: simulation
+> **Status:** early development. Milestones S0–M8 are done: simulation
 > core, isometric renderer, clock and day/night, systems and statuses,
-> items, containers and room-based loot. Next up: perception and AI
-> behaviors (M4).
+> items, containers and room-based loot, perception and behaviors, timed
+> actions and recipes, a chunked multi-floor town with Tiled maps and
+> saves, packs and mods, and the social layer (factions, dialogues, quests,
+> journal). Next up: sandboxed script hooks (M9).
 
 ## Play online
 
@@ -37,6 +39,8 @@ added for you:
 http://localhost:5173/?packs=town
 http://localhost:5173/?packs=zombie
 http://localhost:5173/?packs=vampire&seed=42
+http://localhost:5173/?packs=noir
+http://localhost:5173/?packs=western
 http://localhost:5173/?packs=zombie,hardship
 ```
 
@@ -58,6 +62,8 @@ The same simulation runs headless, rendered as top-down ASCII:
 npm run play -- zombie [--seed N]
 npm run play -- town                      # the base game alone: a quiet sandbox
 npm run play -- vampire hardship          # a genre mod plus a balance mod
+npm run play -- noir                      # a murder mystery, solved by dawn
+npm run play -- western                   # a duel at noon
 npm run play -- zombie --load isolandia-save.json
 ```
 
@@ -82,13 +88,18 @@ packs/
   zombie/     # mod "Zombie Town": the dead fill the town; find a car battery
   vampire/    # mod "Vampire Mansion": blood, sunlight, coffins, on its estate
               #   (reuses the town's generic content)
-  hardship/   # mod: needs drain faster, food is scarcer (works with either)
+  noir/       # mod "Death on Elm Street": a night-time murder on the old
+              #   block; question, search, accuse before dawn (town + social layer)
+  western/    # mod "High Noon": practise, win the town over, face Black Jack
+              #   at noon in a dialogue settled by a roll
+  hardship/   # mod: needs drain faster, food is scarcer (works with any genre)
   garden/     # "Bunny Garden": a gentle game for kids — gather carrots,
               #   hide from a sleepy cat; won with start.victory (uses std only)
 ```
 
-Switching genre is switching mod: `zombie` and `vampire` both stack on
-`town` (see [docs/packs.md](docs/packs.md#shipped-packs)).
+Switching genre is switching mod: `zombie`, `vampire`, `noir` and
+`western` all stack on `town` (see
+[docs/packs.md](docs/packs.md#shipped-packs)).
 
 Validate a pack stack without running it:
 
