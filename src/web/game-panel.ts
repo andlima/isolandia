@@ -117,6 +117,16 @@ export class GamePanel {
     if (!this.el.hidden) this.on.opened?.();
   }
 
+  /** `O`, the button or the pause menu's *Game…*: show the panel (nothing happens when it is already open). */
+  show(): void {
+    if (this.el.hidden) this.toggle();
+  }
+
+  /** `Escape`: hide the panel. */
+  close(): void {
+    this.el.hidden = true;
+  }
+
   render(view: GameView): void {
     const parts: HTMLElement[] = [];
     for (const r of view.rows) {

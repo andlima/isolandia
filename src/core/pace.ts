@@ -3,11 +3,14 @@
  * by both shells. This is not world state: it is never saved or hashed, and
  * only changes how many fixed ticks a shell asks for per second of wall time.
  *
- * Two pauses add up: the **manual** one (`P`, the clock card) and the
- * **window** one (the browser's auto-pause option, while a window is open).
+ * Three pauses add up: the **manual** one (`P`, the clock card), the
+ * **window** one (the browser's auto-pause option, while a window is open)
+ * and the **modal** one (the controls overlay or the pause menu is open).
  * `togglePause` always flips what the clock card shows: from paused it clears
- * both, and a window pause cleared that way stays off until every window is
- * closed, so closing the window resumes only if `P` was not pressed between.
+ * the first two, and a window pause cleared that way stays off until every
+ * window is closed, so closing the window resumes only if `P` was not pressed
+ * between. The modal pause only follows its own `open` flag: it never
+ * overrides a manual pause, which stays once the overlay closes.
  */
 
 export const SPEEDS = [1, 2, 4, 8] as const;
@@ -21,11 +24,18 @@ export class Pace {
   private held = false;
   /** `P` cleared the auto pause: it stays off until every panel is closed. */
   private waived = false;
+  /** The modal pause (the controls overlay or the pause menu is open). */
+  private modalOpen = false;
   speed: Speed = 1;
 
-  /** Whether the shell runs no ticks (the manual or the auto pause). */
+  /** Whether the shell runs no ticks (the manual, the auto or the modal pause). */
   get paused(): boolean {
-    return this.manual || this.held;
+    return this.manual || this.held || this.modalOpen;
+  }
+
+  /** Whether the modal pause is on. */
+  get modalPause(): boolean {
+    return this.modalOpen;
   }
 
   /** Whether the manual pause is on. */
@@ -75,5 +85,10 @@ export class Pace {
   windows(open: boolean, autoPause: boolean): void {
     if (!open) this.waived = false;
     this.held = autoPause && open && !this.waived;
+  }
+
+  /** The modal pause, once per frame: `open` while the controls overlay or the pause menu is shown. */
+  modal(open: boolean): void {
+    this.modalOpen = open;
   }
 }

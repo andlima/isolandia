@@ -289,7 +289,8 @@ Coin`, or the choice's `unavailable` text).
 
 While the box is open, map clicks, movement keys, the context menu and the
 transfer window (`I`, `Tab`) are off, and hover tooltips are hidden. The
-journal (`J`) and the Game panel (`O`, `F5`, `F9`) still open on top. A
+journal (`J`), the Game panel (`O`, `F5`, `F9`) and the
+[controls overlay](#controls-and-pause-menu) (`?`) still open on top. A
 choice that adds a journal entry or moves a quest shows its toast at once.
 
 The box is the pure `dialogueBox(world.conversationView())` and
@@ -304,8 +305,9 @@ and movement keys do nothing.
 
 ## Journal
 
-`J` or the **Journal [J]** button (top right; shown when the packs define
-quests, journal entries or factions that are not hidden) toggles the
+`J` or the **Journal [J]** button (top right, left of **Help [?]**; shown
+when the packs define quests, journal entries or factions that are not
+hidden) toggles the
 **Journal** panel. It shows:
 
 - **Active**: each started quest's title and its current stage's text;
@@ -410,6 +412,65 @@ The panel's view is the pure function `gameView` in `src/web/saves.ts`;
 storage goes through the small `SaveStore` interface (`localStorage` in
 the browser, `MemoryStore` in tests).
 
+## Controls and pause menu
+
+Every browser key and gesture is one row of **`BINDINGS`**
+(`src/web/bindings.ts`): its display keys, the mouse and touch gestures
+that do the same, a label, a section (*Moving*, *Interacting*, *Windows*,
+*Time*, *Game*, *View*, in that order) and, for rows that only apply while
+something is open, a context (the action menu, a conversation, the
+transfer window). The key handler dispatches through the table:
+`bindingFor(code, key)` looks up `KeyboardEvent.key` first (so `<`, `>`
+and `?` follow the keyboard layout) and then `KeyboardEvent.code`, and
+`src/web/main.ts` has one `switch` case per binding id. A test fails when
+a key binding has no case, or when the [Keys](#keys) table below misses one
+of a binding's keys. Movement stays in `MOVE_KEYS` and climbing in
+`CLIMB_KEYS` (`src/web/keys.ts`); the table lists them for display only.
+
+**Controls overlay.** `?`, the **Help [?]** button (top right, always
+shown) or the pause menu's *Controls* open a centred overlay drawn from
+the pure `helpView(BINDINGS, input)` (`src/web/help.ts`): the sections in
+order, each row with its keys as `<kbd>` chips and the gesture for the
+current input (`mouse` or `touch`, from the last pointer used, with a
+coarse pointer as the first guess), and the context rows under a small
+heading (*In the action menu*, *In a conversation*, *In the transfer
+window*). A row with neither a key nor a gesture for the input (Shift +
+click on touch) is left out. The overlay pauses the world while it is open
+(a third shell pause next to the manual and the window pause in `Pace`: it
+never overrides a manual `P`) and closes with `Escape`, `?`, its **×** or a
+click outside it; every other key is swallowed meanwhile. It scrolls on
+small screens and stacks keys over labels under 420 px. During a
+conversation `?` still opens it on top, and the dialogue box keeps its
+keys once it is closed.
+
+**Escape.** `Escape` closes the first of these that is open (the pure
+`escapeTarget(state)`): the controls overlay; the context menu; the
+conversation (leave, as the box's own `Escape`); the most recently opened
+window (transfer window, crafting panel, journal, log history or Game
+panel, in the order they were opened, kept by `trackWindows`); and with
+nothing open it toggles the **pause menu**.
+
+**Pause menu.** A small centred panel with **Resume**, **Controls** (the
+overlay opens on top; closing it returns to the menu), **Game…** (closes
+the menu and opens the Game panel) and **Title screen** (the same plain
+navigation as the Game panel's button: unsaved progress is lost). It
+pauses the world while it is open, focus starts on *Resume*, the arrows
+move it, `Enter` chooses and `Escape` or *Resume* closes it. After defeat
+or victory it still opens (titled *Menu*, with *Back*) without pausing
+anything.
+
+**First run.** On the first game start in this browser a hint *Press ? for
+controls* (*Tap ? for controls* on touch) shows under the top edge for
+about 6 s, then fades; the same text is an info line in the message log.
+The flag is `isolandia:help-seen` in `localStorage`, set when the hint
+shows and at once when the overlay opens; blocked storage leaves it unset,
+so the hint simply shows again.
+
+In the terminal, `?` shows `TERMINAL_BINDINGS` (`src/ascii/bindings.ts`,
+the same `Binding` shape, keys only) as text grouped by section until any
+key, as `J` shows the journal. The help line ends with `?: help`, and on a
+terminal too narrow for the full line it shows only `q: quit  ?: help`.
+
 ## Keys
 
 | Key | Action |
@@ -426,13 +487,14 @@ the browser, `MemoryStore` in tests).
 | `PageUp` / `<` | Go up the stairs you stand on (`world.climbIntent(1)`) |
 | `PageDown` / `>` | Go down (`world.climbIntent(-1)`) |
 | `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
-| `Escape` | Close the transfer window and the log history (or the menu, when open) |
+| `Escape` | Close the [controls overlay](#controls-and-pause-menu), the menu, the conversation or the most recently opened window; with nothing open, the pause menu |
 | Click / Shift + click a stack (window open) | Move the whole stack / one unit |
 | `C` | Crafting panel |
 | `J` | [Journal](#journal) panel |
 | `M` | [Message log](#message-log) history panel |
 | `O` | Game panel (save slots, export, import) |
 | `F5` / `F9` | Quicksave / quickload |
+| `?` | [Controls overlay](#controls-and-pause-menu) (also the **Help [?]** button) |
 | `H` | Toggle the HUD, the message log strip and hover tooltips |
 | `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
 | `Space` | Recenter the camera |
@@ -447,8 +509,9 @@ ground floor being `Floor 0`).
 
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
 loads it, `p` pauses and `+` / `=` / `-` change the speed, `J` shows the
-journal and `M` the [message log](#message-log) (the help line lists
-`M: log`); lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
+journal, `M` the [message log](#message-log) and `?` the
+[key list](#controls-and-pause-menu) (the help line lists `M: log` and ends
+with `?: help`); lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add
