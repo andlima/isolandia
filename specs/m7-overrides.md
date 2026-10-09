@@ -3,7 +3,7 @@ id: m7-overrides
 area: load
 priority: 40
 depends_on: []
-description: M7 mod semantics — a pack can patch (`override: true`, shallow per-field) or remove (`remove: true`) any list-domain entry of a pack it depends on by qualified id, and patch the singleton `start`/`clock`/`lighting`; each field keeps the scope and source of the pack that wrote it, indices stay dense, references to removed entries are load errors, overrides of the same field by unrelated packs warn (later wins), and `check --overrides` lists what every pack changed
+description: "M7 mod semantics — a pack can patch (`override: true`, shallow per-field) or remove (`remove: true`) any list-domain entry of a pack it depends on by qualified id, and patch the singleton `start`/`clock`/`lighting`; each field keeps the scope and source of the pack that wrote it, indices stay dense, references to removed entries are load errors, overrides of the same field by unrelated packs warn (later wins), and `check --overrides` lists what every pack changed"
 ---
 
 # M7a — Overrides and removals

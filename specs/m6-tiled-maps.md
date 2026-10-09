@@ -3,7 +3,7 @@ id: m6-tiled-maps
 area: load
 priority: 40
 depends_on: [m5-recipes]
-description: M6 map authoring — maps can come from Tiled JSON (`maps[].tiled: <file>.tmj`, embedded or external `.tsj` tilesets whose tiles name a pack tile and facing, stacked tile layers, `player`/`spawn`/`room` objects), a `map:export` CLI that writes an ASCII map to an isometric 64×32 Tiled map plus tileset, and the zombie town and vampire mansion converted to Tiled with identical simulation results
+description: "M6 map authoring — maps can come from Tiled JSON (`maps[].tiled: <file>.tmj`, embedded or external `.tsj` tilesets whose tiles name a pack tile and facing, stacked tile layers, `player`/`spawn`/`room` objects), a `map:export` CLI that writes an ASCII map to an isometric 64×32 Tiled map plus tileset, and the zombie town and vampire mansion converted to Tiled with identical simulation results"
 ---
 
 # M6b — Tiled maps
