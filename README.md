@@ -14,6 +14,12 @@ are all declared by packs; switching genre means switching pack. See
 > items, containers and room-based loot. Next up: perception and AI
 > behaviors (M4).
 
+## Play online
+
+The latest `main` is published at <https://andlima.github.io/isolandia/>
+(the same query parameters work, e.g. `?packs=zombie`). Saves live in the
+browser's local storage, and a new version may refuse older saves.
+
 ## Quick start
 
 Requires Node.js.
