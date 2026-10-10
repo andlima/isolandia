@@ -35,10 +35,12 @@ test('catalog: records from the shipped manifests, with kind and description', (
     [
       ['garden', 'gdn', 'game', 'std'],
       ['hardship', 'hardship', 'mod', 'std_needs,town'],
+      ['noir', 'noir', 'mod', 'std,town'],
       ['std', 'std', 'library', ''],
       ['std-needs', 'std_needs', 'library', 'std'],
       ['town', 'town', 'game', 'std,std_needs'],
       ['vampire', 'vamp', 'mod', 'std,town'],
+      ['western', 'wst', 'mod', 'std,std_needs,town'],
       ['zombie', 'zmb', 'mod', 'std,std_needs,town'],
     ],
   );

@@ -1,0 +1,66 @@
+# High Noon, as overrides of the `town` base game
+# (docs/packs.md#mods-and-overrides): the old town block's road is Main
+# Street, the corner store nearest it is the saloon, and the resident is the
+# Stranger with two new measurements. The duel itself is in duel.yaml
+# (quest, practice, the riders) and dialogues.yaml.
+
+maps:
+  # Main Street: the road through the old town block (placed once in the
+  # city, at [142, 157]). The sheriff stands in the middle, the kid in a
+  # yard, the doc in the north-west house; the gang waits at either end.
+  - id: town:town_center
+    override: true
+    spawns:
+      - { archetype: sheriff, at: [31, 13] }    # the middle of Main Street
+      - { archetype: doc, at: [10, 8] }         # the hallway of the north-west house
+      - { archetype: kid, at: [20, 11] }        # the yard by the road
+      - { archetype: rider, at: [1, 13] }       # the west end of Main Street
+      - { archetype: rider, at: [1, 15] }
+      - { archetype: black_jack, at: [57, 14] } # the far (east) end
+  - id: town:city
+    override: true
+    # The saloon is the store nearest the block (at [208, 208]); the `saloon`
+    # tag goes on its floor in city coordinates (a Tiled part cannot take
+    # `rooms`), on top of its own `store` tag, so its shelves keep their loot.
+    rooms:
+      - { rect: [209, 209, 27, 10], tags: [saloon] }
+    # The bartender behind the bar (a one-cell populate: a composite takes no `spawns`).
+    populate:
+      - { archetype: bartender, count: 1, rect: [223, 211, 1, 1] }
+
+archetypes:
+  # The Stranger: the resident with aim and nerve, and ten dollars.
+  - id: town:resident
+    override: true
+    label: Stranger
+    tags: [humanoid, living, stranger]
+    measurements: [hp, hunger, thirst, fatigue, aim, nerve, liquor]
+    initial: { hunger: 20, aim: 20, nerve: 50 }
+    inventory:
+      capacity: 15
+      items: { water_bottle: 1, crackers: 1, coin: 10 }
+
+start:
+  override: true
+  defeat:
+    when: 'quest_failed("high_noon") or self.hp <= 0'
+    message: "They buried you on the hill at sundown."
+  victory:
+    when: 'quest_succeeded("high_noon")'
+    message: "Black Jack is gone. Main Street is yours."
+
+# Dawn. Noon is the duel.
+clock:
+  override: true
+  start: "06:00"
+
+# A warm, bleached noon; copper evenings.
+lighting:
+  override: true
+  tint:
+    - { at: "05:00", color: "#8a7a90" }
+    - { at: "07:00", color: "#f6dcb0" }
+    - { at: "11:00", color: "#fff6e4" }
+    - { at: "14:00", color: "#fff2dc" }
+    - { at: "18:00", color: "#f0b878" }
+    - { at: "20:00", color: "#6a5a78" }

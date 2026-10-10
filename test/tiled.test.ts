@@ -57,8 +57,8 @@ function tiledPack(map: J | string, files: Record<string, string> = {}, yaml = M
   return fixture({ 'map.yaml': yaml, 'maps/room.tmj': typeof map === 'string' ? map : JSON.stringify(map), ...files });
 }
 
-function load(map: J | string, files: Record<string, string> = {}): Definition {
-  const r = loadPacks([tiledPack(map, files)]);
+function load(map: J | string, files: Record<string, string> = {}, yaml = MAP_YAML): Definition {
+  const r = loadPacks([tiledPack(map, files, yaml)]);
   assert.ok(r.ok, r.ok ? '' : r.errors.map(formatError).join('\n'));
   return r.definition;
 }
@@ -108,6 +108,28 @@ test('tiled: isometric object positions are in tile-height units on both axes', 
   assert.deepEqual(m.playerStart, { x: 2, y: 1, z: 0 });
   assert.deepEqual(m.rooms.rects, [{ x: 1, y: 0, z: 0, w: 2, h: 2, tags: [0] }]);
   assert.deepEqual(def.roomTags, ['den']);
+});
+
+test('tiled: YAML `rooms` are added to the Tiled room objects (a mod can tag a part)', () => {
+  const yaml = `maps:
+  - id: room
+    tiled: maps/room.tmj
+    rooms:
+      - { rect: [0, 1, 3, 1], tags: [den, lab] }
+start:
+  map: room
+  player: hero
+`;
+  const def = load(tmj({ layers: [ground([1, 1, 1, 1, 1, 1]), objects([PLAYER, { id: 2, type: 'room', x: 16, y: 0, width: 32, height: 16, properties: [prop('tags', 'den')] }])] }), {}, yaml);
+  const m = def.maps[0]!;
+  assert.deepEqual(def.roomTags, ['den', 'lab']);
+  assert.deepEqual(m.rooms.rects, [
+    { x: 1, y: 0, z: 0, w: 2, h: 1, tags: [0] },
+    { x: 0, y: 1, z: 0, w: 3, h: 1, tags: [0, 1] },
+  ]);
+  // A room out of the Tiled map's bounds is still an error, naming the YAML field.
+  const e = errorsOf(tmj({ layers: [ground([1, 1, 1, 1, 1, 1]), objects([PLAYER])] }), {}, yaml.replace('[0, 1, 3, 1]', '[0, 1, 4, 1]'));
+  assert.ok(e.some((x) => x.path === 'maps[0].rooms[0].rect'), e.map(formatError).join('\n'));
 });
 
 test('tiled: external .tsj tileset resolved relative to the map', () => {

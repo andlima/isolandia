@@ -1,0 +1,63 @@
+# Death on Elm Street, as overrides of the `town` base game
+# (docs/packs.md#mods-and-overrides): the Vane house on the old town block
+# becomes a crime scene, the block gets its people, and the resident
+# becomes the detective on the case. The story itself is in case.yaml
+# (clues, quest, searching) and dialogues.yaml.
+
+maps:
+  # The old town block (placed once in the city, at [142, 157]). The victim's
+  # house is the north-east one, the only one with an upstairs bedroom.
+  - id: town:town_center
+    override: true
+    # The crime scene: the Vanes' bathroom (the locked cabinet) and the
+    # upstairs bedroom where Harold Vane lies. These rooms are added to the
+    # part's own (kitchen, bathroom, bedroom, hallway), which keep the
+    # town's loot where it was.
+    rooms:
+      - { rect: [44, 1, 4, 5], tags: [crime_scene] }
+      - { rect: [48, 1, 9, 9], floor: 1, tags: [crime_scene] }
+    spawns:
+      - { archetype: hale, at: [44, 11] }       # on the grass by the front door
+      - { archetype: officer, at: [40, 13] }    # his beat: the road in front of the house
+      - { archetype: widow, at: [38, 4] }       # the kitchen
+      - { archetype: pike, at: [52, 4] }        # the lodger's room, downstairs
+      - { archetype: dot, at: [44, 19] }        # the hallway of the house across the road
+  - id: town:city
+    override: true
+    # The detective starts on the road right outside the Vane house.
+    player: [185, 169]
+    # Mickey waits outside the corner store nearest the block (a one-cell
+    # populate: a composite takes no `spawns`).
+    populate:
+      - { archetype: mickey, count: 1, rect: [221, 220, 1, 1] }
+
+archetypes:
+  - id: town:resident
+    override: true
+    label: Detective
+
+start:
+  override: true
+  # Both failures (the wrong man, a cold case at dawn) end with the same
+  # line; the quest's failed stage says which it was.
+  defeat:
+    when: 'quest_failed("elm_street") or self.hp <= 0'
+    message: "The case is closed."
+  victory:
+    when: 'quest_succeeded("elm_street")'
+    message: "Case closed. Pike goes down for Harold Vane."
+
+# It is nine at night; dawn, at six, is the deadline.
+clock:
+  override: true
+  start: "21:00"
+
+# Cold, desaturated blue-grey nights; the days are grey too.
+lighting:
+  override: true
+  tint:
+    - { at: "05:00", color: "#4e5874" }
+    - { at: "07:00", color: "#a8aebc" }
+    - { at: "17:00", color: "#9aa0b2" }
+    - { at: "20:00", color: "#5a6482" }
+    - { at: "22:00", color: "#46506c" }

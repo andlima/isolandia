@@ -17,7 +17,7 @@ import { build, preview } from 'vite';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = resolve(root, 'docs/screens');
 // Short stacks: the resolver adds each game's dependencies.
-const combos = [['town'], ['zombie'], ['vampire'], ['garden'], ['zombie', 'hardship']];
+const combos = [['town'], ['zombie'], ['vampire'], ['noir'], ['western'], ['garden'], ['zombie', 'hardship']];
 
 await build({ root, logLevel: 'warn' });
 const server = await preview({ root, preview: { port: 4175, strictPort: false, open: false }, logLevel: 'warn' });

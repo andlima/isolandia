@@ -465,7 +465,7 @@ for (const name of Object.keys(GAMES) as (keyof typeof GAMES)[]) {
       assertRoundTrip(w, undefined, 120);
       return true;
     });
-    const expected = { town: ['act', 'use', 'craft'], zombie: ['act', 'use', 'craft'], vampire: ['act', 'use', 'craft'], garden: [] }[name];
+    const expected = { town: ['act', 'use', 'craft'], zombie: ['act', 'use', 'craft'], vampire: ['act', 'use', 'craft'], noir: ['act', 'use', 'craft'], western: ['act', 'use', 'craft'], garden: [] }[name];
     assert.deepEqual(kinds, expected);
     if (def.actions.some((a) => a.effects.some((x) => x.type === 'set_tile'))) {
       const w = midActivity(def, 'act')!;
@@ -533,9 +533,9 @@ const FUZZ_TICKS = 600;
  * Script seeds that differ from the name length (the default), chosen so the
  * script acts often enough: in the roomier city the start road is further
  * from any container, and the town's and the zombie's own seeds (4, 6) act
- * too rarely. Seed 9 plays 18 actions on both.
+ * too rarely, as does the noir (4). Seed 9 plays 18 to 19 actions on each.
  */
-const FUZZ_SEED: Record<string, number> = { town: 9, zombie: 9 };
+const FUZZ_SEED: Record<string, number> = { town: 9, zombie: 9, noir: 9 };
 
 for (const [name, def] of [...Object.entries(GENRES), ['fixture', DEF] as const]) {
   test(`fuzz (${name}): saves at three random ticks restore exactly to tick ${FUZZ_TICKS}`, () => {

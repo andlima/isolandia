@@ -1,0 +1,163 @@
+# Who says what (docs/packs.md#dialogues): the sheriff's quest, three
+# favours for the townsfolk, the gang's taunts, and the duel itself.
+
+dialogues:
+  # Sheriff Cobb: gives the quest, a revolver and bullets. He will not fight.
+  - id: sheriff
+    start:
+      - { when: 'quest_reached("high_noon", "get_ready")', node: again }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "'Black Jack rides in at noon and he's asked for you by name. I've got one deputy and he's in the ground. Take this.' He hands you a revolver and a box of shells."
+        choices:
+          - text: "I'll be on Main Street at twelve."
+            give: { revolver: 1, bullet: 30 }
+            effects:
+              - { type: quest, quest: high_noon, stage: get_ready }
+            to: advice
+      advice:
+        text: "'Practise on the bottles in the yards, make some friends, and don't drink too much of your courage. I'll be watching. That's all I'll be doing.'"
+      again:
+        text: "'Noon, stranger. Middle of the street. I'll be on the boardwalk.'"
+
+  # Doc wants a bandage for the deputy's widow.
+  - id: doc
+    start:
+      - { when: 'var("doc_helped")', node: thanks }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "'You're the one Jack wants. I'm out of bandages and half the town is going to need them by one o'clock. Spare one?'"
+        choices:
+          - text: "Here's a bandage."
+            consume: { bandage: 1 }
+            give: { coin: 10 }
+            effects:
+              - { type: set_var, var: doc_helped, value: 1 }
+              - { type: reputation, faction: townsfolk, delta: 20, spread: true }
+            to: paid
+          - { text: "Not now.", to: end }
+      paid:
+        text: "'Obliged. Take ten for it, and tell folks the doc is behind you.'"
+      thanks:
+        text: "'Good luck at noon, stranger. I'll have the table ready either way.'"
+
+  # The bartender sells whiskey; the first round, the house stakes you.
+  - id: bartender
+    start:
+      - { when: 'var("bar_helped")', node: again }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "'Whiskey's five. You buy a round and the regulars will drink to your health, which is more than they'll do for Black Jack.'"
+        choices:
+          - text: "A round for the house."
+            consume: { coin: 5 }
+            give: { whiskey: 1 }
+            effects:
+              - { type: set_var, var: bar_helped, value: 1 }
+              - { type: reputation, faction: townsfolk, delta: 20, spread: true }
+            to: staked
+          - { text: "Not today.", to: end }
+      staked:
+        text: "The glasses go up. 'That one's yours. And the house is staking you ten on the fight.'"
+        choices:
+          - { text: "Obliged.", give: { coin: 10 }, to: end }
+      again:
+        text: "'Another?'"
+        choices:
+          - { text: "Whiskey.", consume: { coin: 5 }, give: { whiskey: 1 }, to: again }
+          - { text: "That's enough.", to: end }
+
+  # The kid wants your crackers.
+  - id: kid
+    start:
+      - { when: 'var("kid_helped")', node: thanks }
+      - { node: hello }
+    nodes:
+      hello:
+        text: "A boy in a cap sizes you up. 'You gonna shoot Black Jack? I ain't eaten since yesterday. You got anything?'"
+        choices:
+          - text: "Here. Crackers."
+            consume: { crackers: 1 }
+            give: { coin: 10 }
+            effects:
+              - { type: set_var, var: kid_helped, value: 1 }
+              - { type: reputation, faction: townsfolk, delta: 20, spread: true }
+            to: paid
+          - { text: "Scram.", to: end }
+      paid:
+        text: "He eats like a wolf and presses ten dollars into your hand. 'Ma said give you this. Everybody's talking about you.'"
+      thanks:
+        text: "'I'm gonna watch from the roof!'"
+
+  # The riders have nothing for you but a look.
+  - id: rider
+    start: look
+    nodes:
+      look:
+        text: "The rider leans on his pommel and spits. 'Noon, stranger. Jack's looking forward to it.'"
+
+  # Black Jack: a taunt before noon; at noon, the duel.
+  - id: black_jack
+    start:
+      - { when: 'world.hour >= 12', node: showdown }
+      - { node: taunt }
+    nodes:
+      taunt:
+        text: "Black Jack doesn't take his eyes off the street. 'Noon, stranger. Don't make me come looking.'"
+      showdown:
+        text: "'Well now. You came.' The street goes quiet, window by window. 'Last chance to crawl.'"
+        leave: false
+        effects:
+          - { type: set_var, var: faced_jack, value: 1 }
+        choices:
+          - text: "Go for your gun"
+            when: 'self.has_item("revolver")'
+            unavailable: You're unarmed
+            effects:
+              - { type: set_var, var: draw, value: "roll(1, 100) + self.aim * 1.1 + self.nerve / 2" }
+            to: draw
+          - text: "Talk him down"
+            when: 'reputation("townsfolk") >= 50'
+            unavailable: Nobody on this street would back you
+            effects:
+              - { type: quest, quest: high_noon, stage: talked_down }
+            to: talked_down
+          - text: "Pay him off"
+            consume: { coin: 30 }
+            effects:
+              - { type: quest, quest: high_noon, stage: paid_off }
+            to: paid_off
+          - text: "Back down"
+            effects:
+              - { type: quest, quest: high_noon, stage: coward }
+            to: backed_down
+      # The roll is made; this node cannot be left, so it cannot be dodged by
+      # leaving and talking again. Two choices, one text, exclusive `when`s:
+      # exactly one is ever shown.
+      draw:
+        text: "His hand hangs loose over the holster. Somewhere a shutter bangs."
+        leave: false
+        choices:
+          - text: "Fire!"
+            when: 'var("draw") >= 118'
+            effects:
+              - { type: quest, quest: high_noon, stage: won }
+            to: won
+          - text: "Fire!"
+            when: 'var("draw") < 118'
+            effects:
+              - { type: quest, quest: high_noon, stage: shot }
+            to: shot
+      won:
+        text: "Two shots, close as one. Black Jack looks down at his shirt, then folds into the dust."
+      shot:
+        text: "You never cleared leather. The sun is very bright, and then it isn't."
+      talked_down:
+        text: "'Look around you, Jack.' He does. Every window has a face in it, every porch a rifle. He spits, turns his horse, and the gang follows."
+      paid_off:
+        text: "He counts it twice. 'Pleasure doing business.' The gang rides out laughing. The town watches you with something that isn't gratitude."
+      backed_down:
+        text: "You turn your back on him and walk. His laugh follows you the length of Main Street, and so do the town's eyes."
