@@ -22,7 +22,11 @@ export interface PackSource {
 
 export const LIST_DOMAINS = ['measurements', 'assets', 'tiles', 'archetypes', 'maps', 'systems', 'statuses', 'items', 'loot', 'behaviors', 'actions', 'recipes', 'vars', 'quests', 'journal', 'dialogues', 'factions'] as const;
 export type ListDomain = (typeof LIST_DOMAINS)[number];
-export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting'];
+export const DOMAIN_KEYS: readonly string[] = [...LIST_DOMAINS, 'distributions', 'start', 'clock', 'lighting', 'defaults'];
+
+/** Fields a file's `defaults` may set, and the domains whose entries take them. */
+export const DEFAULTS_FIELDS: readonly string[] = ['for'];
+export const DEFAULTS_DOMAINS: readonly ListDomain[] = ['systems', 'statuses'];
 
 /** Pack text files: YAML plus Tiled JSON maps and tilesets. */
 export const TEXT_FILE_RE = /\.(ya?ml|tmj|tsj)$/;
@@ -41,6 +45,8 @@ export function isObject(v: unknown): v is JsonObject {
 export interface RawEntry {
   readonly src: Src;
   readonly value: JsonObject;
+  /** Fields the file's `defaults` filled in, each located at that `defaults` mapping (absent when none). */
+  readonly fieldSrc?: Readonly<Record<string, Src>>;
 }
 
 export interface RawPack extends Manifest {
@@ -205,8 +211,11 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
       sink.add(root, `content file must be a mapping of domain keys (${DOMAIN_KEYS.join(', ')})`);
       continue;
     }
+    const defaults = readDefaults(content['defaults'], at(root, 'defaults'), sink);
+    let defaulted = 0;
     for (const [key, value] of Object.entries(content)) {
       const ksrc = at(root, key);
+      if (key === 'defaults') continue;
       if (key === 'start') {
         if (!isObject(value)) sink.add(ksrc, "'start' must be a mapping with 'map' and 'player'");
         else pack.starts.push({ src: ksrc, value });
@@ -233,11 +242,57 @@ export function parsePack(source: PackSource, sink: ErrorSink): RawPack | null {
         sink.add(ksrc, `'${key}' must be a list`);
         continue;
       }
+      const takesDefaults = defaults !== null && (DEFAULTS_DOMAINS as readonly string[]).includes(key);
       value.forEach((v, i) => {
         if (!isObject(v)) sink.add(at(ksrc, i), `each entry in '${key}' must be a mapping`);
-        else list.push({ src: at(ksrc, i), value: v });
+        else if (takesDefaults) {
+          const entry = withDefaults(v, at(ksrc, i), defaults!);
+          if (entry.fieldSrc) defaulted++;
+          list.push(entry);
+        } else list.push({ src: at(ksrc, i), value: v });
       });
+    }
+    if (defaults !== null && defaulted === 0) {
+      sink.warn(at(root, 'defaults'), `'defaults' is unused: no '${DEFAULTS_DOMAINS.join("' or '")}' entry of this file takes it (overrides and removals never do)`);
     }
   }
   return pack;
+}
+
+/** A file's `defaults`: the field values to fill in, each with its location; null when absent or unusable. */
+function readDefaults(raw: Json | undefined, src: Src, sink: ErrorSink): { fields: JsonObject; src: Src } | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isObject(raw)) {
+    sink.add(src, `'defaults' must be a mapping of field defaults (${DEFAULTS_FIELDS.join(', ')})`);
+    return null;
+  }
+  let ok = true;
+  for (const k of Object.keys(raw)) {
+    if (DEFAULTS_FIELDS.includes(k)) continue;
+    const s = nearMiss(k, DEFAULTS_FIELDS);
+    sink.add(at(src, k), `unknown defaults field '${k}'${s ? ` (did you mean '${s}'?)` : ''}; 'defaults' supports: ${DEFAULTS_FIELDS.join(', ')}`);
+    ok = false;
+  }
+  const fields: JsonObject = {};
+  for (const k of DEFAULTS_FIELDS) if (raw[k] !== undefined && raw[k] !== null) fields[k] = raw[k]!;
+  if (!ok || Object.keys(fields).length === 0) return null;
+  return { fields, src };
+}
+
+/**
+ * `v` with the file's defaults filled into the fields it does not write
+ * (`for: null` counts as written). Overrides and removals never take them:
+ * an override changes only what it lists.
+ */
+function withDefaults(v: JsonObject, src: Src, defaults: { fields: JsonObject; src: Src }): RawEntry {
+  if (v['override'] === true || v['remove'] === true) return { src, value: v };
+  const missing = Object.keys(defaults.fields).filter((k) => v[k] === undefined);
+  if (missing.length === 0) return { src, value: v };
+  const value: JsonObject = { ...v };
+  const fieldSrc: Record<string, Src> = {};
+  for (const k of missing) {
+    value[k] = defaults.fields[k]!;
+    fieldSrc[k] = defaults.src;
+  }
+  return { src, value, fieldSrc };
 }

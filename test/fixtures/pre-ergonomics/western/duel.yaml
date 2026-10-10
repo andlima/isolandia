@@ -66,17 +66,15 @@ items:
     use:
       label: Drink
       effects:
-        - { apply: { liquor: 40, nerve: 5, thirst: -5 } }
-
-# Every rule below is the Stranger's unless it writes its own `for` (the
-# riders' count, the law's bell).
-defaults:
-  for: 'self.has_tag("stranger")'
+        - { type: apply, measurement: liquor, delta: 40 }
+        - { type: apply, measurement: nerve, delta: 5 }
+        - { type: apply, measurement: thirst, delta: -5 }
 
 statuses:
   # Dutch courage: steadier nerves, a worse eye, for as long as the whiskey lasts.
   - id: tipsy
     label: Tipsy
+    for: 'self.has_tag("stranger")'
     when: "self.liquor > 0"
     until: "self.liquor <= 0"
     rates: { nerve: 0.5, aim: -0.3 }
@@ -84,6 +82,7 @@ statuses:
   # Hemmed in by the gang (see the `crowded` var below).
   - id: crowded
     label: Crowded
+    for: 'self.has_tag("stranger")'
     when: 'var("crowded") > 0'
     hud: { tone: bad, description: Black Jack's riders are at your elbow, enter: The riders close in around you., exit: The riders give you room. }
 
@@ -104,6 +103,7 @@ vars:
 systems:
   - id: crowd_reset
     every: 1
+    for: 'self.has_tag("stranger")'
     effects:
       - { type: set_var, var: crowded, value: 0 }
   - id: crowd_count
@@ -114,9 +114,10 @@ systems:
       - { type: add_var, var: crowded, delta: 1 }
   - id: crowd_nerve
     every: 1
+    for: 'self.has_tag("stranger")'
     when: 'var("crowded") > 0'
     effects:
-      - { apply: { nerve: -3 } }
+      - { type: apply, measurement: nerve, delta: -3 }
   # The noon bell, rung for a minute from the sheriff's spot in the middle
   # of Main Street: Black Jack hears it and walks there (people.yaml).
   - id: noon_bell
@@ -139,7 +140,7 @@ actions:
     unavailable: Your aim is as good as practice makes it
     duration: 8
     effects:
-      - { apply: { aim: "6 * (self.aim < 70)" } }
+      - { type: apply, measurement: aim, delta: "6 * (self.aim < 70)" }
       - { type: noise, radius: 30 }
       - { type: reputation, faction: townsfolk, delta: -5, witnessed: 10 }
 

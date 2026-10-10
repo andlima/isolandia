@@ -23,6 +23,8 @@ export interface ExprEntity {
   readonly inv: Container | null;
   /** Tick at which the entity last heard a noise; -1 = never. */
   readonly heardTick: number;
+  /** 1 at each measurement index the entity has; absent means it has every measurement. */
+  readonly hasM?: Uint8Array;
   /** In-progress activity (`action` = action index, -1 for an item use); null or absent when idle. */
   readonly activity?: { readonly action: number } | null;
   /** Faction index of the entity's archetype; -1 or absent for none. */
@@ -160,6 +162,18 @@ export interface CompileSymbols {
   resolveStage?(quest: number, stage: string): { index: number } | { error: string };
   /** Resolve a faction reference to its index; without it, the faction built-ins are errors. */
   resolveFaction?(ref: string): { index: number } | { error: string };
+  /**
+   * Resolve an item tag to a per-item flag (1 at each item index carrying
+   * it); without it, `count_tagged`/`has_tagged` are errors. A tag no item
+   * carries is the caller's warning, not an error.
+   */
+  resolveItemTag?(tag: string): { flags: Uint8Array } | { error: string };
+  /**
+   * Resolve a measurement for `fraction`: its index and its bounds (read at
+   * call time, so they may be filled after compilation). A measurement with
+   * no `max` is the caller's error.
+   */
+  resolveBounds?(ref: string): { index: number; bounds(): MeasurementBounds } | { error: string };
   /** Whether `npc` (the NPC being talked to) is in scope: dialogue expressions only. */
   npc?: boolean;
   /**
@@ -168,6 +182,15 @@ export interface CompileSymbols {
    * reads an entity or world state are errors naming the field.
    */
   tileOnly?: boolean;
+}
+
+/** A measurement's bounds as `fraction` reads them (a `MeasurementDef` fits). */
+export interface MeasurementBounds {
+  readonly min: number;
+  /** Constant upper bound; `Infinity` when unbounded or when `maxFn` is set. */
+  readonly maxConst: number;
+  /** Per-entity upper bound, evaluated with `self` = the entity. */
+  readonly maxFn: Compiled | null;
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -299,6 +322,9 @@ const SPECIAL_NAMES = [
   'has_status',
   'count_item',
   'has_item',
+  'count_tagged',
+  'has_tagged',
+  'fraction',
   'in_room',
   'can_see',
   'heard',
@@ -318,7 +344,7 @@ const SPECIAL_NAMES = [
 ];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'in_room', 'heard', 'doing', 'in_faction']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'count_tagged', 'has_tagged', 'fraction', 'in_room', 'heard', 'doing', 'in_faction']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
@@ -477,6 +503,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (symbols.tileOnly && (name === 'random' || name === 'roll' || (SPECIAL_NAMES.includes(name) && name !== 'in_room'))) return err(tileOnly(name), node.pos);
     if (name === 'has_status') return hasStatus(argNodes, node.pos);
     if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
+    if (name === 'count_tagged' || name === 'has_tagged') return taggedCount(name, argNodes, node.pos);
+    if (name === 'fraction') return fraction(argNodes, node.pos);
     if (name === 'in_room') return inRoom(argNodes, node.pos);
     if (name === 'can_see') return canSee(argNodes, node.pos);
     if (name === 'heard') return heard(argNodes, node.pos);
@@ -592,6 +620,86 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       fn: (c) => {
         const inv = target(c).inv;
         return inv === null ? 0 : countOf(inv, k);
+      },
+    };
+  }
+
+  /**
+   * `count_tagged(entity, "tag")` / `has_tagged(entity, "tag")`: the tag is
+   * resolved now to a per-item flag; runtime scans one inventory's stacks.
+   */
+  function taggedCount(name: 'count_tagged' | 'has_tagged', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`${name}() takes 2 arguments, got ${argNodes.length}`, pos);
+    const tagNode = argNodes[1]!;
+    if (tagNode.kind !== 'string') return err(`${name}() expects a string literal item tag, e.g. ${name}(self, "food")`, tagNode.pos);
+    if (!symbols.resolveItemTag) return err(`${name}() is not available here`, pos);
+    const r = symbols.resolveItemTag(tagNode.value);
+    if ('error' in r) return err(`${name}: ${r.error}`, tagNode.pos);
+    const flags = r.flags;
+    const target = entityArg(name, argNodes[0]!, pos, 'entity, tag');
+    if (!target) return fail;
+    if (name === 'has_tagged') {
+      return {
+        type: 'boolean',
+        fn: (c) => {
+          const inv = target(c).inv;
+          if (inv === null) return false;
+          const st = inv.stacks;
+          for (let i = 0; i < st.length; i++) if (flags[st[i]!.item] === 1 && st[i]!.count > 0) return true;
+          return false;
+        },
+      };
+    }
+    return {
+      type: 'number',
+      fn: (c) => {
+        const inv = target(c).inv;
+        if (inv === null) return 0;
+        const st = inv.stacks;
+        let n = 0;
+        for (let i = 0; i < st.length; i++) if (flags[st[i]!.item] === 1) n += st[i]!.count;
+        return n;
+      },
+    };
+  }
+
+  /**
+   * `fraction(entity, "measurement")`: `(value − min) / (max − min)` in
+   * [0, 1]; 0 when the entity lacks the measurement or its resolved max is
+   * not finite or not above min. A per-entity `max` is evaluated for that
+   * entity (with `self` swapped in and back; nothing is allocated).
+   */
+  function fraction(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 2) return err(`fraction() takes 2 arguments, got ${argNodes.length}`, pos);
+    const idNode = argNodes[1]!;
+    if (idNode.kind !== 'string') return err('fraction() expects a string literal measurement id, e.g. fraction(self, "energy")', idNode.pos);
+    if (!symbols.resolveBounds) return err('fraction() is not available here', pos);
+    const r = symbols.resolveBounds(idNode.value);
+    if ('error' in r) return err(`fraction: ${r.error}`, idNode.pos);
+    const k = r.index;
+    const bounds = r.bounds;
+    const target = entityArg('fraction', argNodes[0]!, pos, 'entity, measurement');
+    if (!target) return fail;
+    return {
+      type: 'number',
+      fn: (c) => {
+        const e = target(c);
+        const has = e.hasM;
+        if (has !== undefined && has[k] !== 1) return 0;
+        const b = bounds();
+        const min = b.min;
+        let max: number;
+        if (b.maxFn === null) max = b.maxConst;
+        else if (e === c.self) max = Number(b.maxFn(c));
+        else {
+          const saved = c.self;
+          c.self = e;
+          max = Number(b.maxFn(c));
+          c.self = saved;
+        }
+        if (!(max > min) || max === Infinity) return 0;
+        const v = (e.m[k]! - min) / (max - min);
+        return v < 0 ? 0 : v > 1 ? 1 : v;
       },
     };
   }

@@ -2,16 +2,13 @@
 # std-needs (hunger, hungry, …, referenced here by short name). Food, water,
 # coffee and bandages are looted items used from the inventory (items.yaml);
 # lying on a bed still restores fatigue. Everything here applies only to
-# entities tagged `living` (the file's `defaults` sets `for` on every rule).
-
-defaults:
-  for: 'self.has_tag("living")'
+# entities tagged `living`.
 
 statuses:
   - id: stocked
     label: Stocked
-    # Any four units of food and drink (items.yaml tags) put the mind at ease.
-    when: 'self.count_tagged("food") + self.count_tagged("drink") >= 4'
+    for: 'self.has_tag("living")'
+    when: 'self.count_item("canned_beans") + self.count_item("water_bottle") >= 4'
     rates: { fatigue: -0.01 }       # peace of mind
     hud: { tone: good, description: Enough food and water put your mind at ease }
 
@@ -19,25 +16,30 @@ systems:
   # Restoring: lie on a bed.
   - id: sleep
     every: 1
+    for: 'self.has_tag("living")'
     when: 'tile.has_tag("bed")'
     effects:
-      - { apply: { fatigue: -3, hp: "1 - 0.5 * self.has_status(\"hungry\")" } }
+      - { type: apply, measurement: fatigue, delta: -3 }
+      - { type: apply, measurement: hp, delta: "1 - 0.5 * self.has_status(\"hungry\")" }
   # Wounds hurt more without a bandage in your pocket (morale).
   - id: bleed
     every: 10
+    for: 'self.has_tag("living")'
     when: 'self.hp < 50 and not self.has_item("bandage")'
     effects:
-      - { apply: { hp: -1 } }
+      - { type: apply, measurement: hp, delta: -1 }
   # Hurting: completely starved or parched people weaken quickly.
   - id: collapse
     every: 5
+    for: 'self.has_tag("living")'
     when: "self.hunger >= 100 or self.thirst >= 100"
     effects:
-      - { apply: { hp: -3 } }
+      - { type: apply, measurement: hp, delta: -3 }
   # Noise: broken glass crunches underfoot, once per step onto it (never
   # while standing still); anything that listens (behaviors) hears it.
   - id: crunch
     on: step
+    for: 'self.has_tag("living")'
     when: 'tile.has_tag("glass")'
     effects:
       - { type: noise, radius: 12 }

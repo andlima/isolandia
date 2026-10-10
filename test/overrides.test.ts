@@ -476,9 +476,9 @@ start:
   assert.deepEqual(
     def.patches.filter((p) => p.id === null).map((p) => [p.pack, p.domain, p.fields]),
     [
-      ['m', 'start', ['defeat']],
+      ['m', 'start', ['defeat.when']],
       ['m', 'clock', ['start']],
-      ['n', 'start', ['defeat', 'victory']],
+      ['n', 'start', ['defeat', 'victory.when', 'victory.message']],
     ],
   );
   assert.deepEqual(r.warnings, [], 'n depends on m: no conflict');

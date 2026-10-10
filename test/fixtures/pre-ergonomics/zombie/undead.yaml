@@ -1,12 +1,9 @@
-# Every rule of this file is the undead's (`defaults`).
-defaults:
-  for: 'self.has_tag("undead")'
-
 statuses:
   # The undead notice a survivor in plain sight and lose track of them only
   # once they are well out of view.
   - id: alert
     label: Alert
+    for: 'self.has_tag("undead")'
     when: 'can_see(self, player, 8)'
     until: 'not can_see(self, player, 12)'
     hud: { tone: bad, description: A zombie has seen you }

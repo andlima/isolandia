@@ -340,20 +340,48 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   - **One-shot triggers are hand-built**: ~~`survival_tip` polls `not
     in_journal(...)` every tick;~~ (`once: true` now, see above) first
     quest stages use `when: "true"`. Social games will multiply these.
-  - **Two spellings for changing a measurement**: statuses write `rates:
+  - ~~**Two spellings for changing a measurement**: statuses write `rates:
     { hp: -0.2 }`, effects write `{ type: apply, measurement: hp, delta:
     -0.2 }` (~25 times, mostly items). Candidate shorthand: `apply: {
-    hunger: -35, thirst: 3 }`.
-  - **Overrides force copying upstream values.** `hardship` doubles
+    hunger: -35, thirst: 3 }`.~~ **Decided** (`pack-ergonomics`): an
+    effects entry may be `{ apply: { hunger: -35, thirst: 3 } }` or
+    `{ set: { liquor: 100 } }`. It is a **load-time shorthand**: the
+    loader expands it to one typed effect per key, in mapping order, so
+    the compiled definition's shape, snapshots, hashes and saves do not
+    change; the long form stays the general one. Every shipped pack uses
+    it.
+  - ~~**Overrides force copying upstream values.** `hardship` doubles
     thirst by copying the whole `std_needs` rate expression (it drifts
     silently if upstream changes), restates all of `kitchen_food`'s
     entries to change weights; `zombie` and `vampire` restate
     `defeat.when` to change only the message. Candidates: **pack
     parameters** read by expressions, a `scale` for numeric overrides,
     or a deeper merge for `start.defeat` — a deliberate revisit of the
-    shallow merge of `m7-overrides`.
-  - **`for` is repeated on every rule**: `has_tag("living")` 9 times,
-    `undead` 5, `bunny` 4. Candidate: a default `for` per file or group.
+    shallow merge of `m7-overrides`.~~ **Decided** (`pack-ergonomics`),
+    two ways, no pack parameters yet: an override may give a numeric
+    field a **term**, `rate: { scale: 2 }` / `{ add: n }`, applied to the
+    current value after every earlier patch (terms stack: ×2 then ×2 is
+    ×4). A number is folded at load; an expression is **wrapped
+    textually**, `(…) * 2`, and compiled in the scope of the pack that
+    wrote the original, with provenance recorded as the overriding pack.
+    And in a `start` override, `defeat`, `victory` and `simulation`
+    merge **one level deeper**, per field — a deliberate, narrow revisit
+    of `m7-overrides`' whole-replacement rule; every other nested value
+    keeps it. `hardship` now writes `rate: { scale: 2 }`, `zombie` and
+    `vampire` override only `defeat.message`. `kitchen_food` is still
+    restated (terms on nested values and list operators stay out of
+    scope); pack parameters are a later spec if a third mod needs a value
+    that is not a scale of an upstream one.
+  - ~~**`for` is repeated on every rule**: `has_tag("living")` 9 times,
+    `undead` 5, `bunny` 4. Candidate: a default `for` per file or group.~~
+    **Decided** (`pack-ergonomics`): a content file may carry
+    `defaults: { for: … }`, applied to the `systems` and `statuses`
+    entries of **that file** that do not write `for` (an entry that
+    writes `for: "true"` opts out). Defaults are **per file**, never per
+    pack, and **never touch overrides or removals**: an override changes
+    only what it lists, and a defaulted `for` would silently patch the
+    upstream entry. The expression keeps the `has_tag` fast path and is
+    reported once, at `defaults.for`.
   - ~~**Spawn grids are hand-computed**: `zombie/outbreak.yaml` has 36
     `populate` rects over the city's 59×59 blocks. Candidates: density
     by room or region tag, or a Tiled region layer.~~ **Decided in
@@ -369,12 +397,17 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     `sunlit` on every tile, and untagged floors burn as if outdoors. A
     derived "roofed/indoors" property (§4 sketched
     `tile.exposed_to_sky`) would replace the tags.
-  - Smaller: no count by item tag (`stocked` adds two `count_item`
-    calls); every item and archetype spells `sprite: <id>_img`; no
-    fraction-of-max for measurements (`scorched` hard-codes `hp < 25`);
-    NPCs can only target `player` (`can_see(self, player)`, `target:
-    player`), which the faction games will hit first (see the
-    `nearest(...)` note under `m8-factions`).
+  - Smaller: ~~no count by item tag (`stocked` adds two `count_item`
+    calls);~~ (**decided**, `pack-ergonomics`: `count_tagged(entity,
+    "tag")` / `has_tagged` sum every stack carrying an item tag, resolved
+    at load to a per-item flag; `stocked` counts `food` + `drink`) every
+    item and archetype spells `sprite: <id>_img`; ~~no fraction-of-max
+    for measurements (`scorched` hard-codes `hp < 25`);~~ (**decided**:
+    `fraction(entity, "measurement")` is `(value − min) / (max − min)` in
+    `[0, 1]`, a load error on a measurement without `max`; `scorched`
+    reads `fraction(self, "hp") < 0.25`) NPCs can only target `player`
+    (`can_see(self, player)`, `target: player`), which the faction games
+    will hit first (see the `nearest(...)` note under `m8-factions`).
 - ~~Projection: classic 2:1 dimetric? Tile size?~~ **Decided in M1:**
   **classic 2:1 dimetric** with a **64×32 px** tile diamond
   (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); 32 px raised blocks; tile

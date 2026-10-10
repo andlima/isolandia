@@ -48,8 +48,8 @@ archetypes:
 
 start:
   override: true
-  # The town's defeat condition, with the outbreak's message (sub-fields merge).
   defeat:
+    when: "self.hp <= 0"
     message: "You did not survive the outbreak."
   # A car battery from a garage gets one of the wrecks running: the `escape`
   # quest (escape.yaml) tracks it, and its success is the win.

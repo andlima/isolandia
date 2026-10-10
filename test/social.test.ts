@@ -146,7 +146,7 @@ test('both mods are listed by the catalog, stack on the town, and patch it by ov
     'noir override archetype town:resident [label]',
     'noir override map town:town_center [rooms, spawns]',
     'noir override map town:city [player, populate]',
-    'noir override start [defeat, victory]',
+    'noir override start [defeat.when, defeat.message, victory.when, victory.message]',
     'noir override clock [start]',
     'noir override lighting [tint]',
   ]);
@@ -154,7 +154,7 @@ test('both mods are listed by the catalog, stack on the town, and patch it by ov
     'wst override archetype town:resident [label, tags, measurements, initial, inventory]',
     'wst override map town:town_center [spawns]',
     'wst override map town:city [rooms, populate]',
-    'wst override start [defeat, victory]',
+    'wst override start [defeat.when, defeat.message, victory.when, victory.message]',
     'wst override clock [start]',
     'wst override lighting [tint]',
   ]);

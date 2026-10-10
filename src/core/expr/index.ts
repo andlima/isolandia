@@ -17,6 +17,7 @@ export {
   type CompileSymbols,
   type ExprContext,
   type ExprEntity,
+  type MeasurementBounds,
   type TileRef,
   type Value,
   type ValueType,

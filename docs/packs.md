@@ -88,6 +88,39 @@ domain. Any other top-level key is a load error.
 | `start`        | one mapping     |
 | `clock`        | one mapping     |
 | `lighting`     | one mapping     |
+| `defaults`     | one mapping, per **file** (see below) |
+
+**`defaults`** fills in a field on the entries of **that file** that do not
+write it. It is per file, not per pack: another file of the same pack is
+untouched. The only field it takes is `for`, applied to the file's
+`systems` and `statuses` entries (an [action](#actions) has no `for`, so
+other domains are left alone):
+
+```yaml
+defaults:
+  for: 'self.has_tag("undead")'
+systems:
+  - id: daylight            # gets the file's `for`
+    every: 1
+    when: 'world.is_day and not tile.has_tag("shade")'
+    effects: [{ apply: { hp: -0.2 } }]
+  - id: everyone            # opts out
+    for: "true"
+    every: 5
+    effects: [{ apply: { hp: 1 } }]
+```
+
+An entry that writes `for` (even `for: "true"`) keeps its own. The default
+is **never** applied to `override: true` or `remove: true` entries: an
+override changes only what it lists, and a defaulted `for` would silently
+patch the upstream entry. The expression is compiled in the writing pack's
+scope with the `self.has_tag("x")` fast path, exactly as if it were
+written on the entry; an error in it is reported once, at `defaults.for`,
+and that location is the field's provenance (for overrides and
+`check --overrides`). Any other key under `defaults` is a load error
+listing the supported ones, and a file whose `defaults` no entry takes
+(no `systems` or `statuses`, or all of them write `for`) warns that it
+is unused.
 
 ## Manifest: `pack.yaml`
 
@@ -908,8 +941,10 @@ false` is the same as omitting it; any other value is an error.
 
 | Effect                                                  | Meaning |
 |---------------------------------------------------------|---------|
-| `{ type: apply, measurement: <id>, delta: <n or expr> }` | Add `delta` to the measurement |
-| `{ type: set, measurement: <id>, value: <n or expr> }`   | Replace the measurement's value |
+| `{ apply: { <id>: <n or expr>, … } }`                    | Add to each listed measurement (shorthand, see below) |
+| `{ set: { <id>: <n or expr>, … } }`                      | Replace each listed measurement's value (shorthand) |
+| `{ type: apply, measurement: <id>, delta: <n or expr> }` | Add `delta` to the measurement (the general form) |
+| `{ type: set, measurement: <id>, value: <n or expr> }`   | Replace the measurement's value (the general form) |
 | `{ type: noise, radius: <n or expr> }`                   | Emit a noise at `self`'s cell (see below) |
 | `{ type: set_var, var: <id>, value: <n or expr> }`       | Write the world [var](#vars) (clamped) |
 | `{ type: add_var, var: <id>, delta: <n or expr> }`       | Add to the world var (clamped) |
@@ -923,6 +958,31 @@ effect list: systems, item uses, actions, recipes, quest stages and
 [dialogues](#dialogues). In a dialogue, `apply` and `set` also take
 `on: npc` to change the NPC being talked to instead (`on: self`, the
 default, is the player); `on` anywhere else is a load error.
+
+**The `apply` / `set` shorthand.** An entry of any effects list may be a
+mapping of measurement → delta (`apply`) or measurement → value (`set`)
+instead of a typed effect. It expands at load time to one `apply` (or
+`set`) effect per key, in mapping order, so these two lists are the same:
+
+```yaml
+effects:
+  - { apply: { hunger: -35, thirst: 3 } }
+  - { set: { liquor: 100 } }
+effects:
+  - { type: apply, measurement: hunger, delta: -35 }
+  - { type: apply, measurement: thirst, delta: 3 }
+  - { type: set, measurement: liquor, value: 100 }
+```
+
+Each key is a measurement reference (short or qualified, resolved in the
+entry's scope like `measurement:`) and each value a number or an
+expression, with the same validation as the long form; errors point at the
+key inside the mapping (`effects[0].apply.hunger`). The only other key
+allowed next to `apply` or `set` is `on` (in dialogues: `{ apply: { hp:
+-2 }, on: npc }`). `type` next to the shorthand, both `apply` and `set` in
+one entry, an empty mapping or a value that is not a mapping are load
+errors naming the entry. The long form stays valid and is the general one
+(it is what the shorthand becomes).
 
 `set_var`, `add_var`, `quest`, `journal` and `reputation` touch no entity:
 `self` matters only inside their expressions (and for `reputation`'s
@@ -954,28 +1014,28 @@ the `investigate` [behavior](#behaviors) activity. Hearing costs
 O(noises × entities) on ticks with noise and nothing on silent ticks.
 
 ```yaml
+defaults:
+  for: 'self.has_tag("living")'    # every rule of this file, unless it writes its own
 systems:
   - id: drink
     every: 1                       # once per sim second
-    for: 'self.has_tag("living")'
     when: 'tile.has_tag("water")'
     effects:
-      - { type: apply, measurement: thirst, delta: -8 }
+      - { apply: { thirst: -8 } }
   - id: collapse
     every: 5
+    for: "true"                    # everyone, not only the living
     when: "self.hunger >= 100"
     effects:
-      - { type: apply, measurement: hp, delta: -3 }
+      - { apply: { hp: -3 } }
   - id: crunch                     # broken glass is loud underfoot: once per step onto it
     on: step
-    for: 'self.has_tag("living")'
     when: 'tile.has_tag("glass")'
     effects:
       - { type: noise, radius: 12 }
   - id: survival_tip               # the first time only, per entity
     once: true
     every: 1
-    for: 'self.has_tag("living")'
     when: 'self.has_status("burdened") or self.has_status("hungry")'
     effects:
       - { type: journal, entry: travel_light }
@@ -1186,7 +1246,7 @@ container holds stacks `{ item, count }`.
       duration: 3
       interrupt: { on: noise }        # a noise that reaches you wastes the attempt
       effects:
-        - { type: apply, measurement: hp, delta: 20 }
+        - { apply: { hp: 20 } }
 ```
 
 ```yaml
@@ -1200,9 +1260,23 @@ items:
     use:
       label: Eat
       effects:
-        - { type: apply, measurement: hunger, delta: -35 }
+        - { apply: { hunger: -35 } }
+  - id: crackers
+    label: Crackers
+    glyph: "%"
+    color: "#e0c080"
+    weight: 0.2
+    tags: [food]
+    use:
+      label: Eat
+      effects:
+        - { apply: { hunger: -12, thirst: 3 } }     # salty
   - { id: toaster, label: Toaster, glyph: "]", color: "#a0a0a0", weight: 3 }
 ```
+
+Item tags are what [`count_tagged` / `has_tagged`](expressions.md#built-in-functions)
+count: `self.count_tagged("food")` sums every stack of an item tagged
+`food`, so a rule need not list the items one by one.
 
 ### `actions`
 
@@ -1330,7 +1404,7 @@ actions:
     duration: 10
     interrupt: { on: noise }           # any noise that reaches you wakes you
     effects:
-      - { type: apply, measurement: hp, delta: 30 }
+      - { apply: { hp: 30 } }
 ```
 
 `world.availableActions()` lists what the player could start right now:
@@ -2313,7 +2387,10 @@ only the fields it changes.
 measurements:
   - id: std_needs:hunger
     override: true
-    rate: 0.2              # only this field changes
+    rate: { scale: 2 }     # only this field changes: twice whatever std_needs ships
+  - id: std_needs:thirst
+    override: true
+    rate: { scale: 2 }     # an expression rate is wrapped, not copied
 archetypes:
   - id: zmb:shambler
     override: true
@@ -2322,6 +2399,9 @@ archetypes:
 systems:
   - id: town:crunch
     remove: true
+start:
+  override: true
+  defeat: { message: "Nobody comes back from this." }   # keeps the town's `when`
 clock:
   override: true
   start: "20:00"
@@ -2343,7 +2423,40 @@ list or tree):
   current one; omitted fields are kept. Nested values are replaced
   **whole**: a mapping (`inventory`, `use`, `directions`, `target`…) or a
   list (`tags`, `parts`, `populate`, `effects`, `rows`…). There are no list
-  operators and no deep merge.
+  operators and no deep merge (the one exception is `start`'s `defeat`,
+  `victory` and `simulation`, see [Singletons](#singletons)).
+- **Numeric terms.** A top-level field of type *number* or *number or
+  expression* may take a **term** instead of a value, so a mod tunes an
+  upstream number without copying it:
+
+  | Form                   | Meaning |
+  |------------------------|---------|
+  | `{ scale: n }`         | The current value multiplied by `n` |
+  | `{ add: n }`           | The current value plus `n` |
+  | `{ scale: n, add: m }` | `current × n + m` (scale first) |
+
+  `n` and `m` are numbers, not expressions. The fields that take a term
+  are measurement `min`, `max`, `initial`, `rate`; system `every`; action
+  and recipe `duration`; var `initial`, `min`, `max`; faction
+  `reputation`, `hostile_below`, `friendly_from`; and clock `day_length`.
+  A term is applied to the field's value **after** every earlier patch
+  (two mods that each scale a rate by 2 give ×4, and a mod that depends
+  on another sees its result). When the current value is a number the
+  result is a number, folded at load (`rate: 0.1` scaled by 2 is `0.2`,
+  still a free addition per tick). When it is an expression, the result
+  is the expression wrapped in parentheses, `(0.1 + 0.05 * (self.hunger
+  >= 50)) * 2` (the `* n` part is omitted when `n` is 1, the `+ m` part
+  when `m` is 0), compiled in the scope of the pack that wrote the
+  original expression, so its references still resolve through that
+  pack's depends, while provenance records the overriding pack as the
+  writer (the usual "also overridden by" warning applies). The scaled
+  value is validated like a written one (`every` must still be a whole
+  number of ticks). A term on any other field, on a field the upstream
+  entry does not set (nothing to scale), on a definition rather than an
+  override, with a key other than `scale` and `add`, or with a
+  non-number is a load error with the field path; so is a term on a
+  measurement whose `max` is a bare measurement id (`max: max_hp` is a
+  reference, not a number).
 - **`field: null`** removes the field: the entry behaves as if it had never
   been written, so an optional field gets its default and a required one
   is reported *missing* at the override.
@@ -2381,9 +2494,27 @@ town survival.yaml:22 systems[0].effects[1].delta: expression error in "1 - 0.5 
 Overriding a removed entry is an error; removing it again warns.
 
 **Singletons.** `start`, `clock` and `lighting` accept `override: true`
-inside the mapping, with the same merge, `null` and provenance rules.
-`start.defeat`, `start.victory`, `start.simulation` and `lighting.tint`
-are replaced whole; `defeat: null` removes the defeat condition. The
+inside the mapping, with the same merge, `null`, term and provenance
+rules. In `start`, the sub-mappings **`defeat`**, **`victory`** and
+**`simulation`** merge **one level deeper**, per field: a listed key
+replaces that key, omitted keys are kept, `key: null` clears one, and
+`defeat: null` still removes the whole condition:
+
+```yaml
+start:
+  override: true
+  defeat: { message: "You did not survive the outbreak." }   # keeps the town's `when`
+  simulation: { active_radius: none }                        # keeps the town's path budgets
+```
+
+A sub-mapping with no upstream value (the base `start` has no `victory`
+and a mod writes `victory: { message: … }` alone) is validated as a fresh
+definition, so the missing `when` is an error at the override. Provenance,
+conflict warnings and `check --overrides` work per sub-field
+(`[defeat.message]`): two unrelated mods that both write
+`defeat.message` warn, one writing `defeat.when` and the other
+`defeat.message` do not. `lighting.tint` and every other nested value
+keep the whole-replacement rule. The
 overriding pack must **transitively depend** on the pack that first
 defined the singleton, and an override with no earlier definition is an
 error ("nothing to override"). A second definition *without* `override`
@@ -2420,14 +2551,18 @@ stack:
 patches:
   zmb       override  archetype   town:resident      [label]
   …
-  hardship  override  measurement std_needs:hunger   [rate]
-  hardship  override  measurement std_needs:thirst   [rate]
+  zmb       override  start                          [defeat.message, victory.when, victory.message]
+  hardship  override  measurement std_needs:hunger   [rate ×2]
+  hardship  override  measurement std_needs:thirst   [rate ×2]
   hardship  override  loot        town:kitchen_food  [rolls, entries]
   hardship  remove    recipe      town:tear_bandage
 ```
 
+A field written with a term shows the term (`rate ×2`, `initial +5`,
+`rate ×2 +0.5`); a `start` sub-field shows its path (`defeat.message`).
 The loaded definition lists the same patches in `def.patches`
-(`{ domain, id, pack, op, fields }`, `id` null for singletons). It is
+(`{ domain, id, pack, op, fields }`, `id` null for singletons, `fields`
+as printed). It is
 diagnostic only: snapshots, hashes and saves do not include it. A save
 records the packs of its stack, so a mod is part of it; a save naming a
 removed id fails with the usual unknown-id error.
@@ -2628,7 +2763,17 @@ other than `true`/`false`; `override` together with `remove`; fields other
 than `id` on a removal; overriding a removed entry; references to a
 removed id (naming the remover); a singleton override without a base
 definition or from a pack that does not depend on its definer; and a
-required field cleared with `null`. Map `spawns`: an entry that is not a
+required field cleared with `null`. Pack ergonomics: an `apply`/`set`
+shorthand entry that also has `type`, has both keys, is empty or is not
+a mapping, or has a stray field (unknown measurements and bad values are
+reported at the key inside the mapping); an unknown `defaults` key or a
+`defaults` that is not a mapping (an unused one warns); a `{ scale, add }`
+term on a non-numeric field, on a field the upstream entry does not set,
+on a definition, with another key or a non-number, or on a
+measurement-id `max`; a `start` sub-mapping written fresh without its
+`when`; `count_tagged`/`has_tagged` with a non-literal tag (a tag no item
+carries warns, with a suggestion); and `fraction` on a measurement
+without `max`. Map `spawns`: an entry that is not a
 mapping, a missing or unknown `archetype`, an `at` that is not
 `[x, y]`/`[x, y, z]` integers or lies outside the map or on an empty cell,
 and `spawns` on a composite. Map [`populate`](#populate): both or neither

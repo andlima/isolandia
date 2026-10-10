@@ -1,23 +1,22 @@
-# Energy, hiding and who notices whom. Nothing here touches std:hp. The
-# file's `defaults` makes every rule the bunny's unless it writes its own `for`.
-
-defaults:
-  for: 'self.has_tag("bunny")'
+# Energy, hiding and who notices whom. Nothing here touches std:hp.
 
 statuses:
   - id: sleepy
     label: Sleepy
+    for: 'self.has_tag("bunny")'
     when: "self.energy <= 35"
     until: "self.energy >= 55"      # a snack or a nap perks the bunny up
     hud: { tone: bad, description: Low on energy; a snack or a nap helps }
   - id: hidden
     label: Hidden
+    for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("hiding")'
     hud: { tone: good, description: Out of sight of the cat and the fox }
   # The cat's playful pounce (the `meow` system below) and the fox's `yip`
   # give the bunny a little fright: the only cost in the garden.
   - id: startled
     label: Startled
+    for: 'self.has_tag("bunny")'
     when: "heard(self, 1)"
     rates: { energy: -0.5 }
     hud: { tone: bad, description: A fright; losing energy }
@@ -45,12 +44,14 @@ statuses:
 systems:
   - id: nap
     every: 1
+    for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("burrow") and self.energy < 90'
     effects:
-      - { apply: { energy: 3 } }
+      - { type: apply, measurement: energy, delta: 3 }
   # Gravel crunches under little paws on every hop onto it; the cat and the fox hear it (behaviors.yaml).
   - id: hop
     on: step
+    for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("crunchy")'
     effects:
       - { type: noise, radius: 7 }
