@@ -130,32 +130,33 @@ function place(e: { x: number; y: number; fromX: number; fromY: number }, x: num
   e.y = e.fromY = y;
 }
 
-test('zombie: an undead NPC in sight gets alert, and loses it behind a wall or far away', () => {
+test('zombie: an undead NPC sees the survivor in sight, and loses them behind a wall or far away', () => {
   const w = game('zombie');
   const T = (x: number, y: number) => genreCell('zombie', x, y);
   const z = w.entities.find((e) => e.archetype.id === 'zmb:shambler' && e.x === T(20, 13)[0] && e.y === T(20, 13)[1])!;
   assert.ok(z);
-  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+  assert.deepEqual(z.archetype.senses, { notice: 8, lose: 12, notice2: 64, lose2: 144, targetTags: ['living'] });
+  assert.equal(z.seen, -1);
   // Clear road, 6 tiles away.
   place(w.player, ...T(26, 13));
   w.step();
-  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
-  assert.equal(w.hasStatus(w.player, 'zmb:alert'), false);
-  // 10 tiles away: out of `when` range but within `until` range, so it stays alert.
+  assert.equal(z.seen, w.player.id);
+  assert.equal(w.player.seen, -1, 'the survivor has no senses');
+  // 10 tiles away: out of `notice` range but within `lose` range, so it is kept.
   place(w.player, ...T(30, 13));
   w.step();
-  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
-  // Past 12 tiles: cleared.
+  assert.equal(z.seen, w.player.id);
+  // Past 12 tiles: lost.
   place(w.player, ...T(33, 13));
   w.step();
-  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
-  // Close again, then behind the house wall: cleared although only ~6 tiles away.
+  assert.equal(z.seen, -1);
+  // Close again, then behind the house wall: lost although only ~6 tiles away.
   place(w.player, ...T(26, 13));
   w.step();
-  assert.equal(w.hasStatus(z, 'zmb:alert'), true);
+  assert.equal(z.seen, w.player.id);
   place(w.player, ...T(16, 8));
   w.step();
-  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+  assert.equal(z.seen, -1);
 });
 
 test('vampire: the window is see-through, and a bat spots the vampire through it', () => {
@@ -168,19 +169,19 @@ test('vampire: the window is see-through, and a bat spots the vampire through it
   assert.equal(w.grid.edgeAt(...M(4, 12), 0, 'n')!.id, 'town:window');
   const bat = w.entities.find((e) => e.archetype.id === 'vamp:bat' && e.x === M(4, 9)[0] && e.y === M(4, 9)[1])!;
   assert.ok(bat);
-  assert.equal(w.hasStatus(bat, 'vamp:alert'), false);
+  assert.equal(bat.seen, -1);
   // Between (4,11) and (4,13): the window edge, then the open cell (4,12).
   place(bat, ...M(4, 11));
   place(w.player, ...M(4, 13));
   w.step();
-  assert.equal(w.hasStatus(bat, 'vamp:alert'), true);
-  assert.equal(w.hasStatus(w.player, 'vamp:alert'), false);
+  assert.equal(bat.seen, w.player.id);
+  assert.equal(w.player.seen, -1);
   // The same shape through a wall edge is blocked.
   assert.equal(w.grid.edgeAt(...M(2, 12), 0, 'n')!.id, 'std:wall');
   assert.equal(lineOfSight(w.grid, ...M(2, 11), ...M(2, 13)), false);
 });
 
-test('garden: the cat gets curious about a bunny in the open, and loses interest once it hides in a bush', () => {
+test('garden: the cat sees a bunny in the open, and loses it once it hides in a bush', () => {
   const w = game('garden');
   const cat = w.entities.find((e) => e.archetype.id === 'gdn:cat' && e.x === 14 && e.y === 4)!;
   assert.ok(cat);
@@ -190,27 +191,26 @@ test('garden: the cat gets curious about a bunny in the open, and loses interest
   assert.ok(tile('gdn:bush').tags.includes('hiding'));
   assert.equal(tile('gdn:fence').opaque, false);
   assert.equal(tile('gdn:pond').opaque, false);
-  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
+  assert.ok(w.def.statuses[w.def.ids.statuses['gdn:hidden']!]!.conceals, 'hiding is a concealing status');
+  assert.equal(cat.seen, -1);
   // In the open, 3 tiles away.
   place(w.player, 11, 4);
   w.step();
-  assert.equal(w.hasStatus(cat, 'gdn:curious'), true);
+  assert.equal(cat.seen, w.player.id);
   assert.equal(w.hasStatus(w.player, 'gdn:hidden'), false);
-  // Into the bush next door: hidden at once, and the cat notices one tick later.
+  // Into the bush next door: hidden and lost in the same tick (the senses step runs after the statuses).
   assert.equal(w.grid.tileAt(12, 3)!.id, 'gdn:bush');
   place(w.player, 12, 3);
   w.step();
   assert.equal(w.hasStatus(w.player, 'gdn:hidden'), true);
-  w.step();
-  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
-  assert.ok(Math.hypot(cat.x - 12, cat.y - 3) <= 5, 'still close by, yet not curious');
-  // Out again, in plain view: curious again.
+  assert.equal(cat.seen, -1);
+  assert.ok(Math.hypot(cat.x - 12, cat.y - 3) <= 5, 'still close by, yet unseen');
+  // Out again, in plain view: seen again.
   place(w.player, 11, 4);
   w.step();
-  w.step();
-  assert.equal(w.hasStatus(cat, 'gdn:curious'), true);
-  // Far away (past 8 tiles): it loses interest.
+  assert.equal(cat.seen, w.player.id);
+  // Far away (past 8 tiles): lost.
   place(w.player, 2, 13);
   w.step();
-  assert.equal(w.hasStatus(cat, 'gdn:curious'), false);
+  assert.equal(cat.seen, -1);
 });

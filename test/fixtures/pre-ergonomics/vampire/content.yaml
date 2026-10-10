@@ -121,6 +121,7 @@ archetypes:
     tags: [beast]
     measurements: [hp]
     initial: { hp: 5 }
+    senses: { sight: { notice: 6, lose: 10, targets: [undead] } }
     behavior: bat
 
 # The night begins as the game does: it starts at dusk.

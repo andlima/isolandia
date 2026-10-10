@@ -403,6 +403,7 @@ Templates for entities (the player and everything else).
 | `behavior`       | behavior id           | none    | The [behavior](#behaviors) driving every non-player entity of the archetype (short or qualified id) |
 | `dialogue`       | dialogue id           | none    | The [dialogue](#dialogues) of every non-player entity of the archetype: the player can talk to it. Allowed on the player's archetype, where it has no effect |
 | `faction`        | faction id            | none    | The [faction](#factions) every entity of the archetype belongs to. Allowed on the player's archetype: `in_faction(player, "f")` reads it, but [`attitude`](expressions.md#factions) ignores it |
+| `senses`         | `{ sight: { notice, lose, targets } }` | none | What entities of the archetype notice by sight; see [Senses](#senses) below |
 
 ```yaml
 archetypes:
@@ -413,6 +414,7 @@ archetypes:
     tags: [undead]
     measurements: [std:hp]
     initial: { hp: 40 }
+    senses: { sight: { notice: 8, lose: 12, targets: [living] } }
   - id: resident
     # …
     inventory:
@@ -422,6 +424,64 @@ archetypes:
 
 Entities without `inventory` have none: expressions read `0`/`false` for
 their items, and player actions fail with `no_inventory`.
+
+#### Senses
+
+`senses` gives an archetype a **sight sense**: the engine keeps, per entity,
+the one entity it currently **sees**, with hysteresis, and expressions and
+behaviors read it as [`self.sees` / `self.seen`](expressions.md#senses).
+Today there is one sense, `sight`:
+
+| Field     | Type                 | Notes |
+|-----------|----------------------|-------|
+| `notice`  | number > 0           | Euclidean range (tiles, inclusive) within which a target is noticed |
+| `lose`    | number ≥ `notice`    | Range beyond which a seen target is lost |
+| `targets` | non-empty list of archetype tags | What the sense looks for: entities whose archetype has **any** of the tags. Every tag must be carried by some loaded archetype (load error with a *did you mean* otherwise) |
+
+- Each entity whose archetype has `senses.sight` keeps `seen`: the id of
+  the entity it sees, or none. The **senses step** at the end of the
+  [status update](#tick-order) sets it, for every non-dormant entity with
+  a sense, in ascending id order:
+  1. a seen target is **kept** while it still exists, is on the same
+     floor, within `lose` (euclidean on `(x, y)`, inclusive, as
+     `can_see`'s range), has tile line of sight (entities never block)
+     and has no active [`conceals`](#statuses) status; otherwise it is
+     lost;
+  2. seeing nothing, the entity notices the **nearest** candidate (an
+     entity with a `targets` tag, on its floor, within `notice`, not
+     concealed, in line of sight); ties go to the lowest entity id. An
+     entity never sees itself.
+
+  So a target noticed at 8 is followed out to 12, behind a wall or into a
+  bush it is lost at once, and an entity never switches to a nearer target
+  while it still sees its current one.
+- [Dormant](#simulation) entities do not sense: their `seen` is kept as it
+  is until they wake, like their path. Entities without senses have no
+  `seen` and cost nothing; the candidate search uses the chunk index, so
+  an entity with nothing in range costs one index query.
+- `seen` is simulation state: it is part of `snapshot()` and `hash()`
+  (save version 8, see [saves](saves.md)).
+- The player's archetype may have senses; they work the same (the engine
+  has no special player).
+- `senses` is an ordinary top-level field for [overrides](#mods-and-overrides):
+  replaced whole, `senses: null` removes it.
+
+```yaml
+archetypes:
+  - id: cat
+    # …
+    senses: { sight: { notice: 5, lose: 8, targets: [bunny] } }
+statuses:
+  - { id: hidden, label: Hidden, for: 'self.has_tag("bunny")', when: 'tile.has_tag("hiding")', conceals: true }
+behaviors:
+  - id: cat
+    initial: nap
+    on:
+      - { when: 'self.sees', to: chase, except: [bored] }   # any state but `bored`
+    states:
+      chase: { do: pursue, target: self.seen, on: [{ when: 'not self.sees', to: home }] }
+      # …
+```
 
 ### `maps`
 
@@ -1054,6 +1114,7 @@ conditions and add drift while active.
 | `when`  | expression | required   | Enter condition |
 | `until` | expression | `not when` | Exit condition (use it for hysteresis) |
 | `rates` | map measurement id → number or expression | `{}` | Extra drift **per sim second** while active |
+| `conceals` | boolean | `false`   | While active, **no sense notices the entity**, and a sense that had it loses it at its next update (see [Senses](#senses)) |
 | `hud`   | mapping    | none       | HUD hints: `tone` (`bad`, `good` or `neutral`, default `neutral`), `description` (free tooltip text), and the message-log texts `enter` / `exit` |
 
 - An inactive status becomes active when `for` and `when` are truthy.
@@ -1090,18 +1151,33 @@ statuses:
     hud: { tone: bad, description: Losing health while hungry, enter: Your stomach growls., exit: You feel fed. }
 ```
 
-Statuses can react to sight with
-[`can_see`](expressions.md#built-in-functions). A range pair gives the
-hysteresis: notice at 8 tiles, lose track only past 12 or behind a wall.
+Perception is not a status: an archetype's [`senses`](#senses) give the
+hysteresis (notice at 8 tiles, lose track only past 12 or behind a wall)
+and statuses read it with `self.sees`. A `conceals` status hides an entity
+from every sense; the status itself is as ordinary as any other (its HUD
+chip still shows).
 
 ```yaml
+archetypes:
+  - id: shambler
+    # …
+    senses: { sight: { notice: 8, lose: 12, targets: [living] } }
 statuses:
-  - id: alert
-    label: Alert
-    for: 'self.has_tag("undead")'
-    when: 'can_see(self, player, 8)'
-    until: 'not can_see(self, player, 12)'
+  - id: hidden
+    label: Hidden
+    for: 'self.has_tag("living")'
+    when: 'tile.has_tag("hiding")'
+    conceals: true
+    hud: { tone: good, description: Out of sight }
+  - id: hunted
+    label: Hunted
+    for: 'self.has_tag("living")'
+    when: 'sees(npc)'          # in a dialogue; elsewhere test the observer: `self.sees`
 ```
+
+(`sees(npc)` only compiles in a dialogue, where `npc` is in scope; a status
+on the observer reads `self.sees`, and `self.seen == player` says what it
+sees.)
 
 ### `behaviors`
 
@@ -1114,6 +1190,7 @@ own id space.
 |-----------|----------------------|----------|-------|
 | `id`      | id                   | required | |
 | `initial` | state name           | required | Must be a key of `states` |
+| `on`      | list of `{ when: expr, to: state, except?: [state, …] }` | `[]` | **Any-state transitions**, checked before the current state's own (see below) |
 | `states`  | mapping name → state | required | Non-empty; names match `[a-z][a-z0-9_]*` |
 
 A **state**:
@@ -1128,19 +1205,31 @@ A **state**:
 | `timeout` | `{ after: sim seconds, to: state }`   | none    | Fires once the entity has been in the state for `after` seconds (whole ticks, > 0) |
 | `done`    | state name                            | none    | `home`/`investigate` only: the state to switch to once arrived, or when the path fails |
 
-Every `to`, `done` and `initial` must name a state of the same behavior.
-Unknown fields and misplaced `target`/`radius`/`repath`/`done` are load
-errors.
+Every `to`, `done`, `except` entry and `initial` must name a state of the
+same behavior (load error with a *did you mean*). Unknown fields and
+misplaced `target`/`radius`/`repath`/`done` are load errors.
+
+**Any-state transitions.** The behavior's own `on` list holds transitions
+that apply in every state: they are tested **before** the current state's
+`on`, `timeout` and `done`, in order, skipping an entry whose `to` is the
+current state (never a self-transition: the state's timer is not
+restarted) or whose `except` lists it. `except` listing `to` is a load
+error (that state is skipped anyway); `on: []` is the same as omitting it,
+and `on` is replaced whole by an override. "Sight beats sound" is one such
+entry, `{ when: 'self.sees', to: chase }`, instead of the same transition
+repeated in most states.
 
 Each entity has a **home**: its spawn cell. Behaviors run in the **think**
 phase (phase 0 of the [tick](#tick-order)), once per behavior-driven entity
 in ascending id order:
 
-1. **Transitions**: the current state's `on` entries in order, then its
+1. **Transitions**: the behavior's any-state `on` entries in order
+   (skipping the ones the current state is excepted from, or that lead to
+   it), then the current state's `on` entries in order, then its
    `timeout`, then `done`. The first that fires switches state, clears the
-   entity's path and pending intent, and restarts the state's timer. **At
-   most one transition per entity per tick**; the new state's activity runs
-   in the same tick.
+   entity's path, pending intent and plan, and restarts the state's timer.
+   **At most one transition per entity per tick**; the new state's
+   activity runs in the same tick.
 2. **Activity**: it may set the entity's pending movement intent, which
    phase 1 applies like any queued intent (walls, corners,
    `ticks_per_step`, A*). An activity never moves the entity directly.
@@ -1152,8 +1241,8 @@ one whose next step fires in this tick (`moveCooldown ≤ 1`).
 |----------|-----------|
 | `idle`   | Does nothing (an existing path or intent is kept). |
 | `wander` | When ready and without a path: one draw from the world RNG picks one of 8 directions or "stay". The step is issued only if it is allowed and ends within `radius` of home; otherwise the entity stays this tick. No draw when not ready. |
-| `pursue` | Evaluates `target` to a cell. If the entity is on it or 8-adjacent, it clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) on entering the state, and later when at least `repath` has passed since its last plan **and** it has no path or the target cell has moved. At most one A* per `repath` window; an unreachable target (`lastGoto.ok == false`) waits for the next window. |
-| `flee`   | When ready: among the allowed neighbour steps, the one that maximizes the squared distance to `target`, only if it **strictly** increases it; ties go to the first in the order N, NE, E, SE, S, SW, W, NW. Nothing when cornered. No RNG, no A*. |
+| `pursue` | Evaluates `target` to a cell. If the entity is on it or 8-adjacent, it clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) on entering the state, and later when at least `repath` has passed since its last plan **and** it has no path or the target cell has moved. At most one A* per `repath` window; an unreachable target (`lastGoto.ok == false`) waits for the next window. A `none` target (`target: self.seen` with nothing seen) clears the path and waits. |
+| `flee`   | When ready: among the allowed neighbour steps, the one that maximizes the squared distance to `target`, only if it **strictly** increases it; ties go to the first in the order N, NE, E, SE, S, SW, W, NW. Nothing when cornered, and nothing for a `none` target. No RNG, no A*. |
 | `home`   | Once per entry into the state: a `goto` to the home cell (nothing if already there). `done` fires on a later tick once the entity is home, or when that goto failed. Without `done` the entity idles at home. |
 | `investigate` | Walks to the entity's last heard [noise](#systems) cell; takes no `target`. Never heard anything: does nothing. On or 8-adjacent to the heard cell: clears its path and waits. Otherwise it queues `goto` (with `adjacent: true`) when it has not issued one yet in this state, or when the heard cell changed since its last plan and at least `repath` has passed, so a newer noise retargets the walk without a self-transition. `done` fires on a later tick than the plan once the entity is on or adjacent to the heard cell, when the last goto failed, or when it has never heard a noise. |
 
@@ -1168,38 +1257,39 @@ one whose next step fires in this tick (`moveCooldown ≤ 1`).
   last planned goto) is part of `snapshot()` and `hash()`.
 - Queued intents on a behavior-driven entity may be overwritten by its
   activity.
-- Transitions see the statuses computed at the end of the previous tick.
+- Transitions see the statuses and the `seen` targets computed at the end
+  of the previous tick.
 
 ```yaml
 behaviors:
   - id: shambler
     initial: wander
+    on:
+      - { when: 'self.sees', to: chase }      # sight beats sound, in every state
     states:
       wander:
         do: wander
         radius: 6
         on:
-          - { when: 'self.has_status("alert")', to: chase }
+          - { when: 'heard(self, 1)', to: investigate }
       chase:
         do: pursue
-        target: player
+        target: self.seen                     # whatever it sees, not only the player
         on:
-          - { when: 'not self.has_status("alert")', to: search }
+          - { when: 'not self.sees', to: search }
       search:
         do: idle
         on:
-          - { when: 'self.has_status("alert")', to: chase }
           - { when: 'heard(self, 1)', to: investigate }
         timeout: { after: 5, to: wander }
-      investigate:                 # sight beats sound: `alert` is checked first
+      investigate:
         do: investigate
-        on:
-          - { when: 'self.has_status("alert")', to: chase }
         done: search
 
 archetypes:
   - id: shambler
     # …
+    senses: { sight: { notice: 8, lose: 12, targets: [living] } }
     behavior: shambler
 ```
 
@@ -1736,8 +1826,9 @@ are driven by their archetype's [behavior](#behaviors).
 
 0. **think**: NPCs beyond the active radius are marked dormant for the
    tick (see [simulation](#simulation)); the other [behaviors](#behaviors)
-   switch state (at most once) and issue movement intents, in ascending id
-   order (the player is skipped);
+   switch state (at most once: the behavior's any-state `on` first, then
+   the state's own) and issue movement intents, in ascending id order (the
+   player is skipped);
 1. three steps:
    1. apply **each entity's** movement intent, in ascending id order (the
       player is id 0; dormant NPCs are skipped); applying one cancels that entity's
@@ -1767,6 +1858,9 @@ are driven by their archetype's [behavior](#behaviors).
 5. clamp every measurement to `[min, max]`;
 6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
+   then the **senses step**: every non-dormant entity with
+   [`senses`](#senses) keeps or loses its seen target and notices a new
+   one, in id order (a `conceals` status set in this phase already hides);
 7. **quests**: each quest that has not ended enters the last stage whose
    `when` holds, at most once (see [quests](#quests)); skipped without
    quests;
@@ -1777,9 +1871,10 @@ are driven by their archetype's [behavior](#behaviors).
 While a [conversation](#the-paused-world) is open, `step()` does nothing,
 as after an outcome: the tick does not advance.
 
-Statuses are also evaluated once when the world is created, after the
-initial clamp. So a status entered on tick *t* first changes drift on tick
-*t + 1*. Likewise, statuses see a noise in the tick it is emitted, and
+Statuses (and then the senses) are also evaluated once when the world is
+created, after the initial clamp. So a status entered on tick *t* first
+changes drift on tick *t + 1*, and a target noticed at the end of tick *t*
+is what `self.sees` reads in tick *t + 1*. Likewise, statuses see a noise in the tick it is emitted, and
 behavior transitions see it in the next tick's think phase, and noise
 systems and event interrupts see it in the same tick, right after hearing.
 
@@ -1831,9 +1926,10 @@ neither.
 - **`active_radius`** (default 64): at the start of each tick, an NPC
   whose Chebyshev distance on `(x, y)` from the player (any floor) exceeds
   the radius is **dormant** for that tick: it does not think, does not
-  apply its intent or advance its path (both are kept), and does not count
-  its `moveCooldown` down. It still drifts, runs systems, updates statuses,
-  hears noises and counts for defeat and victory. Dormancy is derived from
+  apply its intent or advance its path (both are kept), does not count
+  its `moveCooldown` down, and does not sense (its `seen` is kept). It
+  still drifts, runs systems, updates statuses, hears noises and counts
+  for defeat and victory. Dormancy is derived from
   positions, never saved or hashed (`world.isDormant(e)`,
   `world.activeCount`). `none` disables it. On maps smaller than the radius
   nothing is ever dormant.
@@ -1847,8 +1943,8 @@ neither.
   goal shares the start's region.
 
 The world also keeps entities in a **16×16 chunk index** per floor
-(`world.entitiesNear(x, y, z?, r)`, id order); hearing uses it, with the
-same result as checking every pair.
+(`world.entitiesNear(x, y, z?, r)`, id order); hearing and the
+[senses](#senses) step use it, with the same result as checking every pair.
 
 ### `clock`
 
@@ -2340,10 +2436,10 @@ are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
 | `std` | `std` | library | — | see [Standard packs](#standard-packs) |
 | `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
 | `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
-| `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`, status `alert`); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
+| `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`; `senses` that notice the living at 8 tiles); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
 | `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
 | `noir` | `noir` | mod | `std`, `town` | *Death on Elm Street*: a night-time murder on the old town block; factions `police`, `mob` and the hidden `neighbours`; Sgt. Hale, an `officer` on a `beat` (`wander`), the widow, the lodger, Dot and Mickey the Fixer, each with a dialogue; seven clues as `Clues` journal entries, from dialogue and from `search`/`force_drawer` actions on the crime scene's own furniture (a witnessed `reputation` effect with `spread`); quest `elm_street` ending in `solved`, `wrong_man` or `cold_case` (dawn); overrides `town_center` (`rooms` adds `crime_scene`, `spawns`), `city` (`player`, `populate`), the resident's label (*Detective*), `start`, `clock` (starts at 21:00) and `lighting` (cold blue-grey nights). See the [worked example](#worked-example-a-story-from-vars-quests-dialogues-and-factions) |
-| `western` | `wst` | mod | `std`, `std_needs`, `town` | *High Noon*: measurements `aim`, `nerve` and `liquor`; items `coin`, `bullet`, `revolver` and `whiskey` (status `tipsy`); factions `townsfolk`, `law` and the `gang` (Hostile from the start); Sheriff Cobb, Doc, the bartender in the `saloon`, the kid, two `rider`s (behavior `rider`: idle until ten, then `pursue` on sight; systems drain `nerve` while they crowd the player) and Black Jack (waits at the end of Main Street, walks to the noon bell); action `shoot_bottles` on the yards' crates; loot `garage_ammo` with a `distributions` entry for the garages; quest `high_noon` ending in `won`, `talked_down`, `paid_off`, `shot` or `coward`, the duel being a dialogue with a seeded `roll`; overrides `town_center` (`spawns`), `city` (`rooms` adds `saloon`, `populate`), the resident (*Stranger*, measurements, inventory), `start`, `clock` (starts at 06:00) and `lighting` (a bleached noon) |
+| `western` | `wst` | mod | `std`, `std_needs`, `town` | *High Noon*: measurements `aim`, `nerve` and `liquor`; items `coin`, `bullet`, `revolver` and `whiskey` (status `tipsy`); factions `townsfolk`, `law` and the `gang` (Hostile from the start); Sheriff Cobb, Doc, the bartender in the `saloon`, the kid, two `rider`s (behavior `rider`: idle until ten, then `pursue` the Stranger their `senses` see; systems drain `nerve` while they crowd the player) and Black Jack (waits at the end of Main Street, walks to the noon bell); action `shoot_bottles` on the yards' crates; loot `garage_ammo` with a `distributions` entry for the garages; quest `high_noon` ending in `won`, `talked_down`, `paid_off`, `shot` or `coward`, the duel being a dialogue with a seeded `roll`; overrides `town_center` (`spawns`), `city` (`rooms` adds `saloon`, `populate`), the resident (*Stranger*, measurements, inventory), `start`, `clock` (starts at 06:00) and `lighting` (a bleached noon) |
 | `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
 | `garden` | `gdn` | game | `std` | a bunny gathers carrots in a garden; shares nothing with the town |
 

@@ -1,39 +1,38 @@
+# Who sees whom is the animals' `senses` (content.yaml); the bunny hides in
+# bushes through the `hidden` status (rules.yaml, `conceals`).
 behaviors:
   # A sleepy cat naps at home, strolls about, chases a bunny it spots in the
   # open, goes to look at a crunch on the gravel, and soon gets bored.
   - id: cat
     initial: nap
+    on:
+      # Sight beats sound, in every state but `bored` (it walks home, ignoring the bunny).
+      - { when: 'self.sees', to: chase, except: [bored] }
     states:
       nap:
         do: idle
         on:
-          - { when: 'self.has_status("curious")', to: chase }
           - { when: 'heard(self, 1)', to: investigate }
         timeout: { after: 20, to: stroll }
       stroll:
         do: wander
         radius: 6
         on:
-          - { when: 'self.has_status("curious")', to: chase }
           - { when: 'heard(self, 1)', to: investigate }
         timeout: { after: 30, to: home }
       chase:
         do: pursue
-        target: player
+        target: self.seen
         on:
-          - { when: 'not self.has_status("curious")', to: home }
+          - { when: 'not self.sees', to: home }
         timeout: { after: 15, to: bored }   # yawns and wanders off
-      investigate:                          # sight beats sound
+      investigate:
         do: investigate
-        on:
-          - { when: 'self.has_status("curious")', to: chase }
         done: home
       home:
         do: home
-        on:
-          - { when: 'self.has_status("curious")', to: chase }
         done: nap
-      bored:                                # walks home, ignoring the bunny
+      bored:
         do: home
         done: nap
 
@@ -41,28 +40,30 @@ behaviors:
   # drift back once it has gone.
   - id: butterfly
     initial: flutter
+    on:
+      - { when: 'self.sees', to: flit }
     states:
       flutter:
         do: wander
         radius: 2
-        on:
-          - { when: 'self.has_status("alert")', to: flit }
       flit:
         do: flee
-        target: player
+        target: self.seen
         on:
-          - { when: 'not self.has_status("alert")', to: return }
+          - { when: 'not self.sees', to: return }
       return:
         do: home
         done: flutter
-        on:
-          - { when: 'self.has_status("alert")', to: flit }
 
   # A fox sleeps in its den all day. At dusk it slinks out to prowl, chases
   # a bunny it spots in the open, sniffs out a crunch on the gravel, and
-  # trots home to sleep by morning.
+  # trots home to sleep by morning. Asleep, walking home or bored, it is not
+  # woken by a bunny; by day it is in (or heading for) the den.
   - id: fox
     initial: sleep
+    on:
+      - { when: 'world.is_day', to: den, except: [sleep, bored] }
+      - { when: 'self.sees', to: chase, except: [sleep, den, bored] }
     states:
       sleep:
         do: idle
@@ -72,25 +73,19 @@ behaviors:
         do: wander
         radius: 8
         on:
-          - { when: 'world.is_day', to: den }
-          - { when: 'self.has_status("sly")', to: chase }
           - { when: 'heard(self, 1)', to: investigate }
       chase:
         do: pursue
-        target: player
+        target: self.seen
         on:
-          - { when: 'world.is_day', to: den }
-          - { when: 'not self.has_status("sly")', to: prowl }
+          - { when: 'not self.sees', to: prowl }
         timeout: { after: 15, to: bored }   # loses interest and trots home
-      investigate:                          # sight beats sound
+      investigate:
         do: investigate
-        on:
-          - { when: 'world.is_day', to: den }
-          - { when: 'self.has_status("sly")', to: chase }
         done: prowl
       den:
         do: home
         done: sleep
-      bored:                                # walks home, ignoring the bunny
+      bored:
         do: home
         done: sleep

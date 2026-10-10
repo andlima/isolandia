@@ -215,6 +215,7 @@ function evaluate(w: World, source: string, self: Entity = w.player, npc: Entity
     inRoom: () => false,
     los: (x0, y0, x1, y1, z0, z1) => lineOfSight(w.grid, x0, y0, x1, y1, z0, z1),
     warn: () => {},
+    entities: w.entities,
     vars: w.vars,
     questStage: w.questStage,
     questEnd: w.questEnd,
@@ -556,7 +557,7 @@ test('save v6: reputation by qualified id; the round trip covers changed standin
   act(w, 'pick');
   act(w, 'help');
   const s = w.save();
-  assert.equal(s.version, 7);
+  assert.equal(s.version, 8);
   assert.deepEqual(s.state.reputation, { 't:police': -5, 't:mob': -16, 't:town': -1.67, 't:cult': 0 });
   const copy = assertRoundTrip(w, (x) => x.tick === 3 && x.queueAction({ kind: 'act', action: 't:pick' }), 10);
   assert.equal(rep(copy, 'police'), -20);
@@ -573,7 +574,7 @@ test('save v5: loads with every faction at its starting reputation', () => {
   if (!r.ok) assert.fail(r.errors.join('\n'));
   assert.deepEqual(r.warnings, []);
   assert.deepEqual(r.world.snapshot().reputation, { 't:police': 0, 't:mob': -20, 't:town': 0, 't:cult': 0 });
-  assert.equal(r.world.save().version, 7);
+  assert.equal(r.world.save().version, 8);
 });
 
 test('save v6: an unknown faction is a restore error with did-you-mean; a missing one warns; out of range is clamped', () => {

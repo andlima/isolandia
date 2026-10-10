@@ -480,9 +480,10 @@ test('populate density: the same seed gives the same cells; count entries, the w
     [1, 7, 42].map((seed) => World.create(field, seed).hash()),
     ['ae90ca61', '3385aa6e', '1b6da8fe'],
   );
+  // Re-recorded at npc-perception: the estate's bats carry `seen` (save version 8) from the creation-time senses step.
   assert.deepEqual(
     [1, 7].map((seed) => World.create(ESTATE, seed).hash()),
-    ['2fe549a0', 'eeaa3060'],
+    ['073ae211', '5399f763'],
   );
 });
 

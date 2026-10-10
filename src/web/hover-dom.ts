@@ -8,7 +8,7 @@
 
 import type { World } from '../core/index.ts';
 import type { PickTarget } from '../iso/pick.ts';
-import { clampMenu, hoverInfo, hoverTitleLine, type HoverInfo } from './menu.ts';
+import { clampMenu, hoverInfo, hoverTitleLine, SEES_YOU_TEXT, type HoverInfo } from './menu.ts';
 
 /** How long the pointer rests on a target before its tooltip shows. */
 export const TOOLTIP_DELAY_MS = 150;
@@ -21,6 +21,7 @@ export class Hover {
   private readonly titleEl: HTMLDivElement;
   private readonly labelEl: HTMLSpanElement;
   private readonly standingEl: HTMLSpanElement;
+  private readonly seesEl: HTMLDivElement;
   private readonly hintEl: HTMLDivElement;
   private point: { sx: number; sy: number } | null = null;
   /** The hovered target's identity, when it became hovered, and its cached info (with the world versions it is for). */
@@ -41,9 +42,12 @@ export class Hover {
     this.labelEl = document.createElement('span');
     this.standingEl = document.createElement('span');
     this.titleEl.append(this.labelEl, this.standingEl);
+    this.seesEl = document.createElement('div');
+    this.seesEl.className = 'tooltip-danger';
+    this.seesEl.textContent = SEES_YOU_TEXT;
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'tooltip-hint';
-    this.el.append(this.titleEl, this.hintEl);
+    this.el.append(this.titleEl, this.seesEl, this.hintEl);
     parent.append(this.el);
   }
 
@@ -82,13 +86,14 @@ export class Hover {
       this.el.hidden = true;
       return t;
     }
-    const text = `${hoverTitleLine(info)}\n${info.hint}\n${info.hostile === true}`;
+    const text = `${hoverTitleLine(info)}\n${info.hint}\n${info.hostile === true}\n${info.sees === true}`;
     if (text !== this.shown) {
       this.shown = text;
       this.labelEl.textContent = info.title;
       // A hostile faction's tier shows in the danger colour.
       this.standingEl.textContent = info.standing ? ` · ${info.standing}` : '';
       this.standingEl.className = info.hostile === true ? 'tooltip-danger' : '';
+      this.seesEl.hidden = info.sees !== true;
       this.hintEl.textContent = info.hint;
       this.hintEl.hidden = info.hint === '';
     }

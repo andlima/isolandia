@@ -22,7 +22,7 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
@@ -32,9 +32,10 @@ export const SAVE_VERSION = 7;
  * they load with no open conversation and no `once` choice chosen.
  * Versions 3 to 5 predate factions: every faction takes its starting
  * `reputation`. Versions 3 to 6 predate `once` systems: no system counts as
- * fired for any entity.
+ * fired for any entity. Versions 3 to 7 predate senses: no entity sees
+ * anything, and the first tick notices again.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, 6, SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, 6, 7, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -363,6 +364,8 @@ interface EntityPlan {
   then: Action | null;
   /** `onceIndex` of each `once` system that has fired for the entity. */
   fired: number[];
+  /** Id of the entity it sees, or -1. */
+  seen: number;
 }
 
 interface ContainerPlan {
@@ -489,7 +492,9 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   const rawEntities = c.arr(s['entities'], 'state.entities') ?? [];
   // `fired` (version 7): older saves count no `once` system as fired.
   const hasFired = (root['version'] as number) >= 7;
-  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player, hasFired)));
+  // `seen` (version 8): older saves see nothing until the first tick.
+  const hasSeen = (root['version'] as number) >= 8;
+  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player, hasFired, hasSeen ? rawEntities.length : -1)));
   if (player !== null && rawEntities.length > 0 && player >= rawEntities.length) c.err('state.player', `player ${player} is not one of the ${rawEntities.length} entities`);
   if (rawEntities.length === 0 && Array.isArray(s['entities'])) c.err('state.entities', 'no entities (the player must be one of them)');
 
@@ -604,6 +609,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       }
       if (e.behavior && p.plan) [e.planX, e.planY, e.planZ, e.planTick] = p.plan;
       if (p.heard) [e.heardX, e.heardY, e.heardZ, e.heardTick] = p.heard;
+      e.seen = p.seen;
       for (const k of p.fired) e.fired![k] = 1;
       if (p.activity) {
         const a = p.activity;
@@ -776,8 +782,12 @@ function checkTalk(c: Checker, s: Record<string, unknown>, entityCount: number, 
   return plan;
 }
 
-/** Check one saved entity; null when it has errors. `hasFired`: the save version carries `fired` (7+). */
-function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFired: boolean): EntityPlan | null {
+/**
+ * Check one saved entity; null when it has errors. `hasFired`: the save
+ * version carries `fired` (7+). `entityCount`: the save carries `seen` (8+)
+ * and this is the number of entities it may name; -1 for older saves.
+ */
+function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFired: boolean, entityCount: number): EntityPlan | null {
   const path = `state.entities[${i}]`;
   const o = c.obj(v, path);
   if (!o) return null;
@@ -929,6 +939,18 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFi
     });
   }
 
+  let seen = -1;
+  if (entityCount >= 0 && o['seen'] !== undefined) {
+    const sp = `${path}.seen`;
+    const k = c.int(o['seen'], sp, 0);
+    if (k !== null) {
+      if (k >= entityCount) c.err(sp, `seen entity ${k} is not one of the ${entityCount} entities`);
+      else if (k === i) c.err(sp, `entity ${i} cannot see itself`);
+      else if (archetype && !archetype.senses) c.err(sp, `archetype '${archetype.id}' has no senses, so it cannot see entity ${k}`);
+      else seen = k;
+    }
+  }
+
   if (c.errors.length !== n || !archetype || !pos || !facing || !from || !home || stepTick === null || moveCooldown === null || intent === undefined) return null;
   return {
     archetype,
@@ -955,5 +977,6 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFi
     activity,
     then,
     fired,
+    seen,
   };
 }

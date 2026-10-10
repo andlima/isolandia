@@ -481,7 +481,7 @@ test('once: the state survives a save round trip; a version 6 save loads with no
   const P = M(w, 'p');
   w.player.m[P] = 1;
   w.step(); // fired for the hero only
-  assert.equal(w.save().version, 7);
+  assert.equal(w.save().version, 8);
   const at = w.tick + 3;
   const copy = assertRoundTrip(w, (x) => x.tick === at && void (ear(x).m[P] = 1), 10);
   assert.deepEqual(
@@ -501,7 +501,7 @@ test('once: the state survives a save round trip; a version 6 save loads with no
   assert.equal(r.world.snapshot().entities[0]!.fired, undefined);
   r.world.step();
   assert.equal(val(r.world, 'q'), 20, 'after the upgrade the once system may fire again');
-  assert.equal(r.world.save().version, 7);
+  assert.equal(r.world.save().version, 8);
 
   const bad = (edit: (s: Loose) => void): string[] => {
     const s = json();

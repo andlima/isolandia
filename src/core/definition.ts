@@ -374,6 +374,22 @@ export interface ArchetypeDef {
   readonly dialogue: number | null;
   /** Faction index the archetype belongs to, or null. */
   readonly faction: number | null;
+  /** The archetype's sight sense (`senses.sight`), or null: entities without one never see anything. */
+  readonly senses: SenseDef | null;
+}
+
+/**
+ * A sight sense: a target within `notice` (euclidean, inclusive, tile line
+ * of sight, same floor, not concealed) is noticed; a seen target is kept
+ * out to `lose`. Ranges squared are precomputed for the hot loop.
+ */
+export interface SenseDef {
+  readonly notice: number;
+  readonly lose: number;
+  readonly notice2: number;
+  readonly lose2: number;
+  /** Archetype tags of what the sense looks for: entities whose archetype has any of them. */
+  readonly targetTags: readonly string[];
 }
 
 /** Built-in activity of a behavior state. */
@@ -403,11 +419,22 @@ export interface BehaviorStateDef {
   readonly done: number | null;
 }
 
+/**
+ * A behavior-level (any-state) transition: checked before the current
+ * state's own, skipped while the entity is in `to` or in a state flagged in
+ * `except` (1 at that state's index).
+ */
+export interface AnyTransitionDef extends TransitionDef {
+  readonly except: Uint8Array;
+}
+
 /** A declarative state machine (`behaviors` domain). */
 export interface BehaviorDef {
   readonly id: string;
   readonly index: number;
   readonly initial: number;
+  /** Any-state transitions, in order (see `AnyTransitionDef`). */
+  readonly on: readonly AnyTransitionDef[];
   readonly states: readonly BehaviorStateDef[];
 }
 
@@ -476,7 +503,7 @@ export interface MapDef {
 }
 
 /** An entity no load-time expression reads (populate `where` sees only `tile`). */
-const NO_ENTITY: ExprEntity = { x: 0, y: 0, z: 0, m: new Float64Array(0), tags: new Set(), st: new Uint8Array(0), inv: null, heardTick: -1 };
+const NO_ENTITY: ExprEntity = { x: 0, y: 0, z: 0, m: new Float64Array(0), tags: new Set(), st: new Uint8Array(0), inv: null, heardTick: -1, seen: -1 };
 
 /**
  * Expression context of a populate `where`: `tile` is the cell set by
@@ -518,6 +545,7 @@ function tileContext(map: MapDef, tiles: readonly TileDef[]): { ctx: ExprContext
     },
     los: () => false,
     warn: () => {},
+    entities: [],
     vars: new Float64Array(0),
     questStage: new Int32Array(0),
     questEnd: new Uint8Array(0),
@@ -905,6 +933,8 @@ export interface StatusDef {
   /** Exit condition (defaults to `not when`). */
   readonly untilFn: Compiled;
   readonly rates: readonly StatusRate[];
+  /** While active, no sense notices the entity and a sense that had it loses it. */
+  readonly conceals: boolean;
   readonly hud: StatusHud;
 }
 

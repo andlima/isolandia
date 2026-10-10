@@ -29,6 +29,8 @@ export interface ExprEntity {
   readonly activity?: { readonly action: number } | null;
   /** Faction index of the entity's archetype; -1 or absent for none. */
   readonly faction?: number;
+  /** Id (index into `ExprContext.entities`) of the entity this one currently sees; -1 or absent for none. */
+  readonly seen?: number;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -40,7 +42,8 @@ export interface TileRef {
   readonly tags: ReadonlySet<string>;
 }
 
-export type Value = number | boolean | string | ExprEntity | TileRef;
+/** `null` is `none`: the entity value of `seen` when nothing is seen (see `CompiledExpr.nullable`). */
+export type Value = number | boolean | string | ExprEntity | TileRef | null;
 
 /** Faction state as seen by expressions (`reputation`, `attitude`, `hostile`, `friendly`). */
 export interface FactionTable {
@@ -110,6 +113,8 @@ export interface ExprContext {
   /** Tile line of sight between two cells; false across floors (see `lineOfSight`). */
   los(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean;
   warn(message: string): void;
+  /** Every entity by id, for `seen` (one array read). */
+  entities: readonly ExprEntity[];
   /** World var values, by var index. */
   vars: Float64Array;
   /** Current stage index per quest (-1 = not started); an ended quest keeps its final stage. */
@@ -133,6 +138,12 @@ export interface CompiledExpr {
   constant?: number;
   /** Set when the expression is exactly `self.has_tag("<tag>")`: it depends only on `self`'s archetype. */
   selfTag?: string;
+  /**
+   * Set on an entity expression that may evaluate to `none` (`null`) at
+   * runtime: one derived from `seen`. Built-ins and members compile a null
+   * check only for such operands, so `self.<measurement>` and `player.x` stay plain reads.
+   */
+  nullable?: boolean;
 }
 
 export interface CompileError {
@@ -202,7 +213,33 @@ interface Builtin {
   check?: (types: ValueType[]) => string | null;
   ret: ValueType;
   impl: (args: Value[], ctx: ExprContext) => Value;
+  /** The result when an entity argument is `none` (built-ins that take entities). */
+  none?: Value;
 }
+
+/** An entity closure; `nullable` when it may yield `none` (`null`). */
+interface EntityFn {
+  fn: (c: ExprContext) => ExprEntity | null;
+  nullable: boolean;
+}
+
+/** `body` over the entity, or `dflt` when a nullable operand is `none`; plain operands compile no check. */
+function guarded(t: EntityFn, dflt: Value, body: (e: ExprEntity, c: ExprContext) => Value): Compiled {
+  const f = t.fn;
+  if (!t.nullable) return (c) => body(f(c) as ExprEntity, c);
+  return (c) => {
+    const e = f(c);
+    return e === null ? dflt : body(e, c);
+  };
+}
+
+/** Whether the entity sees a target (`seen` set). */
+const sees = (e: ExprEntity): boolean => (e.seen ?? -1) >= 0;
+/** The entity's seen entity, or `none`. */
+const seenOf = (e: ExprEntity, c: ExprContext): ExprEntity | null => {
+  const k = e.seen ?? -1;
+  return k < 0 ? null : c.entities[k]!;
+};
 
 type Point = { x: number; y: number; z: number };
 
@@ -279,6 +316,7 @@ const BUILTINS: Record<string, Builtin> = {
     min: 2,
     max: 4,
     ret: 'number',
+    none: Infinity,
     check: distanceCheck('manhattan'),
     impl: (a) => {
       const [dx, dy, dz] = deltas(a);
@@ -289,6 +327,7 @@ const BUILTINS: Record<string, Builtin> = {
     min: 2,
     max: 4,
     ret: 'number',
+    none: Infinity,
     check: distanceCheck('chebyshev'),
     impl: (a) => {
       const [dx, dy, dz] = deltas(a);
@@ -299,6 +338,7 @@ const BUILTINS: Record<string, Builtin> = {
     min: 2,
     max: 4,
     ret: 'number',
+    none: Infinity,
     check: distanceCheck('euclidean'),
     impl: (a) => {
       const [dx, dy, dz] = deltas(a);
@@ -309,6 +349,7 @@ const BUILTINS: Record<string, Builtin> = {
     min: 2,
     max: 2,
     ret: 'boolean',
+    none: false,
     check: (t) =>
       isPointType(t[0]!) && (t[1] === 'string' || t[1] === 'any')
         ? null
@@ -328,6 +369,8 @@ const SPECIAL_NAMES = [
   'in_room',
   'can_see',
   'heard',
+  'sees',
+  'seen',
   'busy',
   'doing',
   'var',
@@ -344,11 +387,13 @@ const SPECIAL_NAMES = [
 ];
 
 /** Functions that also have a method form: `x.f(a)` ≡ `f(x, a)`. */
-const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'count_tagged', 'has_tagged', 'fraction', 'in_room', 'heard', 'doing', 'in_faction']);
+const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'count_tagged', 'has_tagged', 'fraction', 'in_room', 'heard', 'sees', 'seen', 'doing', 'in_faction']);
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
 const TILE_FIELDS = ['x', 'y', 'z', 'id'];
+/** Entity members other than measurements (`self.<field>`); they take precedence over measurement ids. */
+const ENTITY_FIELDS = ['x', 'y', 'z', 'carry_weight', 'carry_capacity', 'busy', 'sees', 'seen'];
 
 /** Cell `tile` refers to: the context's target override, else `self`'s cell (on `self`'s floor). */
 const tileX = (c: ExprContext): number => (c.target ? c.target.x : c.self.x);
@@ -417,8 +462,14 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
 
   function member(node: Extract<Ast, { kind: 'member' }>): CompiledExpr {
     const obj = node.object;
-    if (obj.kind !== 'ident') return err(`property access '.${node.property}' is only allowed on ${SCOPE_NAMES.join(', ')}`, node.pos);
     const prop = node.property;
+    if (obj.kind !== 'ident') {
+      // A member of an entity-valued expression, `self.seen.x`: total on `none`.
+      const t = walk(obj);
+      if (t === fail) return fail;
+      if (t.type !== 'entity' && t.type !== 'any') return err(`property access '.${prop}' is only allowed on an entity or on ${SCOPE_NAMES.join(', ')}`, node.pos);
+      return entityMember({ fn: t.fn as EntityFn['fn'], nullable: t.nullable === true }, prop, 'entity', node.pos);
+    }
     if (symbols.tileOnly && (obj.name === 'self' || obj.name === 'player' || obj.name === 'npc' || obj.name === 'world')) return err(tileOnly(obj.name), obj.pos);
     switch (obj.name) {
       case 'self':
@@ -426,19 +477,16 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       case 'npc': {
         if (obj.name === 'npc' && !symbols.npc) return err(NPC_ONLY, obj.pos);
         const root = entityRoot(obj.name);
-        if (prop === 'x') return { fn: (c) => root(c).x, type: 'number' };
-        if (prop === 'y') return { fn: (c) => root(c).y, type: 'number' };
-        if (prop === 'z') return { fn: (c) => root(c).z, type: 'number' };
-        if (prop === 'carry_weight') return { fn: (c) => (root(c).inv?.load ?? 0) / 100, type: 'number' };
-        if (prop === 'carry_capacity') return { fn: (c) => (root(c).inv?.capacity ?? 0) / 100, type: 'number' };
-        if (prop === 'busy') return { fn: (c) => (root(c).activity ?? null) !== null, type: 'boolean' };
-        const r = symbols.resolveMeasurement(prop);
-        if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
-        const idx = r.index;
-        if (obj.name === 'npc') return { fn: (c) => c.npc!.m[idx]!, type: 'number' };
-        return obj.name === 'self'
-          ? { fn: (c) => c.self.m[idx]!, type: 'number' }
-          : { fn: (c) => c.player.m[idx]!, type: 'number' };
+        if (!ENTITY_FIELDS.includes(prop)) {
+          const r = symbols.resolveMeasurement(prop);
+          if ('error' in r) return err(`${obj.name}.${prop}: ${r.error}`, node.pos);
+          const idx = r.index;
+          if (obj.name === 'npc') return { fn: (c) => c.npc!.m[idx]!, type: 'number' };
+          return obj.name === 'self'
+            ? { fn: (c) => c.self.m[idx]!, type: 'number' }
+            : { fn: (c) => c.player.m[idx]!, type: 'number' };
+        }
+        return entityMember({ fn: root, nullable: false }, prop, obj.name, node.pos);
       }
       case 'tile':
         if (prop === 'x') return { fn: tileX, type: 'number' };
@@ -458,6 +506,22 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       default:
         return ident(obj);
     }
+  }
+
+  /** `<entity>.<prop>` for the fields of `ENTITY_FIELDS` and measurements; `none` reads `0`, `false` or `none`. */
+  function entityMember(t: EntityFn, prop: string, what: string, pos: number): CompiledExpr {
+    if (prop === 'x') return { fn: guarded(t, 0, (e) => e.x), type: 'number' };
+    if (prop === 'y') return { fn: guarded(t, 0, (e) => e.y), type: 'number' };
+    if (prop === 'z') return { fn: guarded(t, 0, (e) => e.z), type: 'number' };
+    if (prop === 'carry_weight') return { fn: guarded(t, 0, (e) => (e.inv?.load ?? 0) / 100), type: 'number' };
+    if (prop === 'carry_capacity') return { fn: guarded(t, 0, (e) => (e.inv?.capacity ?? 0) / 100), type: 'number' };
+    if (prop === 'busy') return { fn: guarded(t, false, (e) => (e.activity ?? null) !== null), type: 'boolean' };
+    if (prop === 'sees') return { fn: guarded(t, false, sees), type: 'boolean' };
+    if (prop === 'seen') return { fn: guarded(t, null, seenOf), type: 'entity', nullable: true };
+    const r = symbols.resolveMeasurement(prop);
+    if ('error' in r) return err(`${what}.${prop}: ${r.error}`, pos);
+    const idx = r.index;
+    return { fn: guarded(t, 0, (e) => e.m[idx]!), type: 'number' };
   }
 
   function ident(node: Extract<Ast, { kind: 'ident' }>): CompiledExpr {
@@ -508,6 +572,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'in_room') return inRoom(argNodes, node.pos);
     if (name === 'can_see') return canSee(argNodes, node.pos);
     if (name === 'heard') return heard(argNodes, node.pos);
+    if (name === 'sees' || name === 'seen') return sense(name, argNodes, node.pos);
     if (name === 'busy') return busy(argNodes, node.pos);
     if (name === 'doing') return doing(argNodes, node.pos);
     if (name === 'in_faction') return inFaction(argNodes, node.pos);
@@ -537,6 +602,18 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const fns = args.map((a) => a.fn);
     const impl = b.impl;
     const n = fns.length;
+    if (args.some((a) => a.nullable === true)) {
+      // An entity argument derived from `seen`: `none` gives the built-in's total value.
+      const none = b.none ?? 0;
+      return {
+        type: b.ret,
+        fn: (c) => {
+          const vals = new Array<Value>(n);
+          for (let i = 0; i < n; i++) if ((vals[i] = fns[i]!(c)) === null) return none;
+          return impl(vals, c);
+        },
+      };
+    }
     return {
       type: b.ret,
       fn: (c) => {
@@ -578,21 +655,20 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const t = walk(target);
     if (t === fail) return fail;
     if (t.type !== 'entity' && t.type !== 'any') return err(`has_status(entity, id) expects an entity, got ${t.type}`, pos);
-    const f = t.fn;
-    return { type: 'boolean', fn: (c) => (f(c) as ExprEntity).st[k] === 1 };
+    return { type: 'boolean', fn: guarded({ fn: t.fn as EntityFn['fn'], nullable: t.nullable === true }, false, (e) => e.st[k] === 1) };
   }
 
-  /** Entity argument of a special built-in: `self`/`player` without a closure call, else any entity expression. */
-  function entityArg(name: string, target: Ast, pos: number, sig = 'entity, id'): ((c: ExprContext) => ExprEntity) | null {
-    if (target.kind === 'ident' && target.name === 'self') return (c) => c.self;
-    if (target.kind === 'ident' && target.name === 'player') return (c) => c.player;
+  /** Entity argument of a special built-in: `self`/`player` without a closure call, else any entity expression (nullable when derived from `seen`). */
+  function entityArg(name: string, target: Ast, pos: number, sig = 'entity, id'): EntityFn | null {
+    if (target.kind === 'ident' && target.name === 'self') return { fn: (c) => c.self, nullable: false };
+    if (target.kind === 'ident' && target.name === 'player') return { fn: (c) => c.player, nullable: false };
     const t = walk(target);
     if (t === fail) return null;
     if (t.type !== 'entity' && t.type !== 'any') {
       err(`${name}(${sig}) expects an entity, got ${t.type}`, pos);
       return null;
     }
-    return t.fn as (c: ExprContext) => ExprEntity;
+    return { fn: t.fn as EntityFn['fn'], nullable: t.nullable === true };
   }
 
   /** `count_item(entity, "id")` / `has_item(entity, "id")`: the item id is resolved now; runtime scans one inventory. */
@@ -609,18 +685,18 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'has_item') {
       return {
         type: 'boolean',
-        fn: (c) => {
-          const inv = target(c).inv;
+        fn: guarded(target, false, (e) => {
+          const inv = e.inv;
           return inv !== null && countOf(inv, k) > 0;
-        },
+        }),
       };
     }
     return {
       type: 'number',
-      fn: (c) => {
-        const inv = target(c).inv;
+      fn: guarded(target, 0, (e) => {
+        const inv = e.inv;
         return inv === null ? 0 : countOf(inv, k);
-      },
+      }),
     };
   }
 
@@ -641,25 +717,25 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (name === 'has_tagged') {
       return {
         type: 'boolean',
-        fn: (c) => {
-          const inv = target(c).inv;
+        fn: guarded(target, false, (e) => {
+          const inv = e.inv;
           if (inv === null) return false;
           const st = inv.stacks;
           for (let i = 0; i < st.length; i++) if (flags[st[i]!.item] === 1 && st[i]!.count > 0) return true;
           return false;
-        },
+        }),
       };
     }
     return {
       type: 'number',
-      fn: (c) => {
-        const inv = target(c).inv;
+      fn: guarded(target, 0, (e) => {
+        const inv = e.inv;
         if (inv === null) return 0;
         const st = inv.stacks;
         let n = 0;
         for (let i = 0; i < st.length; i++) if (flags[st[i]!.item] === 1) n += st[i]!.count;
         return n;
-      },
+      }),
     };
   }
 
@@ -682,8 +758,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (!target) return fail;
     return {
       type: 'number',
-      fn: (c) => {
-        const e = target(c);
+      fn: guarded(target, 0, (e, c) => {
         const has = e.hasM;
         if (has !== undefined && has[k] !== 1) return 0;
         const b = bounds();
@@ -700,7 +775,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         if (!(max > min) || max === Infinity) return 0;
         const v = (e.m[k]! - min) / (max - min);
         return v < 0 ? 0 : v > 1 ? 1 : v;
-      },
+      }),
     };
   }
 
@@ -709,7 +784,16 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (argNodes.length !== 1) return err(`busy() takes 1 argument, got ${argNodes.length}`, pos);
     const target = entityArg('busy', argNodes[0]!, pos, 'entity');
     if (!target) return fail;
-    return { type: 'boolean', fn: (c) => (target(c).activity ?? null) !== null };
+    return { type: 'boolean', fn: guarded(target, false, (e) => (e.activity ?? null) !== null) };
+  }
+
+  /** `sees(entity)` / `seen(entity)` (and the method forms): one read of the entity's `seen`; `seen` may be `none`. */
+  function sense(name: 'sees' | 'seen', argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`${name}() takes 1 argument, got ${argNodes.length}`, pos);
+    const target = entityArg(name, argNodes[0]!, pos, 'entity');
+    if (!target) return fail;
+    if (name === 'sees') return { type: 'boolean', fn: guarded(target, false, sees) };
+    return { type: 'entity', nullable: true, fn: guarded(target, null, seenOf) };
   }
 
   /** `doing(entity, "action")`: the action id is resolved now, so runtime is one comparison. */
@@ -725,10 +809,10 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (!target) return fail;
     return {
       type: 'boolean',
-      fn: (c) => {
-        const a = target(c).activity;
+      fn: guarded(target, false, (e) => {
+        const a = e.activity;
         return a !== undefined && a !== null && a.action === k;
-      },
+      }),
     };
   }
 
@@ -800,7 +884,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (k === null) return fail;
     const target = entityArg('in_faction', argNodes[0]!, pos, 'entity, faction');
     if (!target) return fail;
-    return { type: 'boolean', fn: (c) => target(c).faction === k };
+    return { type: 'boolean', fn: guarded(target, false, (e) => e.faction === k) };
   }
 
   /** `reputation("f")`: the player's standing with the faction; one array read. */
@@ -818,16 +902,32 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const A = entityArg(name, argNodes[0]!, pos, 'a, b');
     const B = entityArg(name, argNodes[1]!, pos, 'a, b');
     if (errors.length > before || !A || !B) return fail;
-    if (name === 'attitude') return { type: 'number', fn: (c) => attitude(c.factions, c.player, A(c), B(c)) };
+    const fa = A.fn;
+    const fb = B.fn;
+    // `none` on either side: attitude 0, neither hostile nor friendly.
+    const nullable = A.nullable || B.nullable;
+    if (name === 'attitude') {
+      return {
+        type: 'number',
+        fn: nullable
+          ? (c) => {
+              const a = fa(c);
+              const b = fb(c);
+              return a === null || b === null ? 0 : attitude(c.factions, c.player, a, b);
+            }
+          : (c) => attitude(c.factions, c.player, fa(c)!, fb(c)!),
+      };
+    }
     const hostile = name === 'hostile';
     return {
       type: 'boolean',
       fn: (c) => {
-        const a = A(c);
-        const b = B(c);
-        const f = regardingFaction(c.player, a, b);
+        const a = fa(c);
+        const b = fb(c);
+        if (nullable && (a === null || b === null)) return false;
+        const f = regardingFaction(c.player, a!, b!);
         if (f < 0) return false;
-        const v = attitude(c.factions, c.player, a, b);
+        const v = attitude(c.factions, c.player, a!, b!);
         return hostile ? v < c.factions.hostileBelow[f]! : v >= c.factions.friendlyFrom[f]!;
       },
     };
@@ -865,15 +965,18 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (errors.length > before) return fail;
     if (!isPointType(a.type) || !isPointType(b.type)) return err('can_see(a, b) expects two entities or tiles', pos);
     if (r && !isNumericType(r.type)) return err('can_see(a, b, range) expects a numeric range', pos);
-    const A = a.fn as (c: ExprContext) => Point;
-    const B = b.fn as (c: ExprContext) => Point;
+    const A = a.fn as (c: ExprContext) => Point | null;
+    const B = b.fn as (c: ExprContext) => Point | null;
+    // `none` (a `seen` operand) is never seen; plain operands compile no check.
+    const nullable = a.nullable === true || b.nullable === true;
     if (!r) {
       return {
         type: 'boolean',
         fn: (c) => {
           const p = A(c);
           const q = B(c);
-          return c.los(p.x, p.y, q.x, q.y, p.z, q.z);
+          if (nullable && (p === null || q === null)) return false;
+          return c.los(p!.x, p!.y, q!.x, q!.y, p!.z, q!.z);
         },
       };
     }
@@ -883,11 +986,12 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       fn: (c) => {
         const p = A(c);
         const q = B(c);
-        if (p.z !== q.z) return false;
-        const dx = q.x - p.x;
-        const dy = q.y - p.y;
+        if (nullable && (p === null || q === null)) return false;
+        if (p!.z !== q!.z) return false;
+        const dx = q!.x - p!.x;
+        const dy = q!.y - p!.y;
         if (Math.sqrt(dx * dx + dy * dy) > Number(R(c))) return false;
-        return c.los(p.x, p.y, q.x, q.y, p.z, q.z);
+        return c.los(p!.x, p!.y, q!.x, q!.y, p!.z, q!.z);
       },
     };
   }
@@ -903,10 +1007,10 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     const S = s.fn as (c: ExprContext) => number;
     return {
       type: 'boolean',
-      fn: (c) => {
-        const t = target(c).heardTick;
+      fn: guarded(target, false, (e, c) => {
+        const t = e.heardTick;
         return t >= 0 && c.tick - t < Number(S(c)) * c.ticksPerSecond;
-      },
+      }),
     };
   }
 

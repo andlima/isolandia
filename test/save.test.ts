@@ -214,7 +214,7 @@ test('save: a plain JSON SaveFile with format, version, packs and map', () => {
   const w = world();
   const s = w.save();
   assert.equal(s.format, 'isolandia-save');
-  assert.equal(s.version, 7);
+  assert.equal(s.version, 8);
   assert.deepEqual(s.packs, [{ namespace: 't', version: '1.0.0' }]);
   assert.deepEqual(s.map, { id: 't:room', width: 14, height: 8, floors: 1 });
   assert.deepEqual(s.state, w.snapshot());
@@ -599,7 +599,7 @@ const idx = (s: SaveFile, archetype: string) => s.state.entities.findIndex((e) =
 
 test('validation: format, version, packs and map', () => {
   expectError((s) => (s.format = 'other' as 'isolandia-save'), 'format', /expected 'isolandia-save', got 'other'/);
-  expectError((s) => ((s as { version: number }).version = 8), 'version', /unsupported save version 8 \(supported: 3, 4, 5, 6, 7\)/);
+  expectError((s) => ((s as { version: number }).version = 9), 'version', /unsupported save version 9 \(supported: 3, 4, 5, 6, 7, 8\)/);
   expectError((s) => (s.packs = [{ namespace: 'u', version: '1.0.0' }]), 'packs', /made with packs \[u\] but the loaded packs are \[t\]/);
   expectError((s) => s.packs.push({ namespace: 'u', version: '1' }), 'packs', /\[t, u\] but the loaded packs are \[t\]/);
   expectError((s) => (s.map.id = 't:other'), 'map', /map 't:other' \(14×8\) but the start map is 't:room' \(14×8\)/);
