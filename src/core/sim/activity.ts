@@ -7,7 +7,7 @@
  * only at completion, after every check has passed again.
  */
 
-import { EMPTY_TILE, secondsToTicks, type EdgeSide, type ActionDef, type DurationDef, type EffectDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
+import { EMPTY_TILE, secondsToTicks, type EdgeSide, type ActionDef, type DurationDef, type EffectDef, type InterruptDef, type ItemCount, type ItemDef, type RecipeDef, type TileDef } from '../definition.ts';
 import type { Compiled, ExprContext } from '../expr/index.ts';
 import { countOf, type Container } from './containers.ts';
 import type { Grid } from './grid.ts';
@@ -40,7 +40,8 @@ export interface ActivitySource {
   /** Units removed at completion (as many as are held, up to the count). */
   readonly consume: readonly ItemCount[];
   readonly duration: DurationDef;
-  readonly interruptFn: Compiled | null;
+  /** Expression checked every tick after the start, or the event (`noise`) that ends it; null = never. */
+  readonly interrupt: InterruptDef | null;
   readonly effects: readonly EffectDef[];
   /** Tile indices placed by the `set_tile` effects, in order. */
   readonly setTiles: readonly number[];
@@ -116,7 +117,7 @@ export function actionSource(a: ActionDef): ActivitySource {
     requires: [...a.tools.map((item) => ({ item, count: 1 })), ...a.consume],
     consume: a.consume,
     duration: a.duration,
-    interruptFn: a.interruptFn,
+    interrupt: a.interrupt,
     effects: a.effects,
     setTiles: setTilesOf(a.effects),
     produce: [],
@@ -141,7 +142,7 @@ export function useSource(item: ItemDef): ActivitySource | null {
     requires: [{ item: item.index, count: 1 }],
     consume: use.consume > 0 ? [{ item: item.index, count: use.consume }] : [],
     duration: use.duration,
-    interruptFn: use.interruptFn,
+    interrupt: use.interrupt,
     effects: use.effects,
     setTiles: [],
     produce: [],
@@ -164,7 +165,7 @@ export function recipeSource(r: RecipeDef): ActivitySource {
     requires: [...r.tools.map((item) => ({ item, count: 1 })), ...r.consume],
     consume: r.consume,
     duration: r.duration,
-    interruptFn: r.interruptFn,
+    interrupt: r.interrupt,
     effects: r.effects,
     setTiles: [],
     produce: r.produce,
@@ -281,15 +282,35 @@ export class ActivityRunner {
   }
 
   /**
-   * Work step: from the tick after the start, the interrupt check, then on
-   * `endTick` the completion (every start check again, then `occupied`).
+   * `e` heard a noise on `tick`: an activity with `interrupt: { on: noise }`
+   * ends as `interrupted` when its `when` (if any) is truthy. Nothing happens
+   * on the start tick, as for the expression form.
+   */
+  interruptOnNoise(e: Entity, tick: number): void {
+    const a = e.activity;
+    if (!a || tick <= a.startTick) return;
+    const s = a.source;
+    const i = s.interrupt;
+    if (!i || i.kind !== 'event') return;
+    if (i.whenFn) {
+      const hit = i.whenFn(this.bind(s, e, a.x, a.y, a.z, a.side));
+      this.unbind();
+      if (!hit) return;
+    }
+    this.end(e, 'interrupted');
+  }
+
+  /**
+   * Work step: from the tick after the start, the interrupt check (expression
+   * form), then on `endTick` the completion (every start check again, then
+   * `occupied`).
    */
   advance(e: Entity, tick: number): void {
     const a = e.activity;
     if (!a || tick <= a.startTick) return;
     const s = a.source;
-    if (s.interruptFn) {
-      const hit = s.interruptFn(this.bind(s, e, a.x, a.y, a.z, a.side));
+    if (s.interrupt && s.interrupt.kind === 'expr') {
+      const hit = s.interrupt.fn(this.bind(s, e, a.x, a.y, a.z, a.side));
       this.unbind();
       if (hit) return this.end(e, 'interrupted');
     }

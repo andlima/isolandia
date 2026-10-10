@@ -123,6 +123,14 @@ function place(e: Entity, x: number, y: number): void {
   e.y = e.fromY = y;
 }
 
+/** Keep the player walking back and forth between `a` and `b`: call once per tick, before `step()`. */
+function pace(w: World, a: [number, number], b: [number, number]): void {
+  const p = w.player;
+  if (p.path || p.intent) return;
+  const [x, y] = p.x === a[0] && p.y === a[1] ? b : a;
+  w.queueIntent({ kind: 'goto', x, y });
+}
+
 /** Step once with `e` shouting at `vol` (then silent again). */
 function shout(w: World, emitters: [Entity, number][]): void {
   const k = VOL(w);
@@ -438,10 +446,12 @@ test('zombie: crunching over broken glass draws a shambler to the spot', () => {
   const z = byHome(w, ...T(20, 13));
   assert.equal(z.archetype.id, 'zmb:shambler');
   assert.equal(w.grid.tileAt(...T(16, 8))!.id, 'town:glass');
-  place(w.player, ...T(16, 8)); // the hallway of the north-west house, out of z's sight
+  // The hallway of the north-west house, out of z's sight: pace onto the glass and off it.
+  place(w.player, ...T(15, 8));
   const seen: string[] = [];
   let end = -1;
   for (let t = 0; t < 200 && end < 0; t++) {
+    pace(w, T(16, 8), T(15, 8));
     w.step();
     const s = stateOf(z);
     if (seen[seen.length - 1] !== s) seen.push(s);
@@ -504,12 +514,14 @@ test('garden: hopping on the gravel path draws a napping cat over to investigate
   assert.equal(stateOf(cat), 'nap');
   assert.equal(w.grid.tileAt(8, 7)!.id, 'gdn:gravel');
   assert.ok(w.grid.tileAt(8, 7)!.tags.includes('crunchy'));
-  place(w.player, 8, 7); // within earshot (7) but too far to be seen (5)
+  // Hop between the grass at (8, 8) and the gravel at (8, 7): within earshot (7) but too far to be seen (5).
+  place(w.player, 8, 8);
   const seen: string[] = [];
   let end = -1;
   for (let t = 0; t < 200 && end < 0; t++) {
+    pace(w, [8, 7], [8, 8]);
     w.step();
-    if (t === 2) assert.ok(w.noises.length > 0 || cat.heardTick >= 0, 'the gravel crunches');
+    if (t === 4) assert.ok(cat.heardTick >= 0, 'the gravel crunches');
     const s = stateOf(cat);
     if (seen[seen.length - 1] !== s) seen.push(s);
     if (s === 'chase' || (seen.includes('investigate') && cheb(cat.x, cat.y, 8, 7) <= 1)) end = t;
@@ -517,12 +529,17 @@ test('garden: hopping on the gravel path draws a napping cat over to investigate
   assert.equal(seen[0], 'nap');
   assert.ok(seen.includes('investigate'), `states: ${seen.join(' → ')}`);
   assert.ok(end >= 0, `never arrived: ${seen.join(' → ')} at ${cat.x},${cat.y}`);
-  // Grass is quiet.
-  const q = game('garden');
-  place(q.player, 8, 6);
-  for (let t = 0; t < 20; t++) {
-    q.step();
-    assert.equal(q.noises.length, 0);
+  // Grass is quiet, and so is sitting still on the gravel: the hop fires on a step only.
+  for (const [x, y] of [
+    [8, 6],
+    [8, 7],
+  ]) {
+    const q = game('garden');
+    place(q.player, x!, y!);
+    for (let t = 0; t < 20; t++) {
+      q.step();
+      assert.equal(q.noises.length, 0, `noise while idle at ${x},${y}`);
+    }
   }
 });
 
@@ -543,9 +560,15 @@ test('garden: at night, hopping on the gravel path draws a prowling fox over to 
   }
   assert.ok(spot, 'the fox never prowled near the gravel path');
   assert.equal(w.grid.tileAt(...spot)!.id, 'gdn:gravel');
-  place(w.player, ...spot);
+  // Start on the neighbour of the spot farther from the fox (still out of its sight) and hop onto the gravel (and back).
+  const off = ([[spot[0], 6], [spot[0], 8]] as [number, number][])
+    .filter(([x, y]) => w.grid.canStep(...spot, x - spot[0], y - spot[1], 0))
+    .sort((a, b) => Math.hypot(b[0] - fox.x, b[1] - fox.y) - Math.hypot(a[0] - fox.x, a[1] - fox.y))[0]!;
+  assert.ok(off, 'no walkable cell next to the spot');
+  place(w.player, ...off);
   const seen: string[] = [];
   for (let t = 0; t < 30 && !seen.includes('investigate'); t++) {
+    pace(w, spot, off);
     w.step();
     if (seen[seen.length - 1] !== stateOf(fox)) seen.push(stateOf(fox));
   }

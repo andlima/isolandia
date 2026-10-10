@@ -48,9 +48,9 @@ systems:
     when: 'tile.has_tag("burrow") and self.energy < 90'
     effects:
       - { type: apply, measurement: energy, delta: 3 }
-  # Gravel crunches under little paws; the cat and the fox hear it (behaviors.yaml).
+  # Gravel crunches under little paws on every hop onto it; the cat and the fox hear it (behaviors.yaml).
   - id: hop
-    every: 0.2
+    on: step
     for: 'self.has_tag("bunny")'
     when: 'tile.has_tag("crunchy")'
     effects:

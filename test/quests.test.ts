@@ -619,7 +619,7 @@ test('save v4: a round trip with set vars, quests at several stages (one ended) 
     { entry: 't:rumour', tick: 1 },
     { entry: 't:letter', tick: 5 },
   ]);
-  assert.equal(w.save().version, 6);
+  assert.equal(w.save().version, 7);
   const copy = assertRoundTrip(w, () => {}, 30);
   assert.equal(stageOf(copy, 't:main'), 'c');
   assert.equal(stageOf(copy, 't:later'), 'a');
@@ -647,7 +647,7 @@ test('save v3: loads with every var at its initial, no quest started and an empt
   old.step();
   assert.equal(stageOf(old, 't:main'), 'a');
   assert.equal(stageOf(old, 't:side'), 'done');
-  assert.equal(old.save().version, 6);
+  assert.equal(old.save().version, 7);
 });
 
 test('save v4: unknown ids are restore errors with JSON paths and did-you-mean; missing vars warn', () => {

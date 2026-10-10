@@ -20,6 +20,7 @@ import {
   type MeasurementDef,
   type NumberTerm,
   type ReputationEffectDef,
+  type SystemDef,
   REPUTATION_MAX,
   REPUTATION_MIN,
   tierOf,
@@ -97,6 +98,8 @@ export interface Entity extends ExprEntity {
   activity: Activity | null;
   /** Faction index of the archetype, or -1. */
   readonly faction: number;
+  /** 1 per `once` system (by its `onceIndex`) that has fired for this entity; null when the stack has none. */
+  readonly fired: Uint8Array | null;
 }
 
 /** A noise emitted this tick by a `noise` effect. */
@@ -607,6 +610,8 @@ export interface EntitySnapshot {
   activity: ActivitySnapshot | null;
   /** Action queued when the current path arrives. */
   then: Action | null;
+  /** Qualified ids of the `once` systems that have fired for this entity, sorted; omitted when none. */
+  fired?: string[];
 }
 
 export interface WorldSnapshot {
@@ -845,6 +850,16 @@ export class World {
    */
   private readonly statusFor: Uint8Array[];
   private readonly systemFor: Uint8Array[];
+  /** Systems run in the systems phase (periodic and `on: step`), in definition order. */
+  private readonly tickSystems: readonly SystemDef[];
+  /** `on: noise` systems, in definition order (run right after hearing). */
+  private readonly noiseSystems: readonly SystemDef[];
+  /** Number of `once` systems (the size of each entity's `fired` bits). */
+  private readonly onceCount: number;
+  /** Whether any activity source has an event interrupt (the hear sub-phase then checks activities). */
+  private readonly hasEventInterrupts: boolean;
+  /** First pending noise not yet heard: noises emitted after this tick's hear phase, carried to the next tick. */
+  private pendingStart = 0;
   /** Scratch for the status update: next flags of every entity, row-major. */
   private statusNext = new Uint8Array(0);
   /** Activity source per action index. */
@@ -889,6 +904,9 @@ export class World {
       Uint8Array.from(def.archetypes, (a) => (forFn === null ? 1 : forTag === null ? 2 : a.tags.includes(forTag) ? 1 : 0));
     this.statusFor = def.statuses.map((s) => forTable(s.forFn, s.forTag));
     this.systemFor = def.systems.map((s) => forTable(s.forFn, s.forTag));
+    this.tickSystems = def.systems.filter((s) => s.on !== 'noise');
+    this.noiseSystems = def.systems.filter((s) => s.on === 'noise');
+    this.onceCount = def.systems.filter((s) => s.once).length;
     this.statusRates = def.statuses.map((s) => {
       const by = new Array<NumberTerm | undefined>(nm).fill(undefined);
       for (const r of s.rates) by[r.measurement] = r;
@@ -905,6 +923,7 @@ export class World {
     this.actionSources = def.actions.map(actionSource);
     this.useSources = def.items.map(useSource);
     this.recipeSources = def.recipes.map(recipeSource);
+    this.hasEventInterrupts = [...this.actionSources, ...this.useSources, ...this.recipeSources].some((s) => s?.interrupt?.kind === 'event');
     this.vars = Float64Array.from(def.vars, (v) => v.initial);
     this.questStage = new Int32Array(def.quests.length).fill(-1);
     this.questSince = new Float64Array(def.quests.length);
@@ -1096,6 +1115,7 @@ export class World {
       heardTick: -1,
       activity: null,
       faction: archetype.faction ?? -1,
+      fired: this.onceCount > 0 ? new Uint8Array(this.onceCount) : null,
     };
     this.entities.push(e);
     this.bucketOf.push(-1);
@@ -1382,8 +1402,11 @@ export class World {
   step(): void {
     if (this.ended || this.conversation) return;
     this.ctx.tick = this.tick;
-    if (this.noiseCarry) this.noiseCarry = false;
-    else this.pendingCount = 0;
+    if (this.noiseCarry) {
+      this.noiseCarry = false;
+      if (this.pendingStart > 0) this.compactNoises();
+    } else this.pendingCount = 0;
+    this.pendingStart = 0;
     this.clearEvents();
     this.syncIndex();
     this.markDormant();
@@ -1398,7 +1421,10 @@ export class World {
     for (const e of this.entities) if (e.activity) this.runner.advance(e, this.tick);
     this.drift();
     this.runSystems();
-    if (this.pendingCount > 0) this.hear();
+    if (this.pendingCount > 0) {
+      this.hear();
+      this.afterHear();
+    }
     for (const e of this.entities) this.clamp(e);
     this.updateStatuses();
     if (this.def.quests.length > 0) this.questPhase();
@@ -1443,22 +1469,73 @@ export class World {
     }
   }
 
-  /** Run the systems due this tick, in definition order, once per matching entity. */
+  /**
+   * Phase 3: the periodic systems due this tick and the `on: step` systems
+   * (for every entity that landed on a cell this tick: `move` and `climb`
+   * set its `stepTick` to `tick + 1`), in definition order, once per
+   * matching entity.
+   */
   private runSystems(): void {
     const t = this.tick + 1;
-    const ctx = this.ctx;
-    for (const sys of this.def.systems) {
-      if (t % sys.period !== 0) continue;
-      const pre = this.systemFor[sys.index]!;
-      for (const e of this.entities) {
-        const f = pre[e.archetype.index];
-        if (f === 0) continue;
-        ctx.self = e;
-        if (f === 2 && !sys.forFn!(ctx)) continue;
-        if (sys.whenFn && !sys.whenFn(ctx)) continue;
-        this.runEffects(e, sys.effects);
+    for (const sys of this.tickSystems) {
+      if (sys.on === 'step') {
+        for (const e of this.entities) if (e.stepTick === t) this.fireSystem(sys, e);
+      } else if (t % sys.period === 0) {
+        for (const e of this.entities) this.fireSystem(sys, e);
       }
     }
+  }
+
+  /** Run `sys` for `e` when its `once` bit, `for` and `when` allow it; a `once` system then never fires for `e` again. */
+  private fireSystem(sys: SystemDef, e: Entity): void {
+    if (sys.once && e.fired![sys.onceIndex] === 1) return;
+    const f = this.systemFor[sys.index]![e.archetype.index];
+    if (f === 0) return;
+    const ctx = this.ctx;
+    ctx.self = e;
+    if (f === 2 && !sys.forFn!(ctx)) return;
+    if (sys.whenFn && !sys.whenFn(ctx)) return;
+    if (sys.once) e.fired![sys.onceIndex] = 1;
+    this.runEffects(e, sys.effects);
+  }
+
+  /**
+   * Phase 4b, right after `hear()`: for the entities that heard a noise this
+   * tick, in id order, the event interrupts of their activities, then the
+   * `on: noise` systems (definition order, entity order). A noise emitted here
+   * is not heard this tick: it is carried to the next tick's hear phase.
+   */
+  private afterHear(): void {
+    const heardEnd = this.pendingCount;
+    const ids = this.hearIds;
+    if (this.hasEventInterrupts || this.noiseSystems.length > 0) {
+      ids.sort((a, b) => a - b);
+      const entities = this.entities;
+      if (this.hasEventInterrupts) {
+        for (const id of ids) {
+          const e = entities[id]!;
+          if (e.activity) this.runner.interruptOnNoise(e, this.tick);
+        }
+      }
+      for (const sys of this.noiseSystems) for (const id of ids) this.fireSystem(sys, entities[id]!);
+    }
+    if (this.pendingCount > heardEnd) {
+      this.pendingStart = heardEnd;
+      this.noiseCarry = true;
+    }
+  }
+
+  /** Move the carried noises (from `pendingStart`) to the front of the pending list. */
+  private compactNoises(): void {
+    const { pending, pendingStart } = this;
+    const n = this.pendingCount - pendingStart;
+    for (let i = 0; i < n; i++) {
+      const carried = pending[pendingStart + i]!;
+      pending[pendingStart + i] = pending[i]!;
+      pending[i] = carried;
+    }
+    this.pendingCount = n;
+    this.pendingStart = 0;
   }
 
   /**
@@ -2328,6 +2405,7 @@ export class World {
         heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, z: e.heardZ, tick: e.heardTick } : null,
         activity: e.activity ? this.activitySnapshot(e.activity) : null,
         then: e.then,
+        ...this.firedSnapshot(e),
       })),
       containers: [...this.containers.values()].map((c) => {
         const out: ContainerSnapshot = { id: c.id, kind: c.kind, stacks: c.stacks.map((s): [string, number] => [items[s.item]!.id, s.count]) };
@@ -2400,6 +2478,14 @@ export class World {
   private cellTriple(i: number): [number, number, number] {
     const { x, y, z } = this.grid.cellOf(i);
     return [x, y, z];
+  }
+
+  /** `{ fired: [...] }` for the `once` systems that have fired for `e` (sorted by qualified id), or `{}` when none. */
+  private firedSnapshot(e: Entity): { fired?: string[] } {
+    if (!e.fired) return {};
+    const ids: string[] = [];
+    for (const s of this.def.systems) if (s.once && e.fired[s.onceIndex] === 1) ids.push(s.id);
+    return ids.length > 0 ? { fired: ids.sort() } : {};
   }
 
   private activitySnapshot(a: Activity): ActivitySnapshot {
