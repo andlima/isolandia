@@ -211,7 +211,7 @@ class Patcher {
     const termFields = TERM_FIELDS[domain] ?? [];
     for (const k of keys) {
       const v = value[k];
-      if (domain === 'start' && DEEP_START_KEYS.includes(k) && isObject(v) && Object.keys(v).length > 0) {
+      if (domain === 'start' && DEEP_START_KEYS.includes(k) && isObject(v)) {
         written.push(...this.mergeDeep(target, k, v, pack, src));
         continue;
       }
@@ -257,12 +257,19 @@ class Patcher {
     target.writers.set(key, scope ? { pack, src, scope } : { pack, src });
   }
 
-  /** Merge a `start` sub-mapping per key: a listed key replaces that key, `null` clears one, omitted keys are kept. */
+  /**
+   * Merge a `start` sub-mapping per key: a listed key replaces that key,
+   * `null` clears one, omitted keys are kept, so an empty mapping over an
+   * upstream value changes nothing (and warns).
+   */
   private mergeDeep(target: Entry, key: string, v: JsonObject, pack: LoadedPack, src: Src): string[] {
     if (!isObject(target.entry.value[key])) {
-      // No upstream value: the mapping is a fresh definition, located at this override.
-      target.entry.value[key] = {};
-      target.writers.set(key, { pack, src });
+      // No upstream value: the mapping is a fresh definition, located at this
+      // override. Seeding it through `write` keeps the conflict warning when an
+      // unrelated pack cleared (or wrote) the mapping before.
+      this.write(target, key, {}, pack, src);
+    } else if (Object.keys(v).length === 0) {
+      this.sink.warn(at(src, key), `'${key}: {}' changes nothing: omitted keys are kept; write the keys to change, or 'null' to remove the mapping`);
     }
     const written: string[] = [];
     for (const [sub, sv] of Object.entries(v)) {

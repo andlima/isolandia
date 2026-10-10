@@ -445,6 +445,15 @@ test('deeper merge: start.defeat / victory / simulation merge per field; null cl
   // After `defeat: null`, a later dependent mod's `defeat: { when }` is a fresh definition again.
   const fresh = ok([START_BASE, mod('m', ['t'], `start:\n  override: true\n  defeat: null\n`), mod('n', ['m', 't'], `start:\n  override: true\n  defeat: { when: "self.hp < 1", message: Fresh }\n`)]);
   assert.equal(fresh.def.start.defeat!.message, 'Fresh');
+  assert.deepEqual(fresh.warnings, [], 'n depends on m: no conflict');
+  // An empty mapping lists no key, so it keeps the upstream mapping whole (and says so).
+  const empty = ok([START_BASE, mod('m', ['t'], `start:\n  override: true\n  defeat: {}\n  simulation: { npc_path_budget: 1 }\n`)]);
+  assert.equal(empty.def.start.defeat!.message, 'You did not make it.');
+  assert.equal(typeof empty.def.start.defeat!.when, 'function');
+  assert.equal(empty.def.start.simulation.npcPathBudget, 1);
+  assert.deepEqual(empty.def.patches[0]!.fields, ['simulation.npc_path_budget']);
+  expectIn(empty.warnings, { pack: 'm', file: 'mod.yaml', path: 'start.defeat', message: /'defeat: \{\}' changes nothing: omitted keys are kept/ });
+  assert.equal(empty.warnings.length, 1);
 });
 
 test('deeper merge: a sub-mapping with no upstream value is a fresh definition, validated at the override', () => {
@@ -492,6 +501,18 @@ test('deeper merge: unrelated mods warn per sub-field, not per mapping', () => {
     cleared.warnings.map((w) => [w.pack, w.path]),
     [['n', 'start.defeat']],
   );
+  // Re-adding a mapping an unrelated mod cleared warns at the mapping too: the fresh definition is a conflicting write.
+  const readded = ok([
+    START_BASE,
+    mod('m', ['t'], `start:\n  override: true\n  defeat: null\n`),
+    mod('n', ['t'], `start:\n  override: true\n  defeat: { when: "self.hp < 1", message: "N" }\n`),
+  ]);
+  assert.equal(readded.def.start.defeat!.message, 'N');
+  assert.deepEqual(
+    readded.warnings.map((w) => [w.pack, w.path]),
+    [['n', 'start.defeat']],
+  );
+  assert.match(readded.warnings[0]!.message, /also overridden by pack 'm' \(mod\.yaml:3\); 'n' wins/);
 });
 
 // ── Built-ins ───────────────────────────────────────────────────────────────
