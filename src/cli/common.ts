@@ -32,12 +32,14 @@ export interface CliArgs {
   save: string | null;
   /** `--overrides` (check). */
   overrides: boolean;
+  /** `--populate` (check). */
+  populate: boolean;
 }
 
 /** Options that take a value; each CLI accepts its own subset. */
 export type CliOption = '--seed' | '--load' | '--save-file' | '--save' | '--packs-dir';
 /** Options without a value. */
-export type CliFlag = '--overrides' | '--stack';
+export type CliFlag = '--overrides' | '--populate' | '--stack';
 
 export const DEFAULT_PACKS_DIR = 'packs';
 
@@ -48,7 +50,7 @@ export function parseArgs(
   flags: readonly CliFlag[] = [],
   needPacks = true,
 ): CliArgs {
-  const args: CliArgs = { dirs: [], packsDir: DEFAULT_PACKS_DIR, stack: false, seed: null, load: null, saveFile: null, save: null, overrides: false };
+  const args: CliArgs = { dirs: [], packsDir: DEFAULT_PACKS_DIR, stack: false, seed: null, load: null, saveFile: null, save: null, overrides: false, populate: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '-h' || a === '--help') {
@@ -56,6 +58,7 @@ export function parseArgs(
       process.exit(0);
     } else if ((flags as readonly string[]).includes(a)) {
       if (a === '--stack') args.stack = true;
+      else if (a === '--populate') args.populate = true;
       else args.overrides = true;
     } else if ((options as readonly string[]).includes(a)) {
       const v = argv[++i];

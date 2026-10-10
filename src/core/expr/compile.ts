@@ -162,6 +162,12 @@ export interface CompileSymbols {
   resolveFaction?(ref: string): { index: number } | { error: string };
   /** Whether `npc` (the NPC being talked to) is in scope: dialogue expressions only. */
   npc?: boolean;
+  /**
+   * Load-time cell filter (a populate `where`): only `tile` is in scope.
+   * `self`, `player`, `npc`, `world`, `random`, `roll` and every built-in that
+   * reads an entity or world state are errors naming the field.
+   */
+  tileOnly?: boolean;
 }
 
 export const SCOPE_NAMES = ['self', 'player', 'tile', 'world'] as const;
@@ -380,11 +386,14 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
   }
 
   const NPC_ONLY = `'npc' is only available in dialogues`;
+  /** Error for a name a `tileOnly` expression cannot use. */
+  const tileOnly = (name: string): string => `populate 'where' sees only 'tile': '${name}' is not available at load`;
 
   function member(node: Extract<Ast, { kind: 'member' }>): CompiledExpr {
     const obj = node.object;
     if (obj.kind !== 'ident') return err(`property access '.${node.property}' is only allowed on ${SCOPE_NAMES.join(', ')}`, node.pos);
     const prop = node.property;
+    if (symbols.tileOnly && (obj.name === 'self' || obj.name === 'player' || obj.name === 'npc' || obj.name === 'world')) return err(tileOnly(obj.name), obj.pos);
     switch (obj.name) {
       case 'self':
       case 'player':
@@ -426,6 +435,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
   }
 
   function ident(node: Extract<Ast, { kind: 'ident' }>): CompiledExpr {
+    if (symbols.tileOnly && (node.name === 'self' || node.name === 'player' || node.name === 'npc' || node.name === 'world')) return err(tileOnly(node.name), node.pos);
     switch (node.name) {
       case 'self':
         return { fn: (c) => c.self, type: 'entity' };
@@ -463,6 +473,8 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     } else {
       return err('only built-in functions can be called', node.pos);
     }
+    // A load-time cell filter: `random`/`roll` and everything that reads an entity or the world are out.
+    if (symbols.tileOnly && (name === 'random' || name === 'roll' || (SPECIAL_NAMES.includes(name) && name !== 'in_room'))) return err(tileOnly(name), node.pos);
     if (name === 'has_status') return hasStatus(argNodes, node.pos);
     if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
     if (name === 'in_room') return inRoom(argNodes, node.pos);

@@ -708,7 +708,7 @@ test('interactionsAt: duration of an expression, evaluated purely; uses absent w
 test('hoverInfo: titles, hints and cursors', () => {
   const w = game('zombie');
   const fridge = [...w.containers.values()].find((c) => c.kind === 'tile' && w.def.tiles[c.tile]!.id === 'town:fridge')!;
-  assert.deepEqual(hoverInfo(w, { kind: 'tile', x: fridge.x, y: fridge.y, z: 0 }), { title: 'Fridge · kitchen', hint: 'Click: Open', cursor: 'pointer' });
+  assert.deepEqual(hoverInfo(w, { kind: 'tile', x: fridge.x, y: fridge.y, z: 0 }), { title: 'Fridge · kitchen · town', hint: 'Click: Open', cursor: 'pointer' });
   const [wx, wy] = genreCell('zombie', 22, 3);
   assert.deepEqual(hoverInfo(w, { kind: 'edge', x: wx, y: wy, z: 0, side: 'w' }), { title: 'Window', hint: "Click: Can't do now", cursor: 'pointer' });
   const ids = w.def.ids.items;

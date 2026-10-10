@@ -8,6 +8,7 @@ import {
   DIALOGUE_END,
   EMPTY_TILE,
   populateCandidates,
+  populateCount,
   type ArchetypeDef,
   type BehaviorDef,
   type Definition,
@@ -1125,16 +1126,18 @@ export class World {
 
   /**
    * Place `populate` entities after the explicit spawns: entry by entry, each
-   * drawing `count` cells without replacement from its candidates (cells an
-   * earlier entry took are skipped), with a dedicated RNG.
+   * drawing its count (`count`, or the one its `density` derives from its
+   * candidates) without replacement from its candidates (cells an earlier
+   * entry took are skipped), with a dedicated RNG.
    */
   private populate(map: MapDef, seed: number): void {
     if (map.populate.length === 0) return;
     const rng = new Rng(mix(seed, POPULATE_SALT));
     const used = new Uint8Array(map.cells.length);
     for (const p of map.populate) {
-      const free = populateCandidates(map, this.def.tiles, p).filter((i) => used[i] === 0);
-      const n = Math.min(p.count, free.length); // the loader guarantees count ≤ free
+      const all = populateCandidates(map, this.def.tiles, p);
+      const free = all.filter((i) => used[i] === 0);
+      const n = Math.min(populateCount(p, all.length), free.length); // the loader guarantees count ≤ free
       const archetype = this.def.archetypes[p.archetype]!;
       for (let k = 0; k < n; k++) {
         const j = k + Math.floor(rng.next() * (free.length - k));

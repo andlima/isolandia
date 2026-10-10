@@ -212,7 +212,7 @@ test('check --overrides: the zombie and vampire mods patch the town by overrides
     'zmb override archetype town:resident [label]',
     'zmb override map town:town_center [spawns]',
     'zmb override map town:house_c [populate]',
-    'zmb override map town:city [populate]',
+    'zmb override map town:city [rooms, populate]',
     'zmb override start [defeat, victory]',
   ]);
   assert.deepEqual(patches('vampire'), [

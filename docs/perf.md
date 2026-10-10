@@ -3,7 +3,9 @@
 Spec: `specs/m6-chunked-world.md`. The target is the zombie **city** (the
 `town` base's city, populated by the `zombie` mod since M7): a
 343×343 composite map (roomier since `roomier-maps`; 256×256 before),
-two floors in places, ~960 entities, at the 10 Hz tick. Recorded target (not a test gate): **steady p95 ≤ 10 ms per tick in
+two floors in places, ~960 entities (960 since `populate-density`: 895
+placed by the four density entries, the 58 house crawlers, six spawns and
+the player; 961 with the hand-counted rects before it), at the 10 Hz tick. Recorded target (not a test gate): **steady p95 ≤ 10 ms per tick in
 Node** on the dev machine.
 
 ## How to run
