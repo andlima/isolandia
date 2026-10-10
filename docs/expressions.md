@@ -118,6 +118,9 @@ sets.
 | `has_status(entity, "id")`               | Whether the entity has the status active                 |
 | `count_item(entity, "id")`               | Units of an item in the entity's inventory (`0` without one) |
 | `has_item(entity, "id")`                 | `count_item(entity, "id") > 0`                           |
+| `count_tagged(entity, "tag")`            | Units of every item carrying that [item tag](packs.md#items) in the entity's inventory (`0` without one) |
+| `has_tagged(entity, "tag")`              | `count_tagged(entity, "tag") > 0`                        |
+| `fraction(entity, "measurement")`        | `(value − min) / (max − min)` of the entity's measurement, in `[0, 1]` |
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
 | `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
 | `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
@@ -159,6 +162,27 @@ and resolved to an index, so a test is one array read.
 when: 'self.carry_weight >= 0.8 * self.carry_capacity'
 when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
 when: 'self.count_item("canned_beans") >= 2 and tile.in_room("kitchen")'
+```
+
+`count_tagged` and `has_tagged` count by **item tag** instead of item id:
+every stack of an item whose `tags` include the literal tag, summed (the
+method forms `self.count_tagged("food")` / `self.has_tagged("food")`
+work too). The tag is resolved at load time to a per-item flag, so the
+runtime is one scan of one inventory; a tag that no loaded item carries
+is a load **warning** with a *did you mean* (as for tile-filter tags) and
+never matches. `fraction(entity, "measurement")` is how far the entity's
+measurement is from its `min` toward its `max`, clamped to `[0, 1]`: a
+quarter of health is `fraction(self, "hp") < 0.25` whatever the maximum.
+The measurement must have a `max` (a load error otherwise: "no maximum to
+take a fraction of"); a per-entity `max` (an expression or a measurement
+id) is evaluated at call time for the entity asked about, and the value is
+`0` when the resolved max is not finite or not above `min`, or when the
+entity lacks the measurement. All three work in every expression scope,
+including `for` (they do not qualify for the `has_tag` fast path).
+
+```yaml
+when: 'self.count_tagged("food") + self.count_tagged("drink") >= 4'
+when: 'world.is_day and fraction(self, "hp") < 0.25'
 ```
 
 `can_see` answers "can `a` see `b`?" over the tile grid. `a` and `b` are
