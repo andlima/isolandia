@@ -92,6 +92,10 @@ Entity members (the same on `self`, `player` and `npc`, e.g. `npc.hp`,
 - `self.carry_weight`, `self.carry_capacity` — the load and capacity of
   the entity's inventory, in normal weight units (`0` without an
   inventory). These names take precedence over measurements.
+- `self.sees`, `self.seen` — whether the entity currently sees a target
+  through its archetype's [senses](packs.md#senses), and that target (or
+  `none`); see [Senses](#senses) below. These names take precedence over
+  measurements too.
 
 `tile.id` is the qualified tile id, e.g. `tile.id == "std:floor"`; on an
 [empty cell](packs.md#floors) it is `""` and `tile.has_tag(...)` is false.
@@ -123,6 +127,8 @@ sets.
 | `fraction(entity, "measurement")`        | `(value − min) / (max − min)` of the entity's measurement, in `[0, 1]` |
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
 | `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
+| `sees(entity)`                           | Whether the entity currently sees a target (same as `entity.sees`) |
+| `seen(entity)`                           | The entity the entity sees, or `none` (same as `entity.seen`) |
 | `heard(entity, seconds)`                 | Whether the entity heard a [noise](packs.md#systems) less than `seconds` ago |
 | `busy(entity)`                           | Whether the entity has an in-progress [activity](packs.md#actions) (same as `entity.busy`) |
 | `doing(entity, "action")`                | Whether the entity's activity is that pack action |
@@ -206,10 +212,60 @@ rules:
   line is walked, so distant pairs are cheap.
 
 The result is a boolean, so it works in arithmetic (`1 + can_see(self, player)`).
+`can_see` is pure geometry: no hysteresis and no concealment. For "has this
+NPC noticed something" use the archetype's senses and `sees` / `seen`
+(below); packs that want geometry keep using `can_see`.
 
 ```yaml
 when: 'can_see(self, player, 8)'
 until: 'not can_see(self, player, 12)'
+```
+
+### Senses
+
+An entity whose archetype has [`senses`](packs.md#senses) keeps the one
+entity it currently sees. Two members, with function forms, in every
+scope (`self`, `player`, `npc`):
+
+- **`self.sees`** / `sees(entity)` — boolean: the entity currently sees a
+  target. An entity without senses reads `false`.
+- **`self.seen`** / `seen(entity)` — the seen entity, or **`none`** when it
+  sees nothing (or has no senses).
+
+Both are one array read at runtime. They read the value set by the last
+senses step, so systems, statuses and behaviors of tick *t + 1* see what
+was seen at the end of tick *t*, the same lag as a status.
+
+**`none`** is the value of `seen` when nothing is seen. There is no `none`
+literal (test with `self.sees`); it is typed as an entity at load, so
+`hostile(self, self.seen)`, `self.seen.x` and a behavior `target:
+self.seen` all compile, and every built-in and member is total on it:
+
+| Use of `none`                                                             | Value |
+|---------------------------------------------------------------------------|-------|
+| `.x`, `.y`, `.z`, `.<measurement>`, `.carry_weight`, `.carry_capacity`    | `0` |
+| `has_tag`, `has_status`, `has_item`, `has_tagged`, `in_faction`, `busy`, `doing`, `heard`, `sees`, `can_see`, `hostile`, `friendly` | `false` |
+| `count_item`, `count_tagged`, `fraction`, `attitude`                      | `0` |
+| `manhattan`, `chebyshev`, `euclidean`                                     | `Infinity` (so `<= 1` is false and `> 5` is true) |
+| `.seen`                                                                   | `none` |
+| `==` / `!=`                                                               | `none == player` is false |
+| `pursue` / `flee` `target`                                                | `pursue` clears its path and waits; `flee` does nothing |
+
+The null checks are compiled only into expressions whose entity operand
+may be `none` (one derived from `seen`), so `self.hp` and `player.x` stay
+plain reads. Members of an entity-valued expression (`self.seen.x`,
+`seen(self).has_tag("bunny")`) are allowed; `self.seen == player` tells
+whether the player is what the entity sees.
+
+```yaml
+systems:
+  - { id: meow, every: 0.5, for: 'self.has_tag("cat")', when: 'self.sees and chebyshev(self, self.seen) <= 1', effects: [{ type: noise, radius: 1.5 }] }
+behaviors:
+  - id: rider
+    initial: loiter
+    states:
+      loiter: { do: wander, radius: 3, on: [{ when: 'self.sees and hostile(self, self.seen)', to: crowd }] }
+      crowd: { do: pursue, target: self.seen, on: [{ when: 'not self.sees', to: loiter }] }
 ```
 
 `heard(entity, seconds)` is true when the entity has heard a noise and
@@ -223,7 +279,7 @@ phase (tick *t + 1*) sees it.
 
 ```yaml
 on:
-  - { when: 'self.has_status("alert")', to: chase }   # sight beats sound
+  - { when: 'self.sees', to: chase }                  # sight beats sound
   - { when: 'heard(self, 1)', to: investigate }
 ```
 

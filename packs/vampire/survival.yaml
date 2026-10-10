@@ -21,13 +21,6 @@ statuses:
     until: "self.blood >= 25"
     rates: { hp: -0.25 }
     hud: { tone: bad, description: Out of blood; losing health, enter: The thirst for blood claws at you., exit: The blood thirst is sated. }
-  # Bats notice the vampire (through windows too) and lose interest slowly.
-  - id: alert
-    label: Alert
-    for: 'self.has_tag("beast")'
-    when: 'can_see(self, player, 6)'
-    until: 'not can_see(self, player, 10)'
-    hud: { tone: bad, description: A bat has noticed you }
 
 systems:
   # Hurting.
@@ -52,11 +45,12 @@ systems:
     when: "self.blood >= 30 and not self.has_status(\"starving\")"
     effects:
       - { apply: { hp: 1 } }
-  # Noise: a bat that spots the vampire screeches (it wakes a resting one).
+  # Noise: a bat that sees the vampire (its `senses` in content.yaml, through
+  # windows too) screeches (it wakes a resting one).
   - id: screech
     every: 1
     for: 'self.has_tag("beast")'
-    when: 'self.has_status("alert")'
+    when: 'self.sees'
     effects:
       - { type: noise, radius: 8 }
   # Noise: old floorboards creak underfoot, once per step onto them; bats
@@ -77,32 +71,29 @@ lighting:
     - { at: "21:00", color: "#2a3060" }
 
 # Bats flutter around their roost, flit over to look at a creak, scatter
-# from the vampire and fly back once it is out of sight.
+# from the vampire as soon as they see it and fly back once it is out of sight.
 behaviors:
   - id: bat
     initial: roost
+    on:
+      - { when: 'self.sees', to: flee }
     states:
       roost:
         do: wander
         radius: 3
         on:
-          - { when: 'self.has_status("alert")', to: flee }
           - { when: 'heard(self, 1)', to: investigate }
       investigate:
         do: investigate
-        on:
-          - { when: 'self.has_status("alert")', to: flee }
         done: return
       flee:
         do: flee
-        target: player
+        target: self.seen
         on:
-          - { when: 'not self.has_status("alert")', to: return }
+          - { when: 'not self.sees', to: return }
       return:
         do: home
         done: roost
-        on:
-          - { when: 'self.has_status("alert")', to: flee }
 
 # Timed actions (docs/packs.md#actions): moving or acting cancels them.
 actions:

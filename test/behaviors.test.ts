@@ -533,7 +533,7 @@ test('zombie: a shambler spots the survivor, chases them down, then searches and
     if (stateOf(z) === 'chase' && cheb(z.x, z.y, w.player.x, w.player.y) <= 1) adjacent = t;
   }
   assert.ok(adjacent >= 0, 'never reached the survivor');
-  assert.ok(w.hasStatus(z, 'zmb:alert'));
+  assert.equal(z.seen, w.player.id, 'the shambler sees the survivor');
   assert.equal(w.value(w.player, 'std:hp'), 100, 'zombies do no damage yet');
 
   // Out of sight in a far house: chase → search → (5 s) → wander.
@@ -544,7 +544,7 @@ test('zombie: a shambler spots the survivor, chases them down, then searches and
     if (states[states.length - 1] !== stateOf(z)) states.push(stateOf(z));
   }
   assert.deepEqual(states, ['chase', 'search', 'wander']);
-  assert.equal(w.hasStatus(z, 'zmb:alert'), false);
+  assert.equal(z.seen, -1);
 });
 
 test('vampire: a bat flees the vampire, then flies home and roosts', () => {
@@ -663,7 +663,8 @@ test('garden: by day the fox sleeps in its den, even with the bunny in plain vie
     w.step();
     assert.equal(stateOf(fox), 'sleep', `tick ${t}`);
     assert.deepEqual(pos(fox), [22, 14]);
-    assert.equal(w.hasStatus(fox, 'gdn:sly'), false);
+    // The sense still works by day (it is the behavior that ignores a bunny while asleep).
+    assert.equal(fox.seen, Math.hypot(fox.x - w.player.x, fox.y - w.player.y) <= 6 ? w.player.id : -1);
   }
 });
 
@@ -683,7 +684,7 @@ test('garden: at night the fox prowls out of its den, chases a bunny in the open
     if (stateOf(fox) === 'chase' && cheb(fox.x, fox.y, w.player.x, w.player.y) <= 1) adjacent = t;
   }
   assert.ok(adjacent >= 0, `never reached the bunny: ${states.join(' → ')}`);
-  assert.ok(w.hasStatus(fox, 'gdn:sly'));
+  assert.equal(fox.seen, w.player.id);
   let startled = false;
   for (let t = 0; t < 15; t++) {
     w.step();
@@ -704,7 +705,7 @@ test('garden: at night a bunny hiding in a bush makes the fox give up the chase'
   assert.equal(w.grid.tileAt(20, 14)!.id, 'gdn:bush');
   for (let t = 0; t < 5 && stateOf(fox) === 'chase'; t++) w.step();
   assert.equal(w.hasStatus(w.player, 'gdn:hidden'), true);
-  assert.equal(w.hasStatus(fox, 'gdn:sly'), false);
+  assert.equal(fox.seen, -1, 'the hidden bunny is lost');
   assert.equal(stateOf(fox), 'prowl');
   for (let t = 0; t < 100; t++) {
     w.step();

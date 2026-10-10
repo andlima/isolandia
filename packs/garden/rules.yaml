@@ -1,4 +1,5 @@
-# Energy, hiding and who notices whom. Nothing here touches std:hp. The
+# Energy, hiding and who notices whom (the cat's, the fox's and the
+# butterflies' `senses` are in content.yaml). Nothing here touches std:hp. The
 # file's `defaults` makes every rule the bunny's unless it writes its own `for`.
 
 defaults:
@@ -10,9 +11,11 @@ statuses:
     when: "self.energy <= 35"
     until: "self.energy >= 55"      # a snack or a nap perks the bunny up
     hud: { tone: bad, description: Low on energy; a snack or a nap helps }
+  # In a bush the bunny is out of sight of every sense (`conceals`).
   - id: hidden
     label: Hidden
     when: 'tile.has_tag("hiding")'
+    conceals: true
     hud: { tone: good, description: Out of sight of the cat and the fox }
   # The cat's playful pounce (the `meow` system below) and the fox's `yip`
   # give the bunny a little fright: the only cost in the garden.
@@ -21,26 +24,6 @@ statuses:
     when: "heard(self, 1)"
     rates: { energy: -0.5 }
     hud: { tone: bad, description: A fright; losing energy }
-  # The cat notices a bunny in the open, and loses interest once it hides.
-  - id: curious
-    label: Curious
-    for: 'self.has_tag("cat")'
-    when: 'can_see(self, player, 5) and not has_status(player, "hidden")'
-    until: 'not can_see(self, player, 8) or has_status(player, "hidden")'
-    hud: { tone: neutral, description: The cat wants to play }
-  # The fox does the same, but only once night falls.
-  - id: sly
-    label: Sly
-    for: 'self.has_tag("fox")'
-    when: 'not world.is_day and can_see(self, player, 6) and not has_status(player, "hidden")'
-    until: 'world.is_day or not can_see(self, player, 9) or has_status(player, "hidden")'
-    hud: { tone: bad, description: The fox is watching you }
-  - id: alert
-    label: Alert
-    for: 'self.has_tag("bug")'
-    when: "can_see(self, player, 3)"
-    until: "not can_see(self, player, 5)"
-    hud: { tone: neutral }
 
 systems:
   - id: nap
@@ -54,19 +37,19 @@ systems:
     when: 'tile.has_tag("crunchy")'
     effects:
       - { type: noise, radius: 7 }
-  # A cat right next to the bunny meows at it. Only the bunny is that close,
-  # so only it hears (and gets `startled`).
+  # A cat right next to the bunny it sees meows at it. Only the bunny is that
+  # close, so only it hears (and gets `startled`).
   - id: meow
     every: 0.5
     for: 'self.has_tag("cat")'
-    when: 'self.has_status("curious") and chebyshev(self, player) <= 1'
+    when: 'self.sees and chebyshev(self, self.seen) <= 1'
     effects:
       - { type: noise, radius: 1.5 }
   # The fox's counterpart: a playful yip right next to the bunny.
   - id: yip
     every: 0.5
     for: 'self.has_tag("fox")'
-    when: 'self.has_status("sly") and chebyshev(self, player) <= 1'
+    when: 'self.sees and chebyshev(self, self.seen) <= 1'
     effects:
       - { type: noise, radius: 1.5 }
 

@@ -5,7 +5,7 @@
  * apply exactly as for queued intents.
  */
 
-import type { BehaviorStateDef } from '../definition.ts';
+import type { BehaviorDef, BehaviorStateDef } from '../definition.ts';
 import type { ExprContext } from '../expr/index.ts';
 import type { Grid } from './grid.ts';
 import type { Rng } from './rng.ts';
@@ -49,9 +49,11 @@ const near = (g: Grid, e: Entity, bx: number, by: number, bz: number) => g.reach
 
 /** Run one entity's behavior for this tick (the entity must have one). */
 export function think(e: Entity, env: ThinkEnv): void {
-  const states = e.behavior!.states;
+  const b = e.behavior!;
+  const states = b.states;
   env.ctx.self = e;
-  const to = transition(e, states[e.state]!, env);
+  let to = anyTransition(e, b, env);
+  if (to < 0) to = transition(e, states[e.state]!, env);
   if (to >= 0) {
     e.state = to;
     e.stateTick = env.ctx.tick;
@@ -61,6 +63,22 @@ export function think(e: Entity, env: ThinkEnv): void {
     e.planTick = -1;
   }
   activity(e, states[e.state]!, env);
+}
+
+/**
+ * The behavior's any-state `on` entries in order, skipping one whose `to` is
+ * the current state (never a self-transition) or whose `except` lists it; the
+ * first truthy `when` wins. -1 when none fires.
+ */
+function anyTransition(e: Entity, b: BehaviorDef, env: ThinkEnv): number {
+  const on = b.on;
+  const s = e.state;
+  for (let i = 0; i < on.length; i++) {
+    const t = on[i]!;
+    if (t.to === s || t.except[s] === 1) continue;
+    if (t.when(env.ctx)) return t.to;
+  }
+  return -1;
 }
 
 /** The state to switch to (`on` → `timeout` → `done`), or -1. */
@@ -114,7 +132,12 @@ function wander(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
 }
 
 function pursue(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
-  const t = s.target!(env.ctx) as Point;
+  const t = s.target!(env.ctx) as Point | null;
+  // `none` (a `seen` target with nothing seen): clear the path and wait.
+  if (t === null) {
+    e.path = null;
+    return;
+  }
   const tx = t.x;
   const ty = t.y;
   const tz = t.z;
@@ -133,7 +156,9 @@ function pursue(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
 
 function flee(e: Entity, s: BehaviorStateDef, env: ThinkEnv): void {
   if (!ready(e)) return;
-  const t = s.target!(env.ctx) as Point;
+  const t = s.target!(env.ctx) as Point | null;
+  // `none`: nothing to flee from.
+  if (t === null) return;
   const ox = e.x - t.x;
   const oy = e.y - t.y;
   let best = ox * ox + oy * oy;

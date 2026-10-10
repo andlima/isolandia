@@ -116,6 +116,8 @@ archetypes:
     color: "#f2a65a"
     sprite: cat_img
     tags: [cat]
+    # Notices a bunny in the open at 5 tiles; loses interest past 8 (or when it hides).
+    senses: { sight: { notice: 5, lose: 8, targets: [bunny] } }
     behavior: cat
   - id: butterfly
     label: Butterfly
@@ -123,6 +125,7 @@ archetypes:
     color: "#b48af0"
     sprite: butterfly_img
     tags: [bug]
+    senses: { sight: { notice: 3, lose: 5, targets: [bunny] } }
     behavior: butterfly
   - id: fox
     label: Fox
@@ -130,6 +133,7 @@ archetypes:
     color: "#d8642a"
     sprite: fox_img
     tags: [fox]
+    senses: { sight: { notice: 6, lose: 9, targets: [bunny] } }
     behavior: fox
     ticks_per_step: 2               # no faster than the cat: the bunny gets away
 

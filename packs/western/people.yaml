@@ -59,6 +59,8 @@ archetypes:
     tags: [humanoid, rider]
     measurements: [hp]
     faction: gang
+    # Spots the Stranger (`stranger` tag, story.yaml) at 8 tiles; loses them past 12.
+    senses: { sight: { notice: 8, lose: 12, targets: [stranger] } }
     behavior: rider
     dialogue: rider
   - id: black_jack
@@ -87,12 +89,12 @@ behaviors:
         do: wander
         radius: 3
         on:
-          - { when: 'hostile(self, player) and can_see(self, player, 8)', to: crowd }
+          - { when: 'self.sees and hostile(self, self.seen)', to: crowd }
       crowd:
         do: pursue
-        target: player
+        target: self.seen
         on:
-          - { when: 'not can_see(self, player, 12)', to: loiter }
+          - { when: 'not self.sees', to: loiter }
   # Black Jack waits at the far end of Main Street. The noon bell (the
   # `noon_bell` system in duel.yaml, rung from the sheriff's spot in the
   # middle of the street) brings him walking to it, and there he stays.

@@ -67,6 +67,31 @@ column when the wall cells became edges, so NPCs search a little more
 (A* expansions per tick 17.5 → 25.2 on the city, more searches on the
 estate), which accounts for the rise.
 
+## NPC perception
+
+Since `npc-perception`, every shambler and crawler (900 of the city's 960
+entities), the estate's bats and the garden's animals carry a sight sense
+(`senses.sight`), and a **senses step** at the end of the status update
+keeps or loses each one's seen target and looks for a new one. The search
+uses a second chunk index holding only the entities some sense looks for
+(the city: the player alone), so an entity with nothing in range reads a
+few empty buckets; the step costs ~0.03 ms per tick on the city with
+dormancy (~0.09 ms with every entity awake). Same machine, route and seed,
+3000 ticks:
+
+| Game | Map | Entities | Active radius | Tick avg | Tick p95 | Tick max | Active avg (min–max) | Dormant avg | A* expanded/tick avg | max | Searches | Region rejects | Budget hits |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| zombie | city 343×343×2 | 960 | 64 | 0.22 ms | 0.34 ms | 22.5 ms | 143 (84–250) | 817 | 24.6 | 3662 | 7282 | 0 | 0 |
+| zombie | city 343×343×2 | 960 | none | 0.45 ms | 0.66 ms | 21.2 ms | 960 | 0 | 21.9 | 3662 | 6284 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | 64 | 0.10 ms | 0.16 ms | 10.0 ms | 138 (42–154) | 16 | 8.0 | 4333 | 371 | 0 | 0 |
+| vampire | estate 128×128×2 | 154 | none | 0.11 ms | 0.20 ms | 10.5 ms | 154 | 0 | 9.1 | 4334 | 408 | 0 | 0 |
+| garden | garden 24×16 | 7 | 64 | 0.01 ms | 0.03 ms | 2.9 ms | 7 | 0 | 0.3 | 140 | 97 | 0 | 0 |
+
+No figure moved beyond run-to-run noise (the same build measured
+0.21 / 0.30 ms on the city right before the change; the A* counters are
+identical, since the converted behaviors chase and search as before).
+Node v24.14.1.
+
 ## Steps
 
 The spec's order, with what each step did to the numbers (the 256×256

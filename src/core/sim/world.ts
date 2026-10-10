@@ -97,6 +97,8 @@ export interface Entity extends ExprEntity {
   heardY: number;
   heardZ: number;
   heardTick: number;
+  /** Id of the entity this one currently sees (its archetype's `senses.sight`), -1 for none; always -1 without senses. */
+  seen: number;
   /** In-progress timed action, item use or recipe, or null. */
   activity: Activity | null;
   /** Faction index of the archetype, or -1. */
@@ -610,6 +612,8 @@ export interface EntitySnapshot {
   behavior: { state: string; since: number; plan: [number, number, number, number] | null } | null;
   /** Last heard noise, or null if never. */
   heard: { x: number; y: number; z: number; tick: number } | null;
+  /** Id of the entity it currently sees (version 8); omitted when none or without senses. */
+  seen?: number;
   activity: ActivitySnapshot | null;
   /** Action queued when the current path arrives. */
   then: Action | null;
@@ -735,6 +739,13 @@ function round2(v: number): number {
 }
 
 /** 32-bit integer hash of two values (murmur3 finalizer). */
+/** Remove `id` from an unordered id list (swap with the last). */
+function unlist(ids: number[], id: number): void {
+  const k = ids.indexOf(id);
+  ids[k] = ids[ids.length - 1]!;
+  ids.pop();
+}
+
 function mix(a: number, b: number): number {
   let h = Math.imul((a ^ b) >>> 0, 0x85ebca6b);
   h ^= h >>> 13;
@@ -823,12 +834,27 @@ export class World {
   readonly pathStats: PathStats = { searches: 0, regionRejects: 0, budgetHits: 0, expanded: 0, maxNpcExpanded: 0, maxPlayerExpanded: 0 };
   /** Entity index: ids per (floor, 16×16 chunk), unordered. */
   private readonly buckets: number[][];
+  /**
+   * The same index over the entities some sense looks for (`isCandidate`),
+   * so a sense with nothing in range reads a few empty buckets.
+   */
+  private readonly candBuckets: number[][];
+  /** Per archetype index: 1 when any sense's `targets` tags match it. */
+  private readonly isCandidate: Uint8Array;
   private readonly chunkCols: number;
   private readonly chunksPerFloor: number;
   /** Bucket of each entity by id, as last indexed. */
   private readonly bucketOf: number[] = [];
   /** 1 at the ids of the entities dormant this tick (set at the start of `step`). */
   private dormant = new Uint8Array(0);
+  /** Per observer archetype with a sense: 1 at each archetype index its `targets` tags match; null without a sense. */
+  private readonly senseTargets: readonly (Uint8Array | null)[];
+  /** Whether any archetype has a sense (the senses step is skipped otherwise). */
+  private readonly hasSenses: boolean;
+  /** Indices of the statuses with `conceals: true` (usually empty: the concealment test is then free). */
+  private readonly concealing: readonly number[];
+  /** Scratch for the senses step's index queries. */
+  private readonly nearScratch: Entity[] = [];
   /** Hearing scratch, by entity id: the stamp of the hearing pass that last touched it, its best distance², its noise. */
   private hearStamp = new Uint32Array(0);
   private hearBest = new Float64Array(0);
@@ -895,6 +921,7 @@ export class World {
     this.chunkCols = Math.ceil(map.width / INDEX_CHUNK);
     this.chunksPerFloor = this.chunkCols * Math.ceil(map.height / INDEX_CHUNK);
     this.buckets = Array.from({ length: this.chunksPerFloor * map.floors }, () => []);
+    this.candBuckets = Array.from({ length: this.chunksPerFloor * map.floors }, () => []);
     this.tagSets = def.archetypes.map((a) => new Set(a.tags));
     this.tileTagSets = def.tiles.map((t) => (t.tags.length ? new Set(t.tags) : NO_TAGS));
     const nm = def.measurements.length;
@@ -907,6 +934,14 @@ export class World {
       Uint8Array.from(def.archetypes, (a) => (forFn === null ? 1 : forTag === null ? 2 : a.tags.includes(forTag) ? 1 : 0));
     this.statusFor = def.statuses.map((s) => forTable(s.forFn, s.forTag));
     this.systemFor = def.systems.map((s) => forTable(s.forFn, s.forTag));
+    this.senseTargets = def.archetypes.map((a) => {
+      const sense = a.senses;
+      if (!sense) return null;
+      return Uint8Array.from(def.archetypes, (b) => (sense.targetTags.some((t) => b.tags.includes(t)) ? 1 : 0));
+    });
+    this.hasSenses = this.senseTargets.some((t) => t !== null);
+    this.isCandidate = Uint8Array.from(def.archetypes, (b) => (this.senseTargets.some((t) => t !== null && t[b.index] === 1) ? 1 : 0));
+    this.concealing = def.statuses.filter((s) => s.conceals).map((s) => s.index);
     this.tickSystems = def.systems.filter((s) => s.on !== 'noise');
     this.noiseSystems = def.systems.filter((s) => s.on === 'noise');
     this.onceCount = def.systems.filter((s) => s.once).length;
@@ -993,6 +1028,7 @@ export class World {
       inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
       los: (x0, y0, x1, y1, z0, z1) => lineOfSight(world.grid, x0, y0, x1, y1, z0, z1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
+      entities: this.entities,
       vars: this.vars,
       questStage: this.questStage,
       questEnd: this.questEnd,
@@ -1117,6 +1153,7 @@ export class World {
       heardY: 0,
       heardZ: 0,
       heardTick: -1,
+      seen: -1,
       activity: null,
       faction: archetype.faction ?? -1,
       fired: this.onceCount > 0 ? new Uint8Array(this.onceCount) : null,
@@ -1166,18 +1203,18 @@ export class World {
     return cz * this.chunksPerFloor + cy * this.chunkCols + cx;
   }
 
-  /** Move an entity to the index bucket of its position, if it changed chunk. */
+  /** Move an entity to the index bucket of its position (and the candidate index's), if it changed chunk. */
   private reindex(e: Entity): void {
     const b = this.bucketAt(e.x, e.y, e.z);
     const old = this.bucketOf[e.id]!;
     if (b === old) return;
+    const cand = this.isCandidate[e.archetype.index] === 1;
     if (old >= 0) {
-      const ids = this.buckets[old]!;
-      const k = ids.indexOf(e.id);
-      ids[k] = ids[ids.length - 1]!;
-      ids.pop();
+      unlist(this.buckets[old]!, e.id);
+      if (cand) unlist(this.candBuckets[old]!, e.id);
     }
     this.buckets[b]!.push(e.id);
+    if (cand) this.candBuckets[b]!.push(e.id);
     this.bucketOf[e.id] = b;
   }
 
@@ -1193,7 +1230,13 @@ export class World {
   entitiesNear(x: number, y: number, z: number | undefined, r: number): Entity[] {
     this.syncIndex();
     const out: Entity[] = [];
-    if (!(r >= 0)) return out;
+    this.collectNear(x, y, z, r, out);
+    return out.sort((a, b) => a.id - b.id);
+  }
+
+  /** `entitiesNear` without the sync and the sort: appends the entities of `buckets` within `r` to `out` (bucket order). */
+  private collectNear(x: number, y: number, z: number | undefined, r: number, out: Entity[], buckets: readonly number[][] = this.buckets): void {
+    if (!(r >= 0)) return;
     const { width, height, floors } = this.grid;
     const cx0 = Math.floor(Math.max(0, x - r) / INDEX_CHUNK);
     const cx1 = Math.floor(Math.min(width - 1, x + r) / INDEX_CHUNK);
@@ -1204,14 +1247,14 @@ export class World {
     for (let cz = z0; cz <= z1; cz++) {
       for (let cy = cy0; cy <= cy1; cy++) {
         for (let cx = cx0; cx <= cx1; cx++) {
-          for (const id of this.buckets[cz * this.chunksPerFloor + cy * this.chunkCols + cx] ?? []) {
-            const e = this.entities[id]!;
+          const ids = buckets[cz * this.chunksPerFloor + cy * this.chunkCols + cx]!;
+          for (let i = 0; i < ids.length; i++) {
+            const e = this.entities[ids[i]!]!;
             if (Math.max(Math.abs(e.x - x), Math.abs(e.y - y)) <= r) out.push(e);
           }
         }
       }
     }
-    return out.sort((a, b) => a.id - b.id);
   }
 
   // ── Dormancy ────────────────────────────────────────────────────────────
@@ -1402,7 +1445,7 @@ export class World {
    * (beyond the active radius: they neither think nor move this tick),
    * behaviors think (id order), every entity's movement intent (id order), player actions,
    * activity work (id order), drift, due systems, hearing, clamp, status
-   * update, quests, defeat then victory check, `tick++`.
+   * update then the senses step, quests, defeat then victory check, `tick++`.
    * A no-op once the game has ended and while a conversation is open.
    */
   step(): void {
@@ -1811,7 +1854,10 @@ export class World {
   private updateStatuses(): void {
     const statuses = this.def.statuses;
     const ns = statuses.length;
-    if (ns === 0) return;
+    if (ns === 0) {
+      this.updateSenses();
+      return;
+    }
     const ctx = this.ctx;
     const n = this.entities.length * ns;
     if (this.statusNext.length < n) this.statusNext = new Uint8Array(n);
@@ -1841,6 +1887,71 @@ export class World {
         }
       } else for (let k = 0; k < ns; k++, o++) st[k] = next[o]!;
     }
+    this.updateSenses();
+  }
+
+  /**
+   * Senses step, at the end of the status update: every non-dormant entity
+   * whose archetype has a sight sense keeps or loses its seen target
+   * (hysteresis: kept out to `lose`, lost at once behind a wall, across
+   * floors or under a `conceals` status), then, seeing nothing, notices the
+   * nearest candidate within `notice` (ties to the lowest id). Dormant
+   * entities keep `seen` as it is. Id order; the range is tested before the
+   * line of sight, and the candidate chunk index (`candBuckets`) bounds the
+   * search, so an entity with nothing in range costs one index query.
+   */
+  private updateSenses(): void {
+    if (!this.hasSenses) return;
+    const entities = this.entities;
+    const dormant = this.dormant;
+    const targets = this.senseTargets;
+    const grid = this.grid;
+    const near = this.nearScratch;
+    let synced = false;
+    for (const e of entities) {
+      const sense = e.archetype.senses;
+      if (sense === null || dormant[e.id] === 1) continue;
+      if (e.seen >= 0) {
+        const t = entities[e.seen];
+        let keep = t !== undefined && t.z === e.z;
+        if (keep) {
+          const dx = t!.x - e.x;
+          const dy = t!.y - e.y;
+          keep = dx * dx + dy * dy <= sense.lose2 && !this.concealed(t!) && lineOfSight(grid, e.x, e.y, t!.x, t!.y, e.z, t!.z);
+        }
+        if (!keep) e.seen = -1;
+      }
+      if (e.seen >= 0) continue;
+      if (!synced) {
+        this.syncIndex();
+        synced = true;
+      }
+      const cand = targets[e.archetype.index]!;
+      near.length = 0;
+      this.collectNear(e.x, e.y, e.z, sense.notice, near, this.candBuckets);
+      let best = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < near.length; i++) {
+        const t = near[i]!;
+        if (t === e || cand[t.archetype.index] !== 1) continue;
+        const dx = t.x - e.x;
+        const dy = t.y - e.y;
+        const d = dx * dx + dy * dy;
+        if (d > sense.notice2 || d > bestD || (d === bestD && t.id > best)) continue;
+        if (this.concealed(t) || !lineOfSight(grid, e.x, e.y, t.x, t.y, e.z, t.z)) continue;
+        best = t.id;
+        bestD = d;
+      }
+      e.seen = best;
+    }
+    near.length = 0;
+  }
+
+  /** Whether a `conceals` status is active on the entity (no statuses conceal in most stacks: one length read). */
+  private concealed(t: Entity): boolean {
+    const concealing = this.concealing;
+    for (let i = 0; i < concealing.length; i++) if (t.st[concealing[i]!] === 1) return true;
+    return false;
   }
 
   /** Phase 7: defeat first; victory only when defeat did not trigger. */
@@ -2409,6 +2520,7 @@ export class World {
           ? { state: e.behavior.states[e.state]!.name, since: e.stateTick, plan: e.planTick >= 0 ? [e.planX, e.planY, e.planZ, e.planTick] : null }
           : null,
         heard: e.heardTick >= 0 ? { x: e.heardX, y: e.heardY, z: e.heardZ, tick: e.heardTick } : null,
+        ...(e.seen >= 0 ? { seen: e.seen } : {}),
         activity: e.activity ? this.activitySnapshot(e.activity) : null,
         then: e.then,
         ...this.firedSnapshot(e),

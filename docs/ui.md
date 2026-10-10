@@ -83,9 +83,13 @@ its dialogue's `unavailable` text instead (`He ignores you`), and a click
 opens the menu. An NPC of a [faction](packs.md#factions) adds the
 faction and the player's tier with it after its name (`Officer · Police
 (Wary)`, from `world.attitudeOf`); when the faction is hostile to the
-player, that part shows in the danger colour. It is the pure
-`hoverInfo(world, target)` (with `standing` and `hostile` for such an NPC;
-`hoverTitleLine` builds the first line), recomputed once per frame at most
+player, that part shows in the danger colour. An NPC whose
+[senses](packs.md#senses) currently see the player (its `seen` is the
+player) adds a line `Has seen you` in the danger colour; nothing for other
+targets or NPCs without senses. It is the pure
+`hoverInfo(world, target)` (with `standing` and `hostile` for such an NPC,
+`sees: true` for one that has seen you; `hoverTitleLine` builds the first
+line), recomputed once per frame at most
 and only when the target, the tick, `containerVersion`, `tileVersion` or
 `journalVersion` changes. Hover is hidden while the menu is open, while
 dragging and when the pointer leaves the canvas; `H` hides the tooltip

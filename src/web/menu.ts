@@ -68,7 +68,12 @@ export interface HoverInfo {
   readonly standing?: string;
   /** The NPC's faction is hostile to the player: `standing` shows in the danger colour (set with `standing`). */
   readonly hostile?: boolean;
+  /** The NPC currently sees the player (its `seen` is the player): the tooltip adds `Has seen you`. */
+  readonly sees?: boolean;
 }
+
+/** The `Has seen you` tooltip line. */
+export const SEES_YOU_TEXT = 'Has seen you';
 
 /** `Police (Wary)` and whether it is hostile, for a hovered NPC with a faction; null otherwise. */
 export function hoverStanding(world: World, target: PickTarget): { text: string; hostile: boolean } | null {
@@ -271,12 +276,14 @@ function hoverTitle(world: World, target: PickTarget): string {
 
 /** What hovering `target` shows: its title, what a click does there, and the pointer's cursor. */
 export function hoverInfo(world: World, target: PickTarget): HoverInfo {
-  const base = hoverBase(world, target);
+  let info: HoverInfo = hoverBase(world, target);
   const s = hoverStanding(world, target);
-  return s ? { ...base, standing: s.text, hostile: s.hostile } : base;
+  if (s) info = { ...info, standing: s.text, hostile: s.hostile };
+  if (target.kind === 'entity' && target.entity !== world.player && target.entity.seen === world.player.id) info = { ...info, sees: true };
+  return info;
 }
 
-function hoverBase(world: World, target: PickTarget): Omit<HoverInfo, 'standing' | 'hostile'> {
+function hoverBase(world: World, target: PickTarget): Omit<HoverInfo, 'standing' | 'hostile' | 'sees'> {
   const title = hoverTitle(world, target);
   const plan = clickPlan(world, target);
   switch (plan.kind) {

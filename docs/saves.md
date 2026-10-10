@@ -17,7 +17,7 @@ else show(r.errors);
 ```ts
 interface SaveFile {
   format: 'isolandia-save';
-  version: 7;
+  version: 8;
   /** Loaded packs, in load order. */
   packs: { namespace: string; version: string }[];
   /** Qualified id of the start map, and its size. */
@@ -47,7 +47,9 @@ counter) and `dialogueOnce` (the chosen `once` choices as `[dialogue id,
 choice id]`, sorted), and `reputation` (`{ "ns:id": value }`, the player's
 standing with every [faction](packs.md#factions)). Each entity lists the
 `once` [systems](packs.md#systems) that have fired for it as `fired`
-(qualified ids, sorted; omitted when none). A save made
+(qualified ids, sorted; omitted when none), and the id of the entity it
+currently sees through its [senses](packs.md#senses) as `seen` (omitted
+when none or without senses). A save made
 mid-conversation restores into the same open conversation. An activity on an edge (barricading a
 window) records its `side` next to its target cell. Every cell carries its floor `z`: entity `z` and
 `fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
@@ -66,7 +68,7 @@ inside `state`:
 
 ```json
 { "meta": { "savedAt": "2026-10-04T12:34:00.000Z", "day": 2, "time": "14:05", "tick": 21900, "packs": ["std", "std_needs", "town", "zmb"] },
-  "save": { "format": "isolandia-save", "version": 7, "...": "..." } }
+  "save": { "format": "isolandia-save", "version": 8, "...": "..." } }
 ```
 
 Every reader (browser import, `--load`, `check --save`) accepts both the
@@ -91,7 +93,8 @@ keep the round-trip invariant.
 | 4 | vars, quests and journal (`m8-flags-quests`): `state.vars`, `state.quests`, `state.journal` | upgraded (see below) |
 | 5 | dialogues (`m8-dialogues`): `state.conversation`, `state.dialogueOnce`, the `talk` action | upgraded (see below) |
 | 6 | factions (`m8-factions`): `state.reputation` | upgraded (see below) |
-| 7 | `once` systems (`pack-event-triggers`): `fired` on every entity | current |
+| 7 | `once` systems (`pack-event-triggers`): `fired` on every entity | upgraded (see below) |
+| 8 | senses (`npc-perception`): `seen` on every entity with senses | current |
 
 Versions 1 and 2 are refused with an error that says why: their maps had
 walls in cells, and the edge-wall conversion turned those cells into
@@ -111,7 +114,16 @@ Version 3 to 5 saves load with every faction at its starting `reputation`
 
 Version 3 to 6 saves load with no `once` system counted as fired for any
 entity (no warnings), so a `once` system whose `for` and `when` hold may
-fire again after the upgrade. Saving an upgraded world writes version 7.
+fire again after the upgrade.
+
+Version 3 to 7 saves load with no entity seeing anything (no warnings; a
+`seen` field in such a save is ignored): the first tick's senses step
+notices again whatever is in sight, so a chase resumes one tick late.
+Saving an upgraded world writes version 8.
+
+A version 8 `seen` that is not an existing entity id, is the entity
+itself, or is set on an entity whose archetype has no senses is a restore
+error with the JSON path (`state.entities[12].seen`).
 
 ## Validation
 

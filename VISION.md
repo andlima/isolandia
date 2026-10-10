@@ -304,20 +304,28 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   needs a script hook**: each is a missing primitive or a verbose form, so
   M9's evidence has to come from `m8-social-games`. Not decided; inputs
   for future specs, roughly by weight:
-  - **Perception is copy-pasted five times.** `zombie:alert`, the bat's
+  - ~~**Perception is copy-pasted five times.** `zombie:alert`, the bat's
     `alert`, the cat's `curious`, the fox's `sly` and the butterfly's
     `alert` are each a status entered on `can_see(self, player, N)` and
     left beyond a wider range, and every behavior repeats the same
     transition in most states (the shambler in 3, the cat in 4; the fox
     repeats `world.is_day → den` in 4), keeping "sight beats sound" by
-    ordering `on` lists by hand. The stdpack candidate above has met its
-    third genre. Candidates: **any-state transitions** in `behaviors`
-    and a **sight sense with hysteresis** (`senses: { sight: [8, 12] }`,
-    as in §4).
-  - **Concealment is per observer.** `curious` and `sly` both append
+    ordering `on` lists by hand.~~ **Decided** (`npc-perception`):
+    perception is a **sense on the archetype**, `senses: { sight: {
+    notice, lose, targets } }`, with the hysteresis (noticed at `notice`,
+    followed out to `lose`) and the concealment in the engine, which keeps
+    per entity the one target it sees (`self.sees` / `self.seen`, updated
+    in a senses step at the end of the status update); `can_see` stays
+    pure geometry. "Sight beats sound" is an **any-state transition**:
+    `behaviors[].on`, checked before the current state's own, with an
+    `except` list for the states that ignore it. The five statuses and
+    the riders' inline pair are gone.
+  - ~~**Concealment is per observer.** `curious` and `sly` both append
     `not has_status(player, "hidden")` to `when` and `until`; a new
     observer that forgets it sees through bushes. Hiding belongs in
-    `can_see` (a tile or status that modifies sight).
+    `can_see` (a tile or status that modifies sight).~~ **Decided**
+    (`npc-perception`): a status with `conceals: true` hides its entity
+    from **every** sense (the garden's `hidden`); `can_see` is unchanged.
   - ~~**Footsteps are polled.** `crunch` (`every: 0.2`), `creak` (`0.1`)
     and `hop` (`0.2`) mean "noise on each step" but fire while standing
     still, at a period guessed from the walking speed.~~ **Decided**
@@ -405,9 +413,14 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     for measurements (`scorched` hard-codes `hp < 25`);~~ (**decided**:
     `fraction(entity, "measurement")` is `(value − min) / (max − min)` in
     `[0, 1]`, a load error on a measurement without `max`; `scorched`
-    reads `fraction(self, "hp") < 0.25`) NPCs can only target `player`
+    reads `fraction(self, "hp") < 0.25`) ~~NPCs can only target `player`
     (`can_see(self, player)`, `target: player`), which the faction games
-    will hit first (see the `nearest(...)` note under `m8-factions`).
+    will hit first (see the `nearest(...)` note under `m8-factions`).~~
+    (**decided**, `npc-perception`: NPCs find other NPCs through a
+    sense's `targets` tags and `self.seen`, the behavior `target` being
+    `self.seen`; **`none`** is the total value for "nothing seen": `0`,
+    `false`, `Infinity` for distances, and `pursue` waits on it. A
+    `nearest(...)` built-in independent of senses stays out.)
 - ~~Projection: classic 2:1 dimetric? Tile size?~~ **Decided in M1:**
   **classic 2:1 dimetric** with a **64×32 px** tile diamond
   (`iso.x = (x − y)·32`, `iso.y = (x + y)·16`); 32 px raised blocks; tile

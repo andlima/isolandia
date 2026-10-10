@@ -187,7 +187,7 @@ test('mods: zombie and vampire are mods of town; hardship is a genre-free balanc
   const own = (xs: readonly { id: string }[]) => xs.filter((x) => x.id.startsWith('zmb:')).map((x) => x.id);
   assert.deepEqual(own(def.archetypes), ['zmb:shambler', 'zmb:crawler']);
   assert.deepEqual(own(def.behaviors), ['zmb:shambler']);
-  assert.deepEqual(own(def.statuses), ['zmb:alert']);
+  assert.deepEqual(own(def.statuses), [], 'perception is a sense on the archetype, not a status');
   assert.deepEqual(own(def.assets), ['zmb:shambler_img', 'zmb:crawler_img']);
   // M8: the escape quest, and a survival tip added by a system.
   assert.deepEqual(own(def.systems), ['zmb:survival_tip']);

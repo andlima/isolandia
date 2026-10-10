@@ -11,6 +11,7 @@ import {
   TICKS_PER_SECOND,
   secondsToTicks,
   type ActionDef,
+  type AnyTransitionDef,
   type ArchetypeDef,
   type AssetDef,
   type AssetImage,
@@ -62,6 +63,7 @@ import {
   type RoomDef,
   type RoomsDef,
   type SpawnDef,
+  type SenseDef,
   type StatusDef,
   type StatusHud,
   type StatusRate,
@@ -130,7 +132,8 @@ const DEFAULT_REPATH = 1;
 const always = (): boolean => true;
 
 function deepFreeze<T>(o: T): T {
-  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+  // Typed arrays (a behavior transition's `except` flags) cannot be frozen; they are never written after load.
+  if (o && typeof o === 'object' && !Object.isFrozen(o) && !ArrayBuffer.isView(o)) {
     Object.freeze(o);
     for (const v of Object.values(o)) deepFreeze(v);
   }
@@ -165,6 +168,8 @@ class Loader {
   private readonly measurementDefs: MeasurementDef[] = [];
   /** Compiled expressions by location and text: one location compiles once (a file's `defaults.for` is shared by its entries). */
   private readonly compiled = new Map<string, CompiledExpr | null>();
+  /** Tags of every merged archetype entry, collected on first use (`senses.targets` must name one). */
+  private allArchetypeTags: Set<string> | null = null;
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
@@ -725,7 +730,7 @@ class Loader {
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
     const f = this.fields(
       d,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction', 'senses'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -769,7 +774,69 @@ class Loader {
     const behavior = f.has('behavior') ? (this.symbols.ref('behavior', f.raw('behavior'), d.scopeOf('behavior'), f.at('behavior'), this.sink)?.index ?? null) : null;
     const dialogue = f.has('dialogue') ? (this.symbols.ref('dialogue', f.raw('dialogue'), d.scopeOf('dialogue'), f.at('dialogue'), this.sink)?.index ?? null) : null;
     const faction = f.has('faction') ? (this.symbols.ref('faction', f.raw('faction'), d.scopeOf('faction'), f.at('faction'), this.sink)?.index ?? null) : null;
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction };
+    const senses = this.senses(f);
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction, senses };
+  }
+
+  /** Every tag any merged archetype entry carries (for the `targets` did-you-mean). */
+  private archetypeTags(): Set<string> {
+    if (this.allArchetypeTags) return this.allArchetypeTags;
+    const tags = new Set<string>();
+    for (const d of this.defined.archetypes) {
+      const list = d.entry.value['tags'];
+      if (!Array.isArray(list)) continue;
+      for (const t of list) if (typeof t === 'string' && ID_RE.test(t)) tags.add(t);
+    }
+    return (this.allArchetypeTags = tags);
+  }
+
+  /**
+   * An archetype's `senses`: a mapping with one sense, `sight: { notice,
+   * lose, targets }`. `notice` > 0, `lose` ≥ `notice`, `targets` a non-empty
+   * list of archetype tags that some loaded archetype carries.
+   */
+  private senses(f: Fields): SenseDef | null {
+    const raw = f.mapping('senses');
+    if (!raw) return null;
+    const sf = new Fields(this.sink, f.at('senses'), raw, ['sight'], 'senses');
+    const sight = sf.mapping('sight', true);
+    if (!sight) return null;
+    const gf = new Fields(this.sink, sf.at('sight'), sight, ['notice', 'lose', 'targets'], 'sight');
+    const notice = gf.number('notice');
+    const lose = gf.number('lose');
+    let ok = notice !== undefined && lose !== undefined;
+    if (notice !== undefined && !(notice > 0)) {
+      this.sink.add(gf.at('notice'), `field 'notice' must be a number > 0, got ${notice}`);
+      ok = false;
+    }
+    if (notice !== undefined && lose !== undefined && lose < notice) {
+      this.sink.add(gf.at('lose'), `field 'lose' (${lose}) must be at least 'notice' (${notice})`);
+      ok = false;
+    }
+    const targets: string[] = [];
+    const rawTargets = gf.present('targets') ? gf.list('targets') : undefined;
+    if (!rawTargets) ok = false;
+    else {
+      const list = gf.stringList('targets');
+      if (list.length !== rawTargets.length) ok = false;
+      if (rawTargets.length === 0) {
+        this.sink.add(gf.at('targets'), `field 'targets' must list at least one archetype tag`);
+        ok = false;
+      }
+      const known = this.archetypeTags();
+      list.forEach((t, i) => {
+        if (!ID_RE.test(t)) {
+          this.sink.add(gf.at('targets', i), `invalid tag '${t}': tags must match [a-z][a-z0-9_]*`);
+          ok = false;
+        } else if (!known.has(t)) {
+          const near = nearMiss(t, known);
+          this.sink.add(gf.at('targets', i), `no archetype carries the tag '${t}'${near ? ` (did you mean '${near}'?)` : ''}`);
+          ok = false;
+        } else if (!targets.includes(t)) targets.push(t);
+      });
+    }
+    if (!ok) return null;
+    return { notice: notice!, lose: lose!, notice2: notice! * notice!, lose2: lose! * lose!, targetTags: targets };
   }
 
   private inventory(f: Fields, d: Defined, items: readonly ItemDef[]): InventorySpec | null {
@@ -1648,7 +1715,7 @@ class Loader {
   }
 
   private status(d: Defined): StatusDef {
-    const f = this.fields(d, ['id', 'label', 'for', 'when', 'until', 'rates', 'hud'], 'status');
+    const f = this.fields(d, ['id', 'label', 'for', 'when', 'until', 'rates', 'conceals', 'hud'], 'status');
     const label = f.string('label') ?? d.id;
     const forExpr = this.conditionExpr(f, 'for', d.scopeOf('for'));
     const forFn = forExpr?.fn ?? null;
@@ -1664,7 +1731,8 @@ class Loader {
       if (rates.some((x) => x.measurement === r.index)) this.sink.add(src, `rate for measurement '${r.id}' is listed twice`);
       else rates.push({ measurement: r.index, ...term });
     }
-    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates, hud: this.statusHud(f, label) };
+    const conceals = f.boolean('conceals', false) ?? false;
+    return { id: d.id, index: d.index, label, forFn, forTag, whenFn, untilFn, rates, conceals, hud: this.statusHud(f, label) };
   }
 
   /** A status's optional `hud` block. */
@@ -1736,7 +1804,7 @@ class Loader {
   // ── Behaviors ───────────────────────────────────────────────────────────
 
   private behavior(d: Defined): BehaviorDef {
-    const f = this.fields(d, ['id', 'initial', 'states'], 'behavior');
+    const f = this.fields(d, ['id', 'initial', 'on', 'states'], 'behavior');
     const raw = f.mapping('states', true);
     const names = Object.keys(raw ?? {});
     if (raw && names.length === 0) this.sink.add(f.at('states'), `field 'states' must define at least one state`);
@@ -1756,7 +1824,37 @@ class Loader {
     };
     const initial = f.present('initial') ? stateRef(f.raw('initial'), f.at('initial')) : 0;
     const states = names.map((name, index) => this.behaviorState(f.at('states', name), raw![name], name, index, d.scopeOf('states'), stateRef));
-    return { id: d.id, index: d.index, initial, states };
+    const on = this.anyTransitions(f, names.length, d.scopeOf('on'), stateRef);
+    return { id: d.id, index: d.index, initial, on, states };
+  }
+
+  /** A behavior's any-state `on` list: `{ when, to, except? }`, `except` naming states other than `to`. */
+  private anyTransitions(f: Fields, stateCount: number, scope: Scope, stateRef: (v: Json | undefined, src: Src) => number): AnyTransitionDef[] {
+    const on: AnyTransitionDef[] = [];
+    (f.list('on') ?? []).forEach((t, i) => {
+      const tsrc = f.at('on', i);
+      if (!isObject(t)) {
+        this.sink.add(tsrc, `transitions must be mappings like { when: 'self.sees', to: chase, except: [sleep] }`);
+        return;
+      }
+      const tf = new Fields(this.sink, tsrc, t, ['when', 'to', 'except'], 'transition');
+      const when = this.condition(tf, 'when', scope, true);
+      const to = tf.present('to') ? stateRef(tf.raw('to'), tf.at('to')) : -1;
+      const except = new Uint8Array(stateCount);
+      let ok = when !== null && when !== undefined && to >= 0;
+      (tf.list('except') ?? []).forEach((v, k) => {
+        const esrc = tf.at('except', k);
+        const n = this.sink.count;
+        const st = stateRef(v, esrc);
+        if (this.sink.count !== n) ok = false;
+        else if (st === to) {
+          this.sink.add(esrc, `'except' lists the transition's own 'to' state '${v}': it is skipped in that state anyway`);
+          ok = false;
+        } else except[st] = 1;
+      });
+      if (ok) on.push({ when: when!, to, except });
+    });
+    return on;
   }
 
   private behaviorState(

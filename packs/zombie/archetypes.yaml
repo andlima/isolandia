@@ -7,6 +7,8 @@ archetypes:
     tags: [undead]
     measurements: [std:hp]
     initial: { hp: 40 }
+    # Notices anything living within 8 tiles in plain sight; loses it past 12.
+    senses: { sight: { notice: 8, lose: 12, targets: [living] } }
     behavior: shambler
   - id: crawler
     label: Crawler
@@ -16,5 +18,6 @@ archetypes:
     tags: [undead]
     measurements: [hp]
     initial: { hp: 20 }
+    senses: { sight: { notice: 8, lose: 12, targets: [living] } }
     ticks_per_step: 6               # the only difference from a shambler
     behavior: shambler
