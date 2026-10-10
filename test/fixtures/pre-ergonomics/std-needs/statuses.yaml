@@ -1,0 +1,33 @@
+# Generic need statuses. Each applies only to entities tagged `living`
+# (see pack.yaml); rates on `hp` resolve to `std:hp` through depends.
+
+statuses:
+  - id: hungry
+    label: Hungry
+    for: 'self.has_tag("living")'
+    when: "self.hunger >= 70"
+    until: "self.hunger < 40"      # hysteresis: eat well before it clears
+    rates: { hp: -0.2 }
+    hud: { tone: bad, description: Losing health while hungry, enter: Your stomach growls., exit: You feel fed. }
+  - id: thirsty
+    label: Thirsty
+    for: 'self.has_tag("living")'
+    when: "self.thirst >= 70"
+    until: "self.thirst < 40"
+    rates: { hp: -0.3 }
+    hud: { tone: bad, description: Losing health while thirsty, enter: Your throat is parched., exit: Your thirst is quenched. }
+  - id: burdened
+    label: Burdened
+    for: 'self.has_tag("living")'
+    when: "self.carry_weight >= 0.8 * self.carry_capacity"
+    rates: { fatigue: 0.1 }         # hauling junk wears you out
+    hud: { tone: bad, description: Carrying a heavy load tires you faster }
+  - id: exhausted
+    label: Exhausted
+    for: 'self.has_tag("living")'
+    when: "self.fatigue >= 80"
+    until: "self.fatigue < 30"
+    rates:
+      hp: -0.1
+      thirst: 0.05                 # everything is harder when exhausted
+    hud: { tone: bad, description: Too tired; losing health and getting thirsty faster, enter: You are exhausted., exit: You feel rested. }

@@ -1,0 +1,78 @@
+# The outbreak, as overrides of the `town` base game (docs/packs.md#mods-and-overrides):
+# the dead fill the town and the resident becomes a survivor with a way out.
+
+maps:
+  # The old town block: a few of the dead already inside the houses.
+  - id: town:town_center
+    override: true
+    spawns:
+      - { archetype: shambler, at: [29, 4] }
+      - { archetype: crawler, at: [4, 8] }
+      - { archetype: shambler, at: [20, 13] }
+      - { archetype: crawler, at: [48, 20] }
+      - { archetype: shambler, at: [31, 23] }
+      - { archetype: shambler, at: [52, 5, 1] }    # upstairs, north-east house
+  # Something still lies upstairs in every one of these.
+  - id: town:house_c
+    override: true
+    populate:
+      - { archetype: crawler, count: 1, floor: 1, room: bedroom }
+  - id: town:city
+    override: true
+    # One rect per 59×59 block and the roads around it: denser downtown (the 8
+    # blocks around town_center), sparser further out; town_center's own
+    # block is left to its handful of spawns.
+    populate:
+      - { archetype: shambler, count: 25, rect: [9, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [73, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [137, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [201, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 9, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [137, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [137, 73, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 73, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 73, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 73, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 137, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 137, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 137, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 137, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 137, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 137, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [73, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [73, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [137, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [137, 201, 69, 69] }
+      - { archetype: shambler, count: 50, rect: [201, 201, 69, 69] }
+      - { archetype: crawler, count: 6, rect: [201, 201, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 201, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [9, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [73, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [137, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [201, 265, 69, 69] }
+      - { archetype: shambler, count: 25, rect: [265, 265, 69, 69] }
+      # The fields around the town.
+      - { archetype: shambler, count: 12, rect: [0, 0, 343, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 334, 343, 9] }
+      - { archetype: shambler, count: 12, rect: [0, 9, 9, 325] }
+      - { archetype: shambler, count: 12, rect: [334, 9, 9, 325] }
+
+archetypes:
+  - id: town:resident
+    override: true
+    label: Survivor
+
+start:
+  override: true
+  defeat:
+    when: "self.hp <= 0"
+    message: "You did not survive the outbreak."
+  # A car battery from a garage gets one of the wrecks running: the `escape`
+  # quest (escape.yaml) tracks it, and its success is the win.
+  victory:
+    when: 'quest_succeeded("escape")'
+    message: "You got the car running!"

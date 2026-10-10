@@ -1,0 +1,83 @@
+items:
+  - id: blood_vial
+    label: Blood vial
+    glyph: "!"
+    color: "#c0182c"
+    sprite: blood_vial_img
+    weight: 0.3
+    use:
+      label: Drink
+      effects:
+        - { type: apply, measurement: blood, delta: 20 }
+  # Filled at the blood font (recipes.yaml).
+  - { id: empty_vial, label: Empty vial, glyph: "!", color: "#8cc0ec", weight: 0.2, tags: [junk], sprite: empty_vial_img }
+  # Old wine laced with blood (recipes.yaml): a richer drink than a vial.
+  - id: blood_wine
+    label: Blood wine
+    glyph: "!"
+    color: "#a01830"
+    sprite: blood_wine_img
+    weight: 1.2
+    use:
+      label: Drink
+      effects:
+        - { type: apply, measurement: blood, delta: 30 }
+        - { type: apply, measurement: hp, delta: 5 }
+  - id: cloak
+    label: Heavy cloak
+    glyph: "["
+    color: "#2a2a3a"
+    sprite: cloak_img
+    weight: 4
+    tags: [clothing]
+    use:
+      label: Wrap
+      consume: 0                    # reusable: wrapping up soothes a burn
+      when: 'self.has_status("sunburnt")'
+      effects:
+        - { type: apply, measurement: hp, delta: 1 }
+  - { id: wine, label: Old wine, glyph: "!", color: "#7a2040", weight: 1.2, tags: [junk], sprite: wine_img }
+  - { id: tome, label: Dusty tome, glyph: "?", color: "#8a7a5a", weight: 1.5, tags: [junk], sprite: tome_img }
+  - { id: candle, label: Candle, glyph: "i", color: "#f0e8c0", weight: 0.2, tags: [junk], sprite: candle_img }
+
+loot:
+  - id: cellar_rack
+    rolls: [1, 3]
+    entries:
+      - { item: blood_vial, weight: 5, count: [1, 2] }
+      - { item: empty_vial, weight: 2, count: [1, 2] }
+      - { table: vintage, weight: 2 }
+      - { nothing: true, weight: 1 }
+  - id: vintage
+    rolls: [1, 2]
+    entries:
+      - { item: wine, weight: 3 }
+      - { item: candle, weight: 1 }
+  - id: library_shelf
+    rolls: [0, 2]
+    entries:
+      - { item: tome, weight: 4 }
+      - { item: candle, weight: 2, count: [1, 3] }
+      - { item: blood_vial, weight: 1 }
+      - { item: empty_vial, weight: 1 }
+      - { nothing: true, weight: 2 }
+  - id: heirlooms
+    rolls: 2
+    entries:
+      - { item: cloak, weight: 1 }
+      - { table: vintage, weight: 1 }
+  # The attic study's chest: a scholar's papers and a few vials.
+  - id: study_chest
+    rolls: [2, 3]
+    entries:
+      - { item: tome, weight: 3 }
+      - { item: blood_vial, weight: 2, count: [1, 2] }
+      - { item: empty_vial, weight: 1 }
+      - { item: candle, weight: 1, count: [1, 2] }
+
+distributions:
+  - { container: wine_rack, room: cellar, table: cellar_rack }
+  - { container: wine_rack, table: vintage }
+  - { container: bookshelf, room: library, table: library_shelf }
+  - { container: chest, room: study, table: study_chest }
+  - { container: chest, table: heirlooms }

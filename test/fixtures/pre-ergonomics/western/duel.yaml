@@ -1,0 +1,192 @@
+# High Noon (docs/packs.md#quests): the morning's preparation, the gang's
+# arrival and the duel's bookkeeping. The duel itself is Black Jack's
+# dialogue (dialogues.yaml).
+#
+# ── The flow, for modders and reviewers ──────────────────────────────────
+#
+#   06:00  The Stranger wakes on Main Street with ten dollars. Sheriff Cobb,
+#          in the middle of the street, gives the quest, a revolver and a box
+#          of thirty bullets. He will not fight.
+#   Morning  Three ways to spend it, in any order:
+#     practice   `shoot_bottles` on the crates in the yards: three bullets
+#                and eight seconds for +6 aim, until aim reaches 70 (nine
+#                rounds from the starting 20). The racket costs townsfolk
+#                standing when one of them sees it.
+#     favours    the doc wants a bandage, the kid wants your crackers, the
+#                bartender in the saloon (the corner store at [208, 208])
+#                sells whiskey for 5 and stakes you on the first round.
+#                Each favour: townsfolk +20 (spread: the gang hates it) and
+#                ten dollars. Three favours make you Trusted (50).
+#     nerve      whiskey: `tipsy` adds nerve and takes aim while it lasts.
+#   10:00  Two riders at the west end of Main Street start to drift and
+#          crowd the Stranger on sight; standing next to one drains nerve.
+#   12:00  The noon bell: Black Jack walks from the east end to the middle
+#          of Main Street and waits. His dialogue offers:
+#     Go for your gun   needs the revolver. draw = roll(1, 100) + 1.1 × aim
+#                       + nerve / 2; at least 118 wins (`won`), else `shot`.
+#                       aim 70 / nerve 60 → 90 %; aim 20 / nerve 50 → 30 %.
+#     Talk him down     townsfolk ≥ 50 (Trusted)          → `talked_down`
+#     Pay him off       30 coin                           → `paid_off`
+#     Back down                                           → `coward`
+#   12:30  No duel yet: `coward`.
+# ─────────────────────────────────────────────────────────────────────────
+
+measurements:
+  - id: aim
+    label: Aim
+    min: 0
+    max: 100
+    initial: 20
+    hud: { bad: low, warn: 40, danger: 25 }
+  - id: nerve
+    label: Nerve
+    min: 0
+    max: 100
+    initial: 50
+    hud: { bad: low, warn: 40, danger: 25 }
+  # How much whiskey is still working; drains at one point a minute.
+  - id: liquor
+    label: Liquor
+    min: 0
+    max: 100
+    initial: 0
+    rate: -1
+    hud: { hide: true }
+
+items:
+  - { id: coin, label: Dollar, glyph: "$", color: "#d8c050", weight: 0.01, sprite: coin_img }
+  - { id: bullet, label: Bullet, glyph: "'", color: "#d8c050", weight: 0.02, sprite: bullet_img }
+  - { id: revolver, label: Revolver, glyph: "r", color: "#3a3a40", weight: 1.2, tags: [tool], sprite: revolver_img }
+  - id: whiskey
+    label: Whiskey
+    glyph: "!"
+    color: "#a07242"
+    weight: 0.6
+    sprite: whiskey_img
+    use:
+      label: Drink
+      effects:
+        - { type: apply, measurement: liquor, delta: 40 }
+        - { type: apply, measurement: nerve, delta: 5 }
+        - { type: apply, measurement: thirst, delta: -5 }
+
+statuses:
+  # Dutch courage: steadier nerves, a worse eye, for as long as the whiskey lasts.
+  - id: tipsy
+    label: Tipsy
+    for: 'self.has_tag("stranger")'
+    when: "self.liquor > 0"
+    until: "self.liquor <= 0"
+    rates: { nerve: 0.5, aim: -0.3 }
+    hud: { tone: neutral, description: Whiskey steadies the nerves and spoils the aim, enter: The whiskey goes to your head., exit: The whiskey wears off. }
+  # Hemmed in by the gang (see the `crowded` var below).
+  - id: crowded
+    label: Crowded
+    for: 'self.has_tag("stranger")'
+    when: 'var("crowded") > 0'
+    hud: { tone: bad, description: Black Jack's riders are at your elbow, enter: The riders close in around you., exit: The riders give you room. }
+
+vars:
+  # How many hostile riders stand next to the Stranger, counted every second:
+  # a rider cannot change the player's measurements, so the riders count
+  # themselves into a var and a player system reads it (systems run in
+  # definition order).
+  - { id: crowded, min: 0, max: 9 }
+  # The draw roll of the duel (dialogues.yaml).
+  - { id: draw, min: 0, max: 300 }
+  - { id: faced_jack, initial: false }
+  # The favours done (one each).
+  - { id: doc_helped, initial: false }
+  - { id: bar_helped, initial: false }
+  - { id: kid_helped, initial: false }
+
+systems:
+  - id: crowd_reset
+    every: 1
+    for: 'self.has_tag("stranger")'
+    effects:
+      - { type: set_var, var: crowded, value: 0 }
+  - id: crowd_count
+    every: 1
+    for: 'self.has_tag("rider")'
+    when: 'hostile(self, player) and chebyshev(self, player) <= 1'
+    effects:
+      - { type: add_var, var: crowded, delta: 1 }
+  - id: crowd_nerve
+    every: 1
+    for: 'self.has_tag("stranger")'
+    when: 'var("crowded") > 0'
+    effects:
+      - { type: apply, measurement: nerve, delta: -3 }
+  # The noon bell, rung for a minute from the sheriff's spot in the middle
+  # of Main Street: Black Jack hears it and walks there (people.yaml).
+  - id: noon_bell
+    every: 1
+    for: 'self.in_faction("law")'
+    when: 'world.hour == 12 and world.minute == 0'
+    effects:
+      - { type: noise, radius: 40 }
+
+actions:
+  # Target practice on the crates in the yards: bottles on a crate, three
+  # shots, and the whole block hears it. Folks dislike the racket.
+  - id: shoot_bottles
+    label: Shoot bottles
+    progress: Shooting bottles
+    target: { tiles: [crate] }
+    tools: [revolver]
+    consume: { bullet: 3 }
+    when: "self.aim < 70"
+    unavailable: Your aim is as good as practice makes it
+    duration: 8
+    effects:
+      - { type: apply, measurement: aim, delta: "6 * (self.aim < 70)" }
+      - { type: noise, radius: 30 }
+      - { type: reputation, faction: townsfolk, delta: -5, witnessed: 10 }
+
+# Bullets turn up in the garages' crates, among the town's own garage loot
+# (the same entries as `town:garage`, plus shells; the same 4–5 rolls keep
+# the heaviest draw within a crate).
+loot:
+  - id: garage_ammo
+    rolls: [4, 5]
+    entries:
+      - { item: bullet, weight: 6, count: [3, 9] }
+      - { item: town:car_battery, weight: 2 }
+      - { table: town:junk, weight: 3 }
+      - { item: town:water_bottle, weight: 1, count: [2, 4] }
+      - { item: town:hammer, weight: 5 }
+      - { item: town:plank, weight: 5, count: [2, 4] }
+      - { item: town:nails, weight: 5, count: [4, 8] }
+distributions:
+  - { container: crate, room: garage, table: garage_ammo }
+
+quests:
+  - id: high_noon
+    title: High Noon
+    stages:
+      - id: see_sheriff
+        when: "true"
+        journal: "Black Jack's gang rides in at noon to call you out. Sheriff Cobb, in the middle of Main Street, wants a word first."
+      # The sheriff's dialogue moves the quest here.
+      - id: get_ready
+        journal: "Noon is coming. Practise on the bottles in the yards, do the town a favour or two, steady your nerves, and be on Main Street at twelve."
+      - id: face
+        when: "world.hour >= 12"
+        journal: "It's noon. Black Jack is on Main Street. Face him."
+      - id: won
+        end: success
+        journal: "Black Jack went down in the dust before he cleared leather. The gang rode out without him."
+      - id: talked_down
+        end: success
+        journal: "The whole street was watching. Black Jack looked at the faces in the windows, spat, and rode out."
+      - id: paid_off
+        end: success
+        journal: "Thirty dollars bought the town a quiet afternoon. Black Jack took it and rode out laughing. Nobody else was."
+      - id: shot
+        end: failure
+        journal: "Black Jack was faster. The last thing you saw was the noon sun."
+      - id: coward
+        end: failure
+        when: 'world.time_of_day >= 12.5 and not var("faced_jack")'
+        journal: "Half past twelve and you never stood on Main Street. The town will remember that longer than it remembers you."

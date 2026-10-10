@@ -1,0 +1,129 @@
+# Survival loop: the sun burns, hunger for blood weakens. Carpet, crypt and
+# font tiles are shaded; sunbeams under the windows are not. Blood vials from
+# the cellar's wine racks (items.yaml) restore blood anywhere.
+
+statuses:
+  - id: sunburnt
+    label: Sunburnt
+    for: 'self.has_tag("undead")'
+    # A heavy cloak in the inventory keeps the sun off.
+    when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
+    until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
+    rates: { hp: -4 }
+    hud: { tone: bad, description: Burning in the sun; find shade or a cloak, enter: The sun sears your skin!, exit: Your skin stops smouldering. }
+  - id: starving
+    label: Starving
+    for: 'self.has_tag("undead")'
+    when: "self.blood <= 10"
+    until: "self.blood >= 25"
+    rates: { hp: -0.25 }
+    hud: { tone: bad, description: Out of blood; losing health, enter: The thirst for blood claws at you., exit: The blood thirst is sated. }
+  # Bats notice the vampire (through windows too) and lose interest slowly.
+  - id: alert
+    label: Alert
+    for: 'self.has_tag("beast")'
+    when: 'can_see(self, player, 6)'
+    until: 'not can_see(self, player, 10)'
+    hud: { tone: bad, description: A bat has noticed you }
+
+systems:
+  # Hurting.
+  - id: scorch
+    every: 1
+    for: 'self.has_status("sunburnt")'
+    effects:
+      - { type: apply, measurement: blood, delta: -1 }
+  - id: daylight
+    every: 1
+    for: 'self.has_tag("undead")'
+    when: 'world.is_day and not tile.has_tag("shade")'
+    effects:
+      - { type: apply, measurement: hp, delta: -0.2 }
+  # Restoring.
+  - id: feed
+    every: 1
+    for: 'self.has_tag("undead")'
+    when: 'tile.has_tag("blood")'
+    effects:
+      - { type: apply, measurement: blood, delta: 5 }
+  - id: mend
+    every: 5
+    for: 'self.has_tag("undead")'
+    when: "self.blood >= 30 and not self.has_status(\"starving\")"
+    effects:
+      - { type: apply, measurement: hp, delta: 1 }
+  # Noise: a bat that spots the vampire screeches (it wakes a resting one).
+  - id: screech
+    every: 1
+    for: 'self.has_tag("beast")'
+    when: 'self.has_status("alert")'
+    effects:
+      - { type: noise, radius: 8 }
+  # Noise: old floorboards creak underfoot, once per step onto them; bats
+  # hear it (behaviors).
+  - id: creak
+    on: step
+    for: 'self.has_tag("undead")'
+    when: 'tile.has_tag("creaky")'
+    effects:
+      - { type: noise, radius: 8 }
+
+# Day/night tint of the iso view (visual only): cold nights, harsh days.
+lighting:
+  override: true
+  tint:
+    - { at: "05:00", color: "#2a3060" }
+    - { at: "07:00", color: "#fff4e0" }
+    - { at: "19:00", color: "#ffc8a0" }
+    - { at: "21:00", color: "#2a3060" }
+
+# Bats flutter around their roost, flit over to look at a creak, scatter
+# from the vampire and fly back once it is out of sight.
+behaviors:
+  - id: bat
+    initial: roost
+    states:
+      roost:
+        do: wander
+        radius: 3
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+          - { when: 'heard(self, 1)', to: investigate }
+      investigate:
+        do: investigate
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+        done: return
+      flee:
+        do: flee
+        target: player
+        on:
+          - { when: 'not self.has_status("alert")', to: return }
+      return:
+        do: home
+        done: roost
+        on:
+          - { when: 'self.has_status("alert")', to: flee }
+
+# Timed actions (docs/packs.md#actions): moving or acting cancels them.
+actions:
+  # Close a window's shutters before dawn; no tools needed.
+  - id: shutter
+    label: Close shutters
+    progress: Closing the shutters
+    target: { tiles: [town:window] }
+    duration: 2
+    effects:
+      - { type: set_tile, tile: shuttered_window }
+  # Lie down by a coffin on the crypt floor. Any noise that reaches you
+  # wakes you early, and an interrupted rest restores nothing.
+  - id: rest
+    label: Rest
+    progress: Resting
+    target: self
+    when: 'tile.has_tag("crypt")'
+    unavailable: Only in the crypt
+    duration: 10
+    interrupt: { on: noise }
+    effects:
+      - { type: apply, measurement: hp, delta: 30 }

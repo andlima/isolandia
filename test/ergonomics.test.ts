@@ -4,7 +4,10 @@ import { compileSource, type CompileSymbols, type ExprContext, type ExprEntity, 
 import { DEFAULT_CLOCK } from '../src/core/clock.ts';
 import { formatError, loadPacks, World, type Definition, type LoadError, type PackSource } from '../src/core/index.ts';
 import { formatOverrides } from '../src/cli/overrides.ts';
-import { fixture, MANIFEST_T, pack } from './helpers.ts';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { readPack } from '../src/node/read-pack.ts';
+import { fixture, GAMES, MANIFEST_T, pack } from './helpers.ts';
 
 // Pack ergonomics (docs/packs.md): the `apply`/`set` effect shorthand, a
 // file's `defaults.for`, `{ scale, add }` terms on numeric overrides, the
@@ -687,4 +690,84 @@ statuses:
   const v = World.create(ref.def, 1);
   v.step();
   assert.equal(v.player.st[ref.def.ids.statuses['t:half']!], 1);
+});
+
+// ── Equivalence of the converted packs ──────────────────────────────────────
+
+/** Where the pre-conversion copies of the pack files the conversion touched live (`<pack dir name>/<path>`). */
+const PRE_DIR = 'test/fixtures/pre-ergonomics';
+
+/** The shipped pack with its converted files swapped back for the pre-conversion copies. */
+function before(dir: string): PackSource {
+  const src = readPack(dir);
+  const name = dir.replace(/^packs\//, '');
+  const files = { ...src.files };
+  const root = join(PRE_DIR, name);
+  if (!existsSync(root)) return src;
+  const walk = (d: string): void => {
+    for (const entry of readdirSync(d).sort()) {
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else files[relative(root, full).split(sep).join('/')] = readFileSync(full, 'utf8');
+    }
+  };
+  walk(root);
+  return { ...src, files };
+}
+
+/** The serialisable shape of a definition (closures dropped), minus the diagnostic `patches`. */
+function shape(def: Definition): unknown {
+  const { patches: _patches, ...rest } = JSON.parse(JSON.stringify(def)) as Definition;
+  return rest;
+}
+
+const STACKS: Record<string, readonly string[]> = {
+  ...GAMES,
+  hardship: ['packs/std', 'packs/std-needs', 'packs/town', 'packs/hardship'],
+  'zombie+hardship': ['packs/std', 'packs/std-needs', 'packs/town', 'packs/zombie', 'packs/hardship'],
+};
+const HASHED = ['town', 'garden', 'zombie', 'vampire', 'noir', 'western'];
+
+test('equivalence: every fixture is a pre-conversion copy that differs from the shipped file', () => {
+  const fixtures: string[] = [];
+  const walk = (d: string): void => {
+    for (const entry of readdirSync(d).sort()) {
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else fixtures.push(relative(PRE_DIR, full).split(sep).join('/'));
+    }
+  };
+  walk(PRE_DIR);
+  assert.ok(fixtures.length >= 10, fixtures.join(', '));
+  for (const f of fixtures) {
+    const shipped = join('packs', f);
+    assert.ok(existsSync(shipped), `${f} has no shipped counterpart`);
+    assert.notEqual(readFileSync(shipped, 'utf8'), readFileSync(join(PRE_DIR, f), 'utf8'), `${f} was not converted`);
+  }
+});
+
+test('equivalence: each shipped stack loads to the same definition before and after the conversion, and runs to the same hash', () => {
+  for (const [name, dirs] of Object.entries(STACKS)) {
+    const after = loadPacks(dirs.map(readPack));
+    const pre = loadPacks(dirs.map(before));
+    assert.ok(after.ok, after.ok ? '' : after.errors.map(formatError).join('\n'));
+    assert.ok(pre.ok, pre.ok ? '' : pre.errors.map(formatError).join('\n'));
+    assert.deepEqual(after.warnings, [], `${name}: warnings after the conversion`);
+    assert.deepEqual(shape(after.definition), shape(pre.definition), `${name}: definition shape`);
+    // Only the provenance of a few patches changed: hardship writes terms, the genres write defeat.message alone.
+    assert.deepEqual(
+      after.definition.patches.map((p) => [p.pack, p.op, p.domain, p.id]),
+      pre.definition.patches.map((p) => [p.pack, p.op, p.domain, p.id]),
+      `${name}: patches`,
+    );
+    if (!HASHED.includes(name)) continue;
+    const a = World.create(after.definition, 11);
+    const b = World.create(pre.definition, 11);
+    for (let i = 0; i < 300; i++) {
+      a.step();
+      b.step();
+    }
+    assert.equal(a.hash(), b.hash(), `${name}: hash after 300 ticks`);
+    assert.deepEqual(a.snapshot(), b.snapshot(), `${name}: snapshot after 300 ticks`);
+  }
 });
