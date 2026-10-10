@@ -1,6 +1,7 @@
-# Survival loop: the sun burns, hunger for blood weakens. Carpet, crypt and
-# font tiles are shaded; sunbeams under the windows are not. Blood vials from
-# the cellar's wine racks (items.yaml) restore blood anywhere. The file's
+# Survival loop: the sun burns, hunger for blood weakens. The sun falls on
+# every exposed cell (`tile.exposed`, docs/packs.md#exposure): the grounds
+# and the sunbeams under the windows; the rooms are in the shade. Blood vials
+# from the cellar's wine racks (items.yaml) restore blood anywhere. The file's
 # `defaults` makes every rule the vampire's unless it writes its own `for`
 # (the bats' rules, and `scorch`, which keys on a status).
 
@@ -11,8 +12,8 @@ statuses:
   - id: sunburnt
     label: Sunburnt
     # A heavy cloak in the inventory keeps the sun off.
-    when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
-    until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
+    when: 'world.is_day and tile.exposed and not self.has_item("cloak")'
+    until: 'not world.is_day or not tile.exposed'   # lingers until you find real shade
     rates: { hp: -4 }
     hud: { tone: bad, description: Burning in the sun; find shade or a cloak, enter: The sun sears your skin!, exit: Your skin stops smouldering. }
   - id: starving
@@ -31,7 +32,7 @@ systems:
       - { apply: { blood: -1 } }
   - id: daylight
     every: 1
-    when: 'world.is_day and not tile.has_tag("shade")'
+    when: 'world.is_day and tile.exposed'
     effects:
       - { apply: { hp: -0.2 } }
   # Restoring.

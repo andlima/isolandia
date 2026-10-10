@@ -569,6 +569,7 @@ function ctxWith(self: ExprEntity, player: ExprEntity): ExprContext {
     random: () => 0.5,
     tileIdAt: () => '',
     tileTagsAt: () => new Set(),
+    exposed: () => false,
     inRoom: () => false,
     los: () => true,
     warn: () => {},

@@ -369,6 +369,8 @@ shading, palettes and the generator).
 | `container`| `{ capacity: <number ≥ 0> }` | none | Every map cell with this tile gets its own [container](#containers); its label is the tile's label |
 | `climb`    | `up` or `down`   | none         | A **link** to the same cell one floor up or down (stairs, ladders); see [Floors](#floors). The tile must be walkable |
 | `edge`     | boolean          | `false`      | An **edge tile** (wall, door, window, fence): it goes on the edge between two cells, never in a cell; `walkable` then means it can be crossed and `opaque` that it blocks sight across it. Cannot take `container` or `climb`. See [Edge walls](#edge-walls) |
+| `encloses` | boolean          | `true`       | Edge tiles only (an error elsewhere): whether the edge counts as a wall for [exposure](#exposure). Walls, doors, windows and shutters keep the default; a low fence sets `encloses: false` |
+| `exposed`  | boolean          | derived      | Cell tiles only (an error on an edge tile): when set, every cell with this tile is **exposed** (`true`) or not (`false`) regardless of the [exposure](#exposure) rule — a sunbeam under a window, an awning over a yard. Unset means derived; an override's `exposed: null` goes back to derived |
 
 Tile tags and archetype tags are separate: `self.has_tag("water")` never
 sees the tags of the tile the entity stands on, and `tile.has_tag(...)`
@@ -639,6 +641,49 @@ It treats every cell holding an edge tile as a lattice **vertex**:
 So a building whose wall cells span columns `x0..x1` and rows `y0..y1`
 gets the interior `[x0, x1 − 1] × [y0, y1 − 1]`; its former east wall
 column and south wall row become outside ground.
+
+#### Exposure
+
+Every cell of every map has a derived boolean, **`exposed`** ("open to the
+sky"), computed once at load from the geometry the map already draws, and
+read by expressions as [`tile.exposed`](expressions.md#scope). A non-empty
+cell is exposed when it is **not enclosed** and **not covered**, unless
+its tile says otherwise:
+
+- **Enclosed.** On each floor, cells are grouped into **areas**: two
+  4-neighbouring non-empty cells are in the same area unless the edge
+  between them holds an **enclosing** edge tile (`encloses: true`, the
+  default for every edge tile; a fence with `encloses: false` separates
+  nothing). An area is **open** when any of its cells lies on the map
+  border, or is 4-adjacent, across a non-enclosing edge position, to an
+  [empty cell](#floors). Every cell of an area that is not open is
+  enclosed. Cells are grouped whatever their walkability: furniture
+  inside a room is inside the room, and a window (`opaque: false`)
+  encloses like a wall.
+- **Covered.** A cell with a non-empty cell at the same `(x, y)` on the
+  floor above is covered: the floor above is its ceiling.
+- **Overrides.** A tile with `exposed: true` or `false` sets every cell
+  that holds it, whatever the rule says.
+- An empty cell is never exposed (`tile.exposed` is false there, like
+  `tile.has_tag`).
+
+So a walled room with a door is enclosed, a room with a wall missing is
+open, an upper-floor room is enclosed (the void around it is outside its
+walls) and the cells under it are covered, a walled graveyard with a gate
+is enclosed, and a fenced garden is open. A [composite](#composite-maps)
+is judged on the composed map: a part whose walls sit on its own border
+reads as open on its own and as enclosed once a neighbour fills the cells
+beyond its walls.
+
+Exposure is **static map data**, like rooms and facings: computed once at
+load (after cells and edges are final, for a composite on the composed
+map), not part of the world state or its hash, and **not updated by
+`set_tile`**: barricading or shuttering a window changes nothing, and the
+shipped packs never open a wall. A tile [override](#mods-and-overrides)
+that changes `encloses`, `exposed` or `edge` changes the exposure of every
+map that uses the tile, since the rule runs on the final stack.
+`npm run check -- <packs> --exposure <map>` draws it (see
+[Validation](#validation)).
 
 #### Spawns
 
@@ -2885,7 +2930,9 @@ cells earlier overlapping entries can take. [Edge walls](#edge-walls): an edge t
 spawn or player start on an edge position; `edges: true` rows that are
 not `2·h + 1` by `2·w + 1`; a Tiled `edge` property other than `n`/`w`;
 an edge tile as a composite's `fill`; and a `set_tile` that would put an
-edge tile in a cell or a cell tile on an edge. Warnings (e.g. a loot table that can
+edge tile in a cell or a cell tile on an edge. [Exposure](#exposure):
+`encloses` on a cell tile, `exposed` on an edge tile, and either with a
+non-boolean value. Warnings (e.g. a loot table that can
 exceed a container's capacity, a filter or station tag no tile carries, a
 recipe `station` that matches only edge tiles, an
 override that changes nothing, a second removal of the same entry, or two
@@ -2914,6 +2961,23 @@ populate:
     zmb:shambler  density 0.6 → 397  66169 candidates, 66169 free
     zmb:shambler  density 0.4 → 48   12024 candidates, 12024 free
     total 953
+```
+
+`npm run check -- <packs> --exposure <map id>` prints a map's
+[exposure](#exposure) floor by floor: one character per cell, `.` exposed,
+`#` not exposed (enclosed or covered), a space for an empty cell, with the
+floor number above each floor. Every column is printed, however wide the
+map (the output is for files and tests). The id is qualified
+(`vamp:estate`), or a short id that names exactly one map; an unknown id
+is an error with a *did you mean*.
+
+```
+npm run check -- vampire --exposure graveyard     (abridged)
+vamp:graveyard: 17×14, 1 floor
+floor 0
+.................
+.................
+…
 ```
 
 ## Engine layout

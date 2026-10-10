@@ -110,6 +110,8 @@ export interface ExprContext {
   tileTagsAt(x: number, y: number, z: number, side?: 'n' | 'w' | null): ReadonlySet<string>;
   /** Whether the cell at (x, y, z) is in a room with the room tag of that index. */
   inRoom(x: number, y: number, z: number, tag: number): boolean;
+  /** Whether the cell at (x, y, z) is exposed (open to the sky, `MapDef.exposed`); false out of bounds and on an empty cell. */
+  exposed(x: number, y: number, z: number): boolean;
   /** Tile line of sight between two cells; false across floors (see `lineOfSight`). */
   los(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): boolean;
   warn(message: string): void;
@@ -367,6 +369,7 @@ const SPECIAL_NAMES = [
   'has_tagged',
   'fraction',
   'in_room',
+  'exposed',
   'can_see',
   'heard',
   'sees',
@@ -391,7 +394,7 @@ const METHODS = new Set(['has_tag', 'has_status', 'count_item', 'has_item', 'cou
 
 export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SPECIAL_NAMES];
 
-const TILE_FIELDS = ['x', 'y', 'z', 'id'];
+const TILE_FIELDS = ['x', 'y', 'z', 'id', 'exposed'];
 /** Entity members other than measurements (`self.<field>`); they take precedence over measurement ids. */
 const ENTITY_FIELDS = ['x', 'y', 'z', 'carry_weight', 'carry_capacity', 'busy', 'sees', 'seen'];
 
@@ -493,6 +496,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
         if (prop === 'y') return { fn: tileY, type: 'number' };
         if (prop === 'z') return { fn: tileZ, type: 'number' };
         if (prop === 'id') return { fn: (c) => c.tileIdAt(tileX(c), tileY(c), tileZ(c), tileSide(c)), type: 'string' };
+        if (prop === 'exposed') return { fn: (c) => c.exposed(tileX(c), tileY(c), tileZ(c)), type: 'boolean' };
         return err(`unknown property 'tile.${prop}'${hint(`tile.${prop}`, TILE_FIELDS.map((f) => `tile.${f}`))}`, node.pos);
       case 'world':
         if (prop === 'tick') return { fn: (c) => c.tick, type: 'number' };
@@ -564,12 +568,13 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
       return err('only built-in functions can be called', node.pos);
     }
     // A load-time cell filter: `random`/`roll` and everything that reads an entity or the world are out.
-    if (symbols.tileOnly && (name === 'random' || name === 'roll' || (SPECIAL_NAMES.includes(name) && name !== 'in_room'))) return err(tileOnly(name), node.pos);
+    if (symbols.tileOnly && (name === 'random' || name === 'roll' || (SPECIAL_NAMES.includes(name) && name !== 'in_room' && name !== 'exposed'))) return err(tileOnly(name), node.pos);
     if (name === 'has_status') return hasStatus(argNodes, node.pos);
     if (name === 'count_item' || name === 'has_item') return itemCount(name, argNodes, node.pos);
     if (name === 'count_tagged' || name === 'has_tagged') return taggedCount(name, argNodes, node.pos);
     if (name === 'fraction') return fraction(argNodes, node.pos);
     if (name === 'in_room') return inRoom(argNodes, node.pos);
+    if (name === 'exposed') return exposed(argNodes, node.pos);
     if (name === 'can_see') return canSee(argNodes, node.pos);
     if (name === 'heard') return heard(argNodes, node.pos);
     if (name === 'sees' || name === 'seen') return sense(name, argNodes, node.pos);
@@ -945,6 +950,14 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if ('error' in r) return err(`in_room: ${r.error}`, tagNode.pos);
     const k = r.index;
     return { type: 'boolean', fn: (c) => c.inRoom(tileX(c), tileY(c), tileZ(c), k) };
+  }
+
+  /** `exposed(tile)`: whether the cell `tile` refers to is open to the sky (`tile.exposed`). */
+  function exposed(argNodes: Ast[], pos: number): CompiledExpr {
+    if (argNodes.length !== 1) return err(`exposed() takes 1 argument, got ${argNodes.length}`, pos);
+    const target = argNodes[0]!;
+    if (target.kind !== 'ident' || target.name !== 'tile') return err('exposed(tile) expects `tile` as its argument', pos);
+    return { type: 'boolean', fn: (c) => c.exposed(tileX(c), tileY(c), tileZ(c)) };
   }
 
   /** Point argument without allocating: `tile` reads as the target cell, or `self` (same position) without one. */

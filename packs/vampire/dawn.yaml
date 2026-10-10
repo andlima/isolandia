@@ -8,10 +8,11 @@ quests:
         when: "true"                # entered on the first tick
         journal: The sun rises at six. Be resting in the crypt, or at least in the shade, by then.
       # Shade is what the sun spares (survival.yaml: `daylight` and `sunburnt`
-      # stop on shaded tiles); the crypt's floor is shaded, so resting there counts.
+      # stop on cells that are not exposed); the crypt is enclosed, so resting
+      # there counts.
       - id: survived
         end: success
-        when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or tile.has_tag("shade"))'
+        when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or not tile.exposed)'
         journal: You lay in the dark while the sun rose. The first dawn is behind you.
       # Later stages win ties: burnt below a quarter of health in daylight fails it.
       - id: scorched

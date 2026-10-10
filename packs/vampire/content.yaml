@@ -10,6 +10,10 @@ measurements:
     hud: { bad: low }
 
 tiles:
+  # Shade is not a tag: the sun reaches a cell when it is exposed
+  # (docs/packs.md#exposure), which the walls, doors and windows decide. The
+  # mansion's rooms, the graveyards and the cottages are enclosed, so every
+  # floor inside them is in the shade, the town's plain floor included.
   # The windows are the town's (`town:window`), in the mansion's colours.
   - id: town:window
     override: true
@@ -21,37 +25,39 @@ tiles:
     color: "#8b1e2d"
     walkable: true
     sprite: carpet_img
-    tags: [shade]
   # Creaks under the undead's weight: a `creak` system makes noise
-  # (survival.yaml). Only laid in shaded rooms, so it is shaded too.
+  # (survival.yaml).
   - id: creaky
     label: Creaky floorboards
     glyph: ","
     color: "#6b2a30"
     sprite: creaky_img
     walkable: true
-    tags: [creaky, shade]
+    tags: [creaky]
+  # The open ground of the estate, and the patches under the mansion's
+  # windows: those sit inside enclosed rooms, so the sun is forced through
+  # with `exposed: true` (the derived rule would shade them).
   - id: sunbeam
     label: Sunlit floor
     glyph: "'"
     color: "#e8d27a"
     sprite: sunbeam_img
     walkable: true
-    tags: [sunlit]
+    exposed: true
   - id: crypt
     label: Crypt floor
     glyph: "_"
     color: "#3b3346"
     sprite: crypt_img
     walkable: true
-    tags: [shade, crypt]
+    tags: [crypt]
   - id: font
     label: Blood font
     glyph: "u"
     color: "#c0182c"
     sprite: font_img
     walkable: true
-    tags: [shade, blood]
+    tags: [blood]
   - id: coffin
     label: Coffin
     glyph: "="

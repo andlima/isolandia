@@ -97,6 +97,7 @@ tiles:
     walkable: false
     opaque: false                   # low: you can see over it
     edge: true                      # a low fence between cells
+    encloses: false                 # a fence does not make a room: the garden is open to the sky everywhere
 
 archetypes:
   - id: bunny

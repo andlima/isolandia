@@ -38,6 +38,7 @@ function context(overrides: Partial<ExprContext> = {}): ExprContext & { warnings
     random: () => ((s = (s * 16807) % 2147483647) / 2147483647),
     tileIdAt: (x, y) => (x === 1 && y === 2 ? 't:floor' : 't:wall'),
     tileTagsAt: (x, y) => new Set(x === 1 && y === 2 ? ['shade'] : []),
+    exposed: () => false,
     inRoom: () => false,
     los: () => true,
     warn: (m) => warnings.push(m),

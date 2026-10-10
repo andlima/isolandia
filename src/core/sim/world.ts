@@ -1010,6 +1010,7 @@ export class World {
     }
 
     const world = this;
+    const exposed = map.exposed;
     this.ctx = {
       self: this.player,
       player: this.player,
@@ -1026,6 +1027,7 @@ export class World {
         return t === EMPTY_TILE ? NO_TAGS : world.tileTagSets[t]!;
       },
       inRoom: (x, y, z, tag) => world.grid.inBounds(x, y, z) && world.roomHas[world.roomCell[world.grid.index(x, y, z)]! * nt + tag] === 1,
+      exposed: (x, y, z) => world.grid.inBounds(x, y, z) && exposed[world.grid.index(x, y, z)] === 1,
       los: (x0, y0, x1, y1, z0, z1) => lineOfSight(world.grid, x0, y0, x1, y1, z0, z1),
       warn: (msg) => world.warnings.set(msg, (world.warnings.get(msg) ?? 0) + 1),
       entities: this.entities,

@@ -5,7 +5,7 @@ import { readPack } from '../src/node/read-pack.ts';
 import { GAMES, genreCell, loadFixture } from './helpers.ts';
 
 function tileDef(index: number, id: string, walkable: boolean, opaque: boolean): TileDef {
-  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null, edge: false };
+  return { id, index, label: id, glyph: '?', color: 'white', walkable, raised: !walkable, opaque, sprite: null, tags: [], container: null, climb: null, edge: false, encloses: true, exposed: null };
 }
 
 /** `.` floor, `#` wall, `+` door, `"` window (not walkable, not opaque). */

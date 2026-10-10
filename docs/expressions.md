@@ -60,7 +60,7 @@ string in arithmetic is a load error.
 |----------|--------|---------------------------------------------------------------|
 | `self`   | entity | The entity the expression is evaluated for                    |
 | `player` | entity | The player entity                                             |
-| `tile`   | tile   | The tile under `self`, on `self`'s floor: `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag("x")`, `tile.in_room("x")` |
+| `tile`   | tile   | The tile under `self`, on `self`'s floor: `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.exposed`, `tile.has_tag("x")`, `tile.in_room("x")` |
 | `world`  | —      | World time; see the fields below                              |
 | `npc`    | entity | The NPC being talked to. Only in the expressions of a [dialogue](packs.md#dialogues) (its `when`, `start` and choice `when`s, effect values), where `self` and `player` are the player; anywhere else it is a load error |
 
@@ -103,7 +103,10 @@ Entity members (the same on `self`, `player` and `npc`, e.g. `npc.hp`,
 tile under `self` (see [tile tags](packs.md#tiles)). `tile.in_room("kitchen")`
 (or `in_room(tile, "kitchen")`) tests the [room](packs.md#maps) tags of the
 cell under `self`. Tile tags, room tags and entity tags are three separate
-sets.
+sets. `tile.exposed` (or `exposed(tile)`) is whether the cell under `self`
+is open to the sky ([exposure](packs.md#exposure): not enclosed by edge
+walls, not under a floor above, or forced by its tile); it is one array
+read, static map data, and false on an empty cell.
 
 ## Built-in functions
 
@@ -126,6 +129,7 @@ sets.
 | `has_tagged(entity, "tag")`              | `count_tagged(entity, "tag") > 0`                        |
 | `fraction(entity, "measurement")`        | `(value − min) / (max − min)` of the entity's measurement, in `[0, 1]` |
 | `in_room(tile, "tag")`                   | Whether the cell under `self` is in a room with that tag |
+| `exposed(tile)`                          | Whether the cell under `self` is open to the sky (same as `tile.exposed`; see [exposure](packs.md#exposure)) |
 | `can_see(a, b)`, `can_see(a, b, range)`  | Tile line of sight between entities/tiles, optionally within a euclidean `range` |
 | `sees(entity)`                           | Whether the entity currently sees a target (same as `entity.sees`) |
 | `seen(entity)`                           | The entity the entity sees, or `none` (same as `entity.seen`) |
@@ -361,9 +365,10 @@ behaviors still target expressions such as `player`.
 
 **`tile` in tile-targeted actions.** In the `when`, `interrupt`,
 `duration` and `effects` of an action whose `target` is a tile filter,
-`tile` (and `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag(...)`,
-`tile.in_room(...)`, and `tile` as a `can_see`/distance argument) is the
-**target cell**, not the cell under the actor; `self` is still the actor.
+`tile` (and `tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.exposed`,
+`tile.has_tag(...)`, `tile.in_room(...)`, and `tile` as a `can_see`/distance
+argument) is the **target cell**, not the cell under the actor; `self` is
+still the actor.
 Everywhere else (systems, statuses, behaviors, item uses, `self` actions)
 `tile` is the cell under `self`.
 

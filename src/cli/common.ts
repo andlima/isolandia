@@ -34,10 +34,12 @@ export interface CliArgs {
   overrides: boolean;
   /** `--populate` (check). */
   populate: boolean;
+  /** `--exposure <map id>` (check), or null when not given. */
+  exposure: string | null;
 }
 
 /** Options that take a value; each CLI accepts its own subset. */
-export type CliOption = '--seed' | '--load' | '--save-file' | '--save' | '--packs-dir';
+export type CliOption = '--seed' | '--load' | '--save-file' | '--save' | '--packs-dir' | '--exposure';
 /** Options without a value. */
 export type CliFlag = '--overrides' | '--populate' | '--stack';
 
@@ -50,7 +52,7 @@ export function parseArgs(
   flags: readonly CliFlag[] = [],
   needPacks = true,
 ): CliArgs {
-  const args: CliArgs = { dirs: [], packsDir: DEFAULT_PACKS_DIR, stack: false, seed: null, load: null, saveFile: null, save: null, overrides: false, populate: false };
+  const args: CliArgs = { dirs: [], packsDir: DEFAULT_PACKS_DIR, stack: false, seed: null, load: null, saveFile: null, save: null, overrides: false, populate: false, exposure: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '-h' || a === '--help') {
@@ -70,6 +72,7 @@ export function parseArgs(
       } else if (a === '--load') args.load = v;
       else if (a === '--packs-dir') args.packsDir = v;
       else if (a === '--save-file') args.saveFile = v;
+      else if (a === '--exposure') args.exposure = v;
       else args.save = v;
     } else if (a.startsWith('-')) fail(`unknown option '${a}'\n${usage}`);
     else args.dirs.push(a);

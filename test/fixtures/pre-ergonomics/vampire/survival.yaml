@@ -7,8 +7,8 @@ statuses:
     label: Sunburnt
     for: 'self.has_tag("undead")'
     # A heavy cloak in the inventory keeps the sun off.
-    when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
-    until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
+    when: 'world.is_day and tile.exposed and not self.has_item("cloak")'
+    until: 'not world.is_day or not tile.exposed'   # lingers until you find real shade
     rates: { hp: -4 }
     hud: { tone: bad, description: Burning in the sun; find shade or a cloak, enter: The sun sears your skin!, exit: Your skin stops smouldering. }
   - id: starving
@@ -29,7 +29,7 @@ systems:
   - id: daylight
     every: 1
     for: 'self.has_tag("undead")'
-    when: 'world.is_day and not tile.has_tag("shade")'
+    when: 'world.is_day and tile.exposed'
     effects:
       - { type: apply, measurement: hp, delta: -0.2 }
   # Restoring.

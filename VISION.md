@@ -135,7 +135,7 @@ code.
     - id: vamp:sunburn
       every: 10s
       for: "has_tag(self, 'vampire')"
-      when: "world.is_day and tile.exposed_to_sky"
+      when: "world.is_day and tile.exposed"
       effects:
         - { type: apply, measurement: hp, delta: -2 }
   ```
@@ -401,10 +401,20 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     layer was needed: rooms already tag regions on every map kind, so
     the outbreak's 36 rects became 4 entries over 3 rooms, and `check
     --populate` shows the candidates and counts.
-  - **Exposure is tagged tile by tile**: the vampire needs `shade` or
+  - ~~**Exposure is tagged tile by tile**: the vampire needs `shade` or
     `sunlit` on every tile, and untagged floors burn as if outdoors. A
     derived "roofed/indoors" property (§4 sketched
-    `tile.exposed_to_sky`) would replace the tags.
+    `tile.exposed_to_sky`) would replace the tags.~~ **Decided**
+    (`tile-exposure`): exposure is **derived from enclosure and cover**
+    at load, static: on each floor the cells are grouped into areas by
+    the enclosing edge tiles, an area touching the map border or an empty
+    cell is open, and a cell under a non-empty cell of the floor above is
+    covered; `tile.exposed` is one array read (§4's
+    `tile.exposed_to_sky`). Two tile overrides keep the exceptions:
+    `encloses: false` on an edge (the garden's fence) and `exposed:
+    true|false` on a cell tile (the sunbeams under the mansion's windows).
+    The `shade`/`sunlit` tags are gone; the mansion's plain floors are
+    shaded like the carpet beside them.
   - Smaller: ~~no count by item tag (`stocked` adds two `count_item`
     calls);~~ (**decided**, `pack-ergonomics`: `count_tagged(entity,
     "tag")` / `has_tagged` sum every stack carrying an item tag, resolved
