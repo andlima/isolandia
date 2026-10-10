@@ -222,8 +222,8 @@ test('check --overrides: the zombie and vampire mods patch the town by overrides
     'vamp override lighting [tint]',
   ]);
   assert.deepEqual(patches('hardship'), [
-    'hardship override measurement std_needs:hunger [rate]',
-    'hardship override measurement std_needs:thirst [rate]',
+    'hardship override measurement std_needs:hunger [rate ×2]',
+    'hardship override measurement std_needs:thirst [rate ×2]',
     'hardship override loot town:kitchen_food [rolls, entries]',
     'hardship remove recipe town:tear_bandage',
   ]);

@@ -3,13 +3,15 @@
 # town alone or on any mod of it.
 
 measurements:
-  # Hunger and thirst build twice as fast.
+  # Hunger and thirst build twice as fast: a term scales whatever rate
+  # std-needs ships (a number is folded, its thirst expression is wrapped),
+  # so a change upstream carries through instead of drifting from a copy.
   - id: std_needs:hunger
     override: true
-    rate: 0.2
+    rate: { scale: 2 }
   - id: std_needs:thirst
     override: true
-    rate: "0.2 + 0.1 * (self.hunger >= 50) + 0.1 * world.is_day"
+    rate: { scale: 2 }
 
 loot:
   # Kitchens were picked over first: fewer rolls, more empty shelves.
