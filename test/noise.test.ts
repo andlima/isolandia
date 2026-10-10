@@ -485,7 +485,7 @@ test('vampire: creaky floorboards bring a bat over; it then returns to roost', (
   const bat = byHome(w, ...M(4, 9));
   assert.equal(bat.archetype.id, 'vamp:bat');
   assert.equal(w.grid.tileAt(...M(9, 9))!.id, 'vamp:creaky');
-  assert.ok(w.grid.tileAt(...M(9, 9))!.tags.includes('shade'));
+  assert.equal(w.def.maps[w.def.start.map]!.exposed[w.grid.index(...M(9, 9), 0)], 0, 'in the shade: enclosed by the mansion');
   place(w.player, ...M(9, 9));
   const states: string[] = [];
   const track = () => {

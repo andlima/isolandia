@@ -212,6 +212,7 @@ function evaluate(w: World, source: string, self: Entity = w.player, npc: Entity
     random: () => 0,
     tileIdAt: () => '',
     tileTagsAt: () => new Set(),
+    exposed: () => false,
     inRoom: () => false,
     los: (x0, y0, x1, y1, z0, z1) => lineOfSight(w.grid, x0, y0, x1, y1, z0, z1),
     warn: () => {},

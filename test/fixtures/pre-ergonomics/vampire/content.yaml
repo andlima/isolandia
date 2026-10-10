@@ -21,37 +21,36 @@ tiles:
     color: "#8b1e2d"
     walkable: true
     sprite: carpet_img
-    tags: [shade]
   # Creaks under the undead's weight: a `creak` system makes noise
-  # (survival.yaml). Only laid in shaded rooms, so it is shaded too.
+  # (survival.yaml).
   - id: creaky
     label: Creaky floorboards
     glyph: ","
     color: "#6b2a30"
     sprite: creaky_img
     walkable: true
-    tags: [creaky, shade]
+    tags: [creaky]
   - id: sunbeam
     label: Sunlit floor
     glyph: "'"
     color: "#e8d27a"
     sprite: sunbeam_img
     walkable: true
-    tags: [sunlit]
+    exposed: true
   - id: crypt
     label: Crypt floor
     glyph: "_"
     color: "#3b3346"
     sprite: crypt_img
     walkable: true
-    tags: [shade, crypt]
+    tags: [crypt]
   - id: font
     label: Blood font
     glyph: "u"
     color: "#c0182c"
     sprite: font_img
     walkable: true
-    tags: [shade, blood]
+    tags: [blood]
   - id: coffin
     label: Coffin
     glyph: "="

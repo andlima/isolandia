@@ -1,16 +1,17 @@
 import type { LoadError } from '../core/index.ts';
 import { fail, loadOrExitIf, parseArgs, stackOrExit } from './common.ts';
+import { formatExposure } from './exposure.ts';
 import { formatOverrides, patchSummary } from './overrides.ts';
 import { formatPopulate } from './populate.ts';
 import { readSaveFile } from './saves.ts';
 
 const args = parseArgs(
   process.argv.slice(2),
-  'usage: npm run check -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--save <file>] [--overrides] [--populate]',
-  ['--seed', '--save', '--packs-dir'],
+  'usage: npm run check -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--save <file>] [--overrides] [--populate] [--exposure <map>]',
+  ['--seed', '--save', '--packs-dir', '--exposure'],
   ['--overrides', '--populate'],
 );
-const { save, overrides, populate } = args;
+const { save, overrides, populate, exposure } = args;
 const dirs = stackOrExit(args);
 
 /**
@@ -37,6 +38,11 @@ if (!r.ok) {
   );
   for (const line of overrides ? formatOverrides(def) : patchSummary(def)) console.log(line);
   if (populate) for (const line of formatPopulate(def)) console.log(line);
+  if (exposure !== null) {
+    const e = formatExposure(def, exposure);
+    if (!e.ok) fail(e.error);
+    for (const line of e.lines) console.log(line);
+  }
   if (save !== null) {
     const s = readSaveFile(def, save);
     if (!s.ok) {

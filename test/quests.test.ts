@@ -878,6 +878,12 @@ test('scenario (vampire): the first dawn succeeds resting in the crypt and, in a
     }
     throw new Error(`no '${tag}' tile`);
   };
+  const exposedCell = (world: World): [number, number, number] => {
+    const g = world.grid;
+    const exposed = world.def.maps[world.def.start.map]!.exposed;
+    for (let y = 0; y < g.height; y++) for (let x = 0; x < g.width; x++) if (g.walkable(x, y, 0) && exposed[g.index(x, y, 0)] === 1) return [x, y, 0];
+    throw new Error('no exposed cell');
+  };
   [w.player.x, w.player.y, w.player.z] = tagged(w, 'crypt');
   w.queueAction({ kind: 'act', action: 'vamp:rest' });
   while (w.tick <= dawn) w.step();
@@ -887,9 +893,9 @@ test('scenario (vampire): the first dawn succeeds resting in the crypt and, in a
   assert.equal(w.victory, null);
   assert.equal(w.defeat, null);
 
-  // Run 2: caught in a sunbeam, badly hurt, as the sun rises.
+  // Run 2: caught in the open, badly hurt, as the sun rises.
   const v = before.world;
-  [v.player.x, v.player.y, v.player.z] = tagged(v, 'sunlit');
+  [v.player.x, v.player.y, v.player.z] = exposedCell(v);
   v.player.m[def.ids.measurements['std:hp']!] = 20;
   while (v.tick <= dawn) v.step();
   assert.equal(stageOf(v, 'vamp:first_dawn'), 'scorched');

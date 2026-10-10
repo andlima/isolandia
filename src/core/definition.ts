@@ -145,6 +145,18 @@ export interface TileDef {
    * `opaque` that it blocks sight across it.
    */
   readonly edge: boolean;
+  /**
+   * Whether this edge tile counts as a wall for the exposure rule (see
+   * `MapDef.exposed`); default true. A low fence sets it false. Always true
+   * for a cell tile (the field is an error there).
+   */
+  readonly encloses: boolean;
+  /**
+   * Exposure override: every cell with this tile is open to the sky (`true`)
+   * or not (`false`) regardless of the rule; null (the default) means
+   * derived. Cell tiles only.
+   */
+  readonly exposed: boolean | null;
 }
 
 /** Tile index of an empty map cell: no tile, not walkable, not opaque, not drawn. */
@@ -496,10 +508,126 @@ export interface MapDef {
   readonly spawns: readonly SpawnDef[];
   readonly playerStart: { readonly x: number; readonly y: number; readonly z: number } | null;
   readonly rooms: RoomsDef;
+  /**
+   * 1 where the cell is **exposed** (open to the sky), by cell index: a
+   * non-empty cell that is neither enclosed by edge walls nor covered by a
+   * cell on the floor above, unless its tile's `exposed` says otherwise (see
+   * `computeExposure`). Static map data: computed at load, not part of the
+   * world state and not updated by `set_tile`.
+   */
+  readonly exposed: Uint8Array;
   /** Seeded scatter zones, applied in order at world creation (parts first, then the map's own). */
   readonly populate: readonly PopulateDef[];
   /** True for a map composed of part maps (`parts`). */
   readonly composite: boolean;
+}
+
+/** The cell and edge data `computeExposure` reads (a `MapDef` before its `exposed`). */
+export interface ExposureInput {
+  readonly width: number;
+  readonly height: number;
+  readonly floors: number;
+  readonly cells: readonly number[];
+  readonly edgeN: readonly number[];
+  readonly edgeW: readonly number[];
+}
+
+/**
+ * The exposure of every cell (docs/packs.md#exposure): on each floor, cells
+ * are grouped into areas (4-neighbours not separated by an enclosing edge
+ * tile); an area is open when a cell of it lies on the map border or is
+ * 4-adjacent, across a non-enclosing edge position, to an empty cell. A
+ * non-empty cell is exposed when its area is open and no non-empty cell
+ * sits at the same (x, y) one floor up; a tile with `exposed` set overrides
+ * that. Empty cells are never exposed. An iterative flood fill, O(cells);
+ * a tile index with no definition (an unresolved reference already
+ * reported) counts as a plain cell or an enclosing edge.
+ */
+export function computeExposure(map: ExposureInput, tiles: readonly TileDef[]): Uint8Array {
+  const { width, height, floors, cells, edgeN, edgeW } = map;
+  const area = width * height;
+  const out = new Uint8Array(area * floors);
+  if (area === 0) return out;
+  /** Does the edge tile `t` (EMPTY_TILE for none) separate the two cells it lies between? */
+  const walls = (t: number): boolean => t !== EMPTY_TILE && (tiles[t]?.encloses ?? true);
+  const seen = new Uint8Array(area);
+  const stack: number[] = [];
+  const members: number[] = [];
+  for (let z = 0; z < floors; z++) {
+    const base = z * area;
+    seen.fill(0);
+    for (let start = 0; start < area; start++) {
+      if (seen[start] || cells[base + start] === EMPTY_TILE) continue;
+      // Flood one area, collecting its cells; it is open once any of them
+      // touches the border or an empty cell across a non-enclosing edge.
+      let open = false;
+      members.length = 0;
+      stack.push(start);
+      seen[start] = 1;
+      while (stack.length) {
+        const i = stack.pop()!;
+        members.push(i);
+        const x = i % width;
+        const y = (i - x) / width;
+        // Each side: on the border it is open; else, unless the edge between
+        // encloses, an empty neighbour opens it and a filled one joins the area.
+        for (let side = 0; side < 4; side++) {
+          let edge: number;
+          let j: number;
+          if (side === 0) {
+            if (y === 0) {
+              open = true;
+              continue;
+            }
+            edge = edgeN[base + i]!;
+            j = i - width;
+          } else if (side === 1) {
+            if (y === height - 1) {
+              open = true;
+              continue;
+            }
+            edge = edgeN[base + i + width]!;
+            j = i + width;
+          } else if (side === 2) {
+            if (x === 0) {
+              open = true;
+              continue;
+            }
+            edge = edgeW[base + i]!;
+            j = i - 1;
+          } else {
+            if (x === width - 1) {
+              open = true;
+              continue;
+            }
+            edge = edgeW[base + i + 1]!;
+            j = i + 1;
+          }
+          if (walls(edge)) continue;
+          if (cells[base + j] === EMPTY_TILE) open = true;
+          else if (!seen[j]) {
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+      }
+      if (open) for (const i of members) out[base + i] = 1;
+    }
+  }
+  // Cover: a non-empty cell on the floor above.
+  for (let z = 0; z + 1 < floors; z++) {
+    const base = z * area;
+    const above = base + area;
+    for (let i = 0; i < area; i++) if (cells[above + i] !== EMPTY_TILE) out[base + i] = 0;
+  }
+  // Tile overrides.
+  for (let i = 0; i < out.length; i++) {
+    const t = cells[i]!;
+    if (t === EMPTY_TILE) continue;
+    const o = tiles[t]?.exposed ?? null;
+    if (o !== null) out[i] = o ? 1 : 0;
+  }
+  return out;
 }
 
 /** An entity no load-time expression reads (populate `where` sees only `tile`). */
@@ -542,6 +670,10 @@ function tileContext(map: MapDef, tiles: readonly TileDef[]): { ctx: ExprContext
     inRoom: (x, y, z, tag) => {
       const i = index(x, y, z);
       return i >= 0 && map.rooms.sets[map.rooms.cellSet[i]!]!.includes(tag);
+    },
+    exposed: (x, y, z) => {
+      const i = index(x, y, z);
+      return i >= 0 && map.exposed[i] === 1;
     },
     los: () => false,
     warn: () => {},

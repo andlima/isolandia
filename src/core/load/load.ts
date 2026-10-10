@@ -25,6 +25,7 @@ import {
   type DialogueNodeDef,
   type DialogueSpeaker,
   type DialogueStartDef,
+  computeExposure,
   EMPTY_TILE,
   MAX_DIALOGUE_CHOICES,
   type OutcomeDef,
@@ -647,14 +648,19 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb', 'edge'], 'tile');
+    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb', 'edge', 'encloses', 'exposed'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
     const edge = f.boolean('edge', false) ?? false;
     if (edge) {
       for (const k of ['container', 'climb'] as const) {
         if (f.has(k)) this.sink.add(f.at(k), `an edge tile ('edge: true') cannot take '${k}': edges are thin walls between cells, not cells`);
       }
+      if (f.has('exposed')) this.sink.add(f.at('exposed'), `an edge tile ('edge: true') cannot take 'exposed': exposure is a property of cells (docs/packs.md#exposure)`);
+    } else if (f.has('encloses')) {
+      this.sink.add(f.at('encloses'), `'encloses' is only allowed on an edge tile ('edge: true'): it says whether the edge counts as a wall for exposure (docs/packs.md#exposure)`);
     }
+    const encloses = f.boolean('encloses', false) ?? true;
+    const exposed = f.boolean('exposed', false) ?? null;
     if (d.index >= EMPTY_TILE) this.sink.add(d.entry.src, `too many tiles: at most ${EMPTY_TILE} tiles can be loaded`);
     let climb: TileDef['climb'] = null;
     const rawClimb = f.string('climb', false);
@@ -684,6 +690,8 @@ class Loader {
       container: edge ? null : container,
       climb: edge ? null : climb,
       edge,
+      encloses: edge ? encloses : true,
+      exposed: edge ? null : exposed,
     };
   }
 
@@ -939,6 +947,7 @@ class Loader {
         playerStart,
         // The Tiled `room` objects, then any `rooms` written in YAML (a mod can tag a part's cells).
         rooms: this.roomSets([...rects, ...this.roomRects(f, width, height, floors)], width, height, floors),
+        exposed: computeExposure(tiled, this.tileDefs),
         populate: [],
         composite: false,
       };
@@ -1118,12 +1127,13 @@ class Loader {
     };
     if (this.sink.count === before) this.checkLinks(cells, width, height, floors, rowSrc);
     const rooms = this.roomSets(this.roomRects(f, width, height, floors), width, height, floors);
-    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, edgeN, edgeW, facings, spawns, playerStart, rooms, populate: [], composite: false };
+    const exposed = computeExposure({ width, height, floors, cells, edgeN, edgeW }, this.tileDefs);
+    const map: MapDef = { id: d.id, index: d.index, width, height, floors, cells, edgeN, edgeW, facings, spawns, playerStart, rooms, exposed, populate: [], composite: false };
     return this.sink.count === before ? this.withPopulate(this.withSpawns(map, f, d.scopeOf('spawns')), f, d.scopeOf('populate')) : map;
   }
 
   private emptyMap(d: Defined, composite = false): MapDef {
-    return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], edgeN: [], edgeW: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), populate: [], composite };
+    return { id: d.id, index: d.index, width: 0, height: 0, floors: 1, cells: [], edgeN: [], edgeW: [], facings: [], spawns: [], playerStart: null, rooms: this.roomSets([], 0, 0, 1), exposed: new Uint8Array(0), populate: [], composite };
   }
 
   /**
@@ -1328,6 +1338,8 @@ class Loader {
       spawns,
       playerStart,
       rooms: this.roomSets(rects, width, height, floors),
+      // Judged on the composed map: a part's walls on its own border enclose once a neighbour fills the cells beyond.
+      exposed: computeExposure({ width, height, floors, cells, edgeN, edgeW }, this.tileDefs),
       populate: [],
       composite: true,
     };

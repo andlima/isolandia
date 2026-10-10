@@ -11,7 +11,7 @@ quests:
       # stop on shaded tiles); the crypt's floor is shaded, so resting there counts.
       - id: survived
         end: success
-        when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or tile.has_tag("shade"))'
+        when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or not tile.exposed)'
         journal: You lay in the dark while the sun rose. The first dawn is behind you.
       # Later stages win ties: burnt below a quarter of health (max 100) in daylight fails it.
       - id: scorched
