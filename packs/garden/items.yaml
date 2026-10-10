@@ -11,7 +11,7 @@ items:
     use:
       label: Nibble
       effects:
-        - { type: apply, measurement: energy, delta: 15 }
+        - { apply: { energy: 15 } }
   - id: strawberry
     label: Strawberry
     glyph: "%"
@@ -22,7 +22,7 @@ items:
     use:
       label: Munch
       effects:
-        - { type: apply, measurement: energy, delta: 25 }
+        - { apply: { energy: 25 } }
   - { id: acorn, label: Acorn, glyph: ",", color: "#a8743a", weight: 0.1, tags: [junk], sprite: acorn_img }
   - { id: feather, label: Feather, glyph: "'", color: "#f0f0ff", weight: 0.05, tags: [junk], sprite: feather_img }
 
