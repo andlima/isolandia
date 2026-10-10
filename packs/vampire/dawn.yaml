@@ -13,8 +13,8 @@ quests:
         end: success
         when: 'world.day >= 2 and world.is_day and (doing(self, "rest") or tile.has_tag("shade"))'
         journal: You lay in the dark while the sun rose. The first dawn is behind you.
-      # Later stages win ties: burnt below a quarter of health (max 100) in daylight fails it.
+      # Later stages win ties: burnt below a quarter of health in daylight fails it.
       - id: scorched
         end: failure
-        when: 'world.is_day and self.hp < 25'
+        when: 'world.is_day and fraction(self, "hp") < 0.25'
         journal: The sun found you. You crawled into the dark, more ash than flesh.

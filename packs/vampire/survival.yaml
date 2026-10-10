@@ -1,11 +1,15 @@
 # Survival loop: the sun burns, hunger for blood weakens. Carpet, crypt and
 # font tiles are shaded; sunbeams under the windows are not. Blood vials from
-# the cellar's wine racks (items.yaml) restore blood anywhere.
+# the cellar's wine racks (items.yaml) restore blood anywhere. The file's
+# `defaults` makes every rule the vampire's unless it writes its own `for`
+# (the bats' rules, and `scorch`, which keys on a status).
+
+defaults:
+  for: 'self.has_tag("undead")'
 
 statuses:
   - id: sunburnt
     label: Sunburnt
-    for: 'self.has_tag("undead")'
     # A heavy cloak in the inventory keeps the sun off.
     when: 'world.is_day and tile.has_tag("sunlit") and not self.has_item("cloak")'
     until: 'not world.is_day or tile.has_tag("shade")'   # lingers until you find real shade
@@ -13,7 +17,6 @@ statuses:
     hud: { tone: bad, description: Burning in the sun; find shade or a cloak, enter: The sun sears your skin!, exit: Your skin stops smouldering. }
   - id: starving
     label: Starving
-    for: 'self.has_tag("undead")'
     when: "self.blood <= 10"
     until: "self.blood >= 25"
     rates: { hp: -0.25 }
@@ -32,26 +35,23 @@ systems:
     every: 1
     for: 'self.has_status("sunburnt")'
     effects:
-      - { type: apply, measurement: blood, delta: -1 }
+      - { apply: { blood: -1 } }
   - id: daylight
     every: 1
-    for: 'self.has_tag("undead")'
     when: 'world.is_day and not tile.has_tag("shade")'
     effects:
-      - { type: apply, measurement: hp, delta: -0.2 }
+      - { apply: { hp: -0.2 } }
   # Restoring.
   - id: feed
     every: 1
-    for: 'self.has_tag("undead")'
     when: 'tile.has_tag("blood")'
     effects:
-      - { type: apply, measurement: blood, delta: 5 }
+      - { apply: { blood: 5 } }
   - id: mend
     every: 5
-    for: 'self.has_tag("undead")'
     when: "self.blood >= 30 and not self.has_status(\"starving\")"
     effects:
-      - { type: apply, measurement: hp, delta: 1 }
+      - { apply: { hp: 1 } }
   # Noise: a bat that spots the vampire screeches (it wakes a resting one).
   - id: screech
     every: 1
@@ -63,7 +63,6 @@ systems:
   # hear it (behaviors).
   - id: creak
     on: step
-    for: 'self.has_tag("undead")'
     when: 'tile.has_tag("creaky")'
     effects:
       - { type: noise, radius: 8 }
@@ -126,4 +125,4 @@ actions:
     duration: 10
     interrupt: { on: noise }
     effects:
-      - { type: apply, measurement: hp, delta: 30 }
+      - { apply: { hp: 30 } }

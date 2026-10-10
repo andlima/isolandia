@@ -217,7 +217,7 @@ test('check --overrides: the zombie and vampire mods patch the town by overrides
   ]);
   assert.deepEqual(patches('vampire'), [
     'vamp override tile town:window [color, sprite]',
-    'vamp override start [map, player, defeat.when, defeat.message]',
+    'vamp override start [map, player, defeat.message]',
     'vamp override clock [start]',
     'vamp override lighting [tint]',
   ]);

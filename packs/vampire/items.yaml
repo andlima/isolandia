@@ -8,7 +8,7 @@ items:
     use:
       label: Drink
       effects:
-        - { type: apply, measurement: blood, delta: 20 }
+        - { apply: { blood: 20 } }
   # Filled at the blood font (recipes.yaml).
   - { id: empty_vial, label: Empty vial, glyph: "!", color: "#8cc0ec", weight: 0.2, tags: [junk], sprite: empty_vial_img }
   # Old wine laced with blood (recipes.yaml): a richer drink than a vial.
@@ -21,8 +21,7 @@ items:
     use:
       label: Drink
       effects:
-        - { type: apply, measurement: blood, delta: 30 }
-        - { type: apply, measurement: hp, delta: 5 }
+        - { apply: { blood: 30, hp: 5 } }
   - id: cloak
     label: Heavy cloak
     glyph: "["
@@ -35,7 +34,7 @@ items:
       consume: 0                    # reusable: wrapping up soothes a burn
       when: 'self.has_status("sunburnt")'
       effects:
-        - { type: apply, measurement: hp, delta: 1 }
+        - { apply: { hp: 1 } }
   - { id: wine, label: Old wine, glyph: "!", color: "#7a2040", weight: 1.2, tags: [junk], sprite: wine_img }
   - { id: tome, label: Dusty tome, glyph: "?", color: "#8a7a5a", weight: 1.5, tags: [junk], sprite: tome_img }
   - { id: candle, label: Candle, glyph: "i", color: "#f0e8c0", weight: 0.2, tags: [junk], sprite: candle_img }
