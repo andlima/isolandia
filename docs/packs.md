@@ -792,35 +792,62 @@ populate entries stay in YAML).
 
 `populate` scatters many NPCs with a seeded RNG. It is allowed on **any**
 map; on a part map it is applied **once per placement**, offset by `at`.
+An entry says how many (`count`) or how dense (`density`), and which cells
+(`rect`, `floor`, `room`, and a `where` expression over the cell).
 
 ```yaml
 populate:
   - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
   - { archetype: crawler, count: 1, floor: 1, room: bedroom }
+  - { archetype: shambler, density: 1.2, where: 'tile.in_room("downtown") and not tile.in_room("center")' }
+  - { archetype: rabbit, density: 0.5, where: 'tile.has_tag("grass")' }
 ```
 
 | Field | Notes |
 |---|---|
 | `archetype` | Required. |
-| `count` | Integer ≥ 1. |
+| `count` | Integer ≥ 1. Exactly one of `count` and `density`. |
+| `density` | Number > 0: entities per **100 candidate cells**. The count is `round(density × candidates / 100)`. |
 | `rect` | `[x, y, w, h]` inside the map; defaults to the whole map. |
 | `floor` | Default 0. |
 | `room` | A room tag: only cells in such a room. |
+| `where` | An expression over `tile`: only cells where it is truthy. |
 
 **Candidate cells** are walkable, inside the rect, on the floor, in the room
-(when given), not a container tile, and not the player start. At world
-creation, right after the explicit spawns, entries are applied in order
-(the parts' entries first, then the composite's own): each draws `count`
-cells **without replacement**, skipping cells an earlier entry took, so a
-cell gets at most one populated entity (it may still hold an explicit
-spawn). Entity ids follow placement order. Draws use a dedicated RNG
-derived from the seed (its own salt, like loot): `world.rng` and loot rolls
-are unaffected.
+(when given), not a container tile, not the player start, and where
+`where` holds. At world creation, right after the explicit spawns, entries
+are applied in order (the parts' entries first, then the composite's own):
+each draws its count of cells **without replacement**, skipping cells an
+earlier entry took, so a cell gets at most one populated entity (it may
+still hold an explicit spawn). Entity ids follow placement order. Draws use
+a dedicated RNG derived from the seed (its own salt, like loot):
+`world.rng` and loot rolls are unaffected.
+
+**`density`** derives the count from the candidates, so a distribution is a
+few lines over tagged rooms instead of a grid of hand-counted rects, and
+re-laying the map or placing a part more often re-derives it. The count is
+computed **per placement** on the composed map (a part with a density entry
+placed five times gets five draws, each sized by its own candidates), and
+a density that rounds to **0** places nothing without error. The candidates
+and derived counts do not depend on the seed: `npm run check -- <packs>
+--populate` prints them (see [Validation](#validation)).
+
+**`where`** is evaluated **once per candidate cell at load**, with `tile` =
+that cell (`tile.x`, `tile.y`, `tile.z`, `tile.id`, `tile.has_tag(…)`,
+`tile.in_room(…)`), as the target cell of a tile action. There is no world
+yet: `self`, `player`, `npc`, `world`, `random`, `roll` and the built-ins
+that read an entity or world state are load errors naming the field, and so
+is a non-boolean result. `room: bedroom` and `where: 'tile.in_room("bedroom")'`
+give the same candidates; `where` is for what `room` cannot say (a room
+minus another, a tile tag). On a part map, `where` sees the part's cells at
+their composite coordinates, so `tile.in_room` resolves the composite's
+rooms too. An override replaces the `populate` list whole, as any list.
 
 Candidates do not depend on the seed, so counts are checked at load: a
-`count` above the entry's candidates (per placement) is an error, and so is
-one that might not fit after the cells earlier overlapping entries can take.
-Saves store the placed entities; `restore` never re-populates.
+count (given or derived) above the entry's candidates (per placement) is an
+error, and so is one that might not fit after the cells earlier overlapping
+entries can take. Saves store the placed entities; `restore` never
+re-populates.
 
 ### `systems`
 
@@ -2379,7 +2406,8 @@ different fields. `distributions` have no ids and cannot be patched.
 
 **Checking a stack.** `npm run check` prints one line per pack that patched
 anything (`hardship: 3 overrides, 1 removal`). With `--overrides` it lists
-the stack and every patch:
+the stack and every patch, and with `--populate` what every
+[populate](#populate) entry places (see [Validation](#validation)):
 
 ```
 npm run check -- zombie hardship --overrides
@@ -2603,7 +2631,14 @@ definition or from a pack that does not depend on its definer; and a
 required field cleared with `null`. Map `spawns`: an entry that is not a
 mapping, a missing or unknown `archetype`, an `at` that is not
 `[x, y]`/`[x, y, z]` integers or lies outside the map or on an empty cell,
-and `spawns` on a composite. [Edge walls](#edge-walls): an edge tile with
+and `spawns` on a composite. Map [`populate`](#populate): both or neither
+of `count` and `density`, a `count` that is not an integer ≥ 1, a
+`density` that is not a number > 0, a `where` that is not a string, that
+names anything but `tile` (`self`, `player`, `npc`, `world`, `random`,
+`roll`, `has_status`, `var`, …) or that is not boolean, an unknown room
+tag in `room` or `tile.in_room`, and a count (given, or derived from the
+density) above the entry's candidate cells or not sure to fit after the
+cells earlier overlapping entries can take. [Edge walls](#edge-walls): an edge tile with
 `container` or `climb`; an edge tile in a cell or a cell tile on an edge
 (ASCII rows, with the row and column; Tiled layers, naming the layer); a
 spawn or player start on an edge position; `edges: true` rows that are
@@ -2617,6 +2652,28 @@ unrelated packs patching the same field) are printed but do not fail the
 load.
 A successful load returns an immutable, fully
 resolved definition (ids → indices, expressions → closures).
+
+`npm run check -- <packs> --populate` also prints, for every map with
+populate entries (a composite lists its parts' entries once per placement,
+in application order), one line per entry with the archetype, `count N` or
+`density d → N`, the candidate cells after `where`, and the cells sure to
+be free after earlier overlapping entries, then the map's total:
+
+```
+npm run check -- zombie --populate     (abridged)
+populate:
+  town:house_c
+    zmb:crawler  count 1  83 candidates, 83 free
+    total 1
+  town:city
+    zmb:crawler   count 1            83 candidates, 83 free
+    …
+    zmb:shambler  density 1.2 → 400  33319 candidates, 33319 free
+    zmb:crawler   density 0.15 → 50  33319 candidates, 32919 free
+    zmb:shambler  density 0.6 → 397  66169 candidates, 66169 free
+    zmb:shambler  density 0.4 → 48   12024 candidates, 12024 free
+    total 953
+```
 
 ## Engine layout
 

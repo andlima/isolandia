@@ -107,6 +107,7 @@ Validate a pack stack without running it:
 npm run packs                                  # list the available packs
 npm run check -- vampire
 npm run check -- zombie --overrides            # what the mod changes in the town
+npm run check -- zombie --populate             # what each populate entry places, and where
 npm run check -- garden
 npm run check -- garden --save my-save.json   # validate a save too
 ```

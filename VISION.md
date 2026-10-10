@@ -354,9 +354,17 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     shallow merge of `m7-overrides`.
   - **`for` is repeated on every rule**: `has_tag("living")` 9 times,
     `undead` 5, `bunny` 4. Candidate: a default `for` per file or group.
-  - **Spawn grids are hand-computed**: `zombie/outbreak.yaml` has 36
+  - ~~**Spawn grids are hand-computed**: `zombie/outbreak.yaml` has 36
     `populate` rects over the city's 59×59 blocks. Candidates: density
-    by room or region tag, or a Tiled region layer.
+    by room or region tag, or a Tiled region layer.~~ **Decided in
+    `populate-density`:** spawn density is **per candidate cell over
+    tagged rooms** (`density: n` per 100 candidate cells, the count
+    derived at load per placement), with a `where` expression over
+    `tile` as the cell filter (`tile.in_room("downtown") and not
+    tile.in_room("center")`, `tile.has_tag("grass")`). No Tiled region
+    layer was needed: rooms already tag regions on every map kind, so
+    the outbreak's 36 rects became 4 entries over 3 rooms, and `check
+    --populate` shows the candidates and counts.
   - **Exposure is tagged tile by tile**: the vampire needs `shade` or
     `sunlit` on every tile, and untagged floors burn as if outdoors. A
     derived "roofed/indoors" property (§4 sketched
