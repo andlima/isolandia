@@ -38,6 +38,7 @@ import {
   type ItemCount,
   type ItemDef,
   type ItemUseDef,
+  type InterruptDef,
   type JournalEntryDef,
   type QuestDef,
   type QuestStageDef,
@@ -94,6 +95,10 @@ const MAP_FIELDS = ['id', 'tiled', ...ASCII_MAP_FIELDS, ...COMPOSITE_MAP_FIELDS,
 const isComposite = (v: { [k: string]: unknown }): boolean => COMPOSITE_MAP_FIELDS.some((k) => v[k] !== undefined);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const DEFAULT_EVERY = 1 / TICKS_PER_SECOND;
+/** Events a system may fire on (`on`). */
+const SYSTEM_EVENTS: readonly string[] = ['step', 'noise'];
+/** Events an activity's `interrupt: { on }` may name. */
+const INTERRUPT_EVENTS: readonly string[] = ['noise'];
 const DEFAULT_DEFEAT_MESSAGE = 'Game over';
 const DEFAULT_VICTORY_MESSAGE = 'Victory';
 const EFFECT_FIELDS: Record<EffectDef['type'], string> = {
@@ -176,7 +181,12 @@ class Loader {
     this.checkLootCycles(loot);
     const distributions = this.distributions(tiles, loot, items);
     const statuses = this.defined.statuses.map((d) => this.status(d));
-    const systems = this.defined.systems.map((d) => this.system(d));
+    let onceCount = 0;
+    const systems = this.defined.systems.map((d) => {
+      const s = this.system(d, onceCount);
+      if (s.once) onceCount++;
+      return s;
+    });
     const behaviors = this.defined.behaviors.map((d) => this.behavior(d));
     const actions = this.defined.actions.map((d) => this.action(d, tiles));
     const recipes = this.defined.recipes.map((d) => this.recipe(d, tiles));
@@ -653,8 +663,8 @@ class Loader {
         } else consume = cv;
       }
       const duration = this.duration(uf, d.scopeOf('use'));
-      const interruptFn = this.condition(uf, 'interrupt', d.scopeOf('use')) ?? null;
-      use = { label: useLabel, whenFn, effects, consume, duration, interruptFn };
+      const interrupt = this.interrupt(uf, d.scopeOf('use'));
+      use = { label: useLabel, whenFn, effects, consume, duration, interrupt };
     }
     return { id: d.id, index: d.index, label, glyph, color, weight, tags, sprite, use };
   }
@@ -1600,18 +1610,39 @@ class Loader {
     return { tone, description: hf.string('description', false) ?? '', enter: hf.string('enter', false) ?? enter, exit: hf.string('exit', false) ?? exit };
   }
 
-  private system(d: Defined): SystemDef {
-    const f = this.fields(d, ['id', 'every', 'for', 'when', 'effects'], 'system');
-    let every = f.number('every', false) ?? DEFAULT_EVERY;
-    const period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
-    if (every <= 0) every = DEFAULT_EVERY;
+  /** A system; `onceIndex` is its bit among the `once` systems (used only when it is one). */
+  private system(d: Defined, onceIndex: number): SystemDef {
+    const f = this.fields(d, ['id', 'every', 'on', 'once', 'for', 'when', 'effects'], 'system');
+    let on: SystemDef['on'] = null;
+    const rawOn = f.raw('on');
+    if (rawOn !== undefined && rawOn !== null) {
+      if (rawOn === 'step' || rawOn === 'noise') on = rawOn;
+      else {
+        const near = typeof rawOn === 'string' ? nearMiss(rawOn, SYSTEM_EVENTS) : null;
+        this.sink.add(f.at('on'), `field 'on' must be 'step' or 'noise', got ${JSON.stringify(rawOn)}${near ? ` (did you mean '${near}'?)` : ''}`);
+      }
+      if (f.has('every')) this.sink.add(f.at('on'), `field 'on' cannot be combined with 'every': an event system has no period`);
+    }
+    let every = 0;
+    let period = 0;
+    if (on === null) {
+      every = f.number('every', false) ?? DEFAULT_EVERY;
+      period = this.ticks(f, 'every', every) ?? Math.max(1, Math.round(every * TICKS_PER_SECOND));
+      if (every <= 0) every = DEFAULT_EVERY;
+    }
+    let once = false;
+    const rawOnce = f.raw('once');
+    if (rawOnce !== undefined && rawOnce !== null) {
+      if (typeof rawOnce === 'boolean') once = rawOnce;
+      else this.sink.add(f.at('once'), `field 'once' must be true or false, got ${JSON.stringify(rawOnce)}`);
+    }
     const forExpr = this.conditionExpr(f, 'for', d.scopeOf('for'));
     const forFn = forExpr?.fn ?? null;
     const forTag = forExpr?.selfTag ?? null;
     const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
 
     const effects = this.effects(f, d.scopeOf('effects'));
-    return { id: d.id, index: d.index, every, period, forFn, forTag, whenFn, effects };
+    return { id: d.id, index: d.index, on, every, period, once, onceIndex: once ? onceIndex : -1, forFn, forTag, whenFn, effects };
   }
 
   /** Sim seconds (> 0, a whole number of ticks) → ticks; reports and returns null otherwise. */
@@ -2176,6 +2207,38 @@ class Loader {
     return NO_DURATION;
   }
 
+  /**
+   * Optional `interrupt`: an expression (or boolean), checked every tick after
+   * the start, or a mapping `{ on: noise, when? }`, checked on the tick the
+   * actor hears a noise. Null when absent or after an error.
+   */
+  private interrupt(f: Fields, scope: Scope): InterruptDef | null {
+    const v = f.raw('interrupt');
+    if (v === undefined || v === null) return null;
+    if (typeof v === 'string' || typeof v === 'boolean') {
+      const fn = this.condition(f, 'interrupt', scope);
+      return fn ? { kind: 'expr', fn } : null;
+    }
+    if (!isObject(v)) {
+      this.sink.add(f.at('interrupt'), `field 'interrupt' must be an expression or a mapping like { on: noise }, got ${JSON.stringify(v)}`);
+      return null;
+    }
+    const ef = new Fields(this.sink, f.at('interrupt'), v, ['on', 'when'], 'interrupt');
+    const on = ef.raw('on');
+    let ok = true;
+    if (on === undefined || on === null) {
+      ef.present('on');
+      ok = false;
+    } else if (on !== 'noise') {
+      const near = typeof on === 'string' ? nearMiss(on, INTERRUPT_EVENTS) : null;
+      this.sink.add(ef.at('on'), `field 'on' must be 'noise', got ${JSON.stringify(on)}${near ? ` (did you mean '${near}'?)` : ''}`);
+      ok = false;
+    }
+    const whenFn = this.condition(ef, 'when', scope);
+    if (whenFn === null || !ok) return null;
+    return { kind: 'event', on: 'noise', whenFn: whenFn ?? null };
+  }
+
   /** A tile filter `{ tiles?, tags? }` (at least one non-empty list); null after an error. */
   private tileFilter(v: Json, src: Src, scope: Scope, tiles: readonly TileDef[]): TileFilterDef | null {
     if (!isObject(v)) {
@@ -2268,14 +2331,14 @@ class Loader {
     const consume = this.itemCounts(f, 'consume', d.scopeOf('consume'), 'consumed');
     const rawConsume = f.raw('consume');
     const duration = this.duration(f, d.scopeOf('duration'));
-    const interruptFn = this.condition(f, 'interrupt', d.scopeOf('interrupt')) ?? null;
+    const interrupt = this.interrupt(f, d.scopeOf('interrupt'));
     const effects = this.effects(f, d.scopeOf('effects'), { optional: true, setTile: tileTarget });
     if (target) this.checkSetTileKinds(f, target, effects, tiles);
     const rawEffects = f.raw('effects');
     if ((!Array.isArray(rawEffects) || rawEffects.length === 0) && !(isObject(rawConsume) && Object.keys(rawConsume).length > 0)) {
       this.sink.add(f.src, `action '${d.id}' does nothing: it needs 'effects' or 'consume'`);
     }
-    return { id: d.id, index: d.index, label, progress, target, whenFn, unavailable, tools, consume, duration, interruptFn, effects };
+    return { id: d.id, index: d.index, label, progress, target, whenFn, unavailable, tools, consume, duration, interrupt, effects };
   }
 
   /**
@@ -2328,9 +2391,9 @@ class Loader {
     const whenFn = this.condition(f, 'when', d.scopeOf('when')) ?? null;
     const unavailable = f.string('unavailable', false) ?? null;
     const duration = this.duration(f, d.scopeOf('duration'));
-    const interruptFn = this.condition(f, 'interrupt', d.scopeOf('interrupt')) ?? null;
+    const interrupt = this.interrupt(f, d.scopeOf('interrupt'));
     const effects = this.effects(f, d.scopeOf('effects'), { optional: true });
-    return { id: d.id, index: d.index, label, verb, category, progress, tools, consume, produce, station, whenFn, unavailable, duration, interruptFn, effects };
+    return { id: d.id, index: d.index, label, verb, category, progress, tools, consume, produce, station, whenFn, unavailable, duration, interrupt, effects };
   }
 
   /** `start.defeat` / `start.victory`: `{ when, message? }`. */

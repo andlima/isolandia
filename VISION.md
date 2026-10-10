@@ -318,18 +318,28 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     `not has_status(player, "hidden")` to `when` and `until`; a new
     observer that forgets it sees through bushes. Hiding belongs in
     `can_see` (a tile or status that modifies sight).
-  - **Footsteps are polled.** `crunch` (`every: 0.2`), `creak` (`0.1`)
+  - ~~**Footsteps are polled.** `crunch` (`every: 0.2`), `creak` (`0.1`)
     and `hop` (`0.2`) mean "noise on each step" but fire while standing
-    still, at a period guessed from the walking speed. Candidate:
-    **event triggers** (tile `on_enter`/`on_step` effects, or systems
-    `on: step`).
-  - **Tick order leaks into pack data.** The bandage's `interrupt:
+    still, at a period guessed from the walking speed.~~ **Decided**
+    (`pack-event-triggers`): footsteps, one-shots and noise interrupts
+    are **events**. A system takes `on: step` (the tick an entity lands on
+    a cell, player or NPC, one firing per cell) or `on: noise` (the tick
+    it hears one) instead of `every`, and `once: true` (at most once per
+    entity, saved as `fired`); an action, item use or recipe takes
+    `interrupt: { on: noise, when? }`, checked on the tick the noise
+    lands. Noise systems and event interrupts run in a sub-phase right
+    after hearing, and a noise they emit is carried to the next tick, so a
+    tick runs one hear phase and a scream that startles the neighbours is
+    a chain of ticks. Tile-level `on_enter` hooks were not added: a step
+    system with a tile `when` covers them for every tile at once.
+    `crunch`, `creak` and `hop` are `on: step`; `survival_tip` is `once`.
+  - ~~**Tick order leaks into pack data.** The bandage's `interrupt:
     "heard(self, 0.2)"` carries a comment explaining that hearing lands
-    after the work step. Candidate: interrupt on events (`on: noise`).
-  - **One-shot triggers are hand-built**: `survival_tip` polls `not
-    in_journal(...)` every tick; first quest stages use `when: "true"`.
-    Social games will multiply these. Candidate: `once: true`, or the
-    event triggers above.
+    after the work step.~~ Decided with the event triggers above: the
+    bandage and the vampire's `rest` use `interrupt: { on: noise }`.
+  - **One-shot triggers are hand-built**: ~~`survival_tip` polls `not
+    in_journal(...)` every tick;~~ (`once: true` now, see above) first
+    quest stages use `when: "true"`. Social games will multiply these.
   - **Two spellings for changing a measurement**: statuses write `rates:
     { hp: -0.2 }`, effects write `{ type: apply, measurement: hp, delta:
     -0.2 }` (~25 times, mostly items). Candidate shorthand: `apply: {

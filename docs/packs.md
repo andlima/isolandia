@@ -824,13 +824,15 @@ Saves store the placed entities; `restore` never re-populates.
 
 ### `systems`
 
-Periodic rules that run on their own. Each system runs **once per entity**
-when it is due.
+Rules that run on their own: **periodically** (`every`) or **on an event**
+(`on`). Each system runs **once per entity** when it is due.
 
 | Field     | Type                 | Default          | Notes |
 |-----------|----------------------|------------------|-------|
 | `id`      | id                   | required         | Own id space |
-| `every`   | number (sim seconds) | `0.1` (each tick)| Must be > 0 and a whole number of ticks (`every × 10` an integer); converted to ticks at load |
+| `every`   | number (sim seconds) | `0.1` (each tick)| Must be > 0 and a whole number of ticks (`every × 10` an integer); converted to ticks at load. Not allowed with `on` |
+| `on`      | `step` or `noise`    | none             | Fire on an event instead of a period (see below) |
+| `once`    | boolean              | `false`          | Fire at most once per entity (see below) |
 | `for`     | expression           | `true`           | Entity filter |
 | `when`    | expression           | `true`           | Extra condition, evaluated only when `for` holds |
 | `effects` | list                 | required         | Non-empty; see below |
@@ -841,6 +843,39 @@ entity, in entity order, it runs its effects when `for` and then `when`
 are truthy, with `self` = that entity and `tile` = the tile under it.
 Systems run in definition order: pack load order, then the order of
 entries within the pack. A system that is not due costs nothing.
+
+**Event systems.** `on` makes a system fire for an entity on the tick
+something happens to it, instead of on a period (`every` next to `on` is a
+load error: an event system has no period; any other `on` value is an
+error with a suggestion). `for` and `when` keep their meaning, evaluated
+in that order with `self` = the entity the event happened to and `tile` =
+the cell under it **after** the event:
+
+- `on: step` — the entity **landed on a cell** this tick: a step to a
+  neighbouring cell or a climb across a link (a floor change). A turn in
+  place, a blocked step, a cancelled path or a dormant NPC (which never
+  moves) fire nothing. It fires for the player and NPCs alike, and once for
+  every cell of a path. Step systems run in the systems phase (phase 3 of
+  the [tick](#tick-order)), in definition order with the periodic ones, so
+  a `noise` they emit is heard in the same tick's hear phase.
+- `on: noise` — the entity **heard a noise** this tick (the tick its last
+  heard noise is set, as `heard(self, 0.1)` reads). An entity that hears
+  two noises in one tick fires once; a noise's source never hears it, so it
+  never fires for it. Noise systems run right **after** hearing (phase 4b),
+  so statuses see their effects on the same tick. A `noise` effect emitted
+  by a noise system is **carried to the next tick**: it is heard in the
+  next tick's hear phase, never in this one, so a tick runs one hear phase
+  and a scream that startles the neighbours is a chain of ticks, never a
+  loop inside one.
+
+**`once: true`** makes a system fire **at most once per entity**: after its
+effects run for an entity, the system never fires for that entity again,
+in this world or in any save of it (the state is part of the snapshot and
+the hash, as `fired` on the entity; see [saves](saves.md)). It combines
+with `every` or with `on`. A `once` system whose `for` and `when` never
+hold never fires; a system that fires but whose effects all turn out to be
+no-ops (a journal entry already there) still counts as fired. `once:
+false` is the same as omitting it; any other value is an error.
 
 **Effects** act on `self`, or on the world:
 
@@ -904,12 +939,19 @@ systems:
     when: "self.hunger >= 100"
     effects:
       - { type: apply, measurement: hp, delta: -3 }
-  - id: crunch                     # broken glass is loud underfoot
-    every: 0.2
+  - id: crunch                     # broken glass is loud underfoot: once per step onto it
+    on: step
     for: 'self.has_tag("living")'
     when: 'tile.has_tag("glass")'
     effects:
       - { type: noise, radius: 12 }
+  - id: survival_tip               # the first time only, per entity
+    once: true
+    every: 1
+    for: 'self.has_tag("living")'
+    when: 'self.has_status("burdened") or self.has_status("hungry")'
+    effects:
+      - { type: journal, entry: travel_light }
 ```
 
 ### `statuses`
@@ -1105,15 +1147,17 @@ container holds stacks `{ item, count }`.
   use with a duration > 0 is **timed**: the item must still be held and
   `when` must still hold at completion, and `effects` run and `consume`
   units are removed only then. `0` keeps the use instant, exactly as above;
-- `interrupt` — an optional condition checked every tick of a timed use
-  after its start; truthy ends it with `interrupted` (the item is kept).
+- `interrupt` — optional, as for [actions](#actions): a condition checked
+  every tick of a timed use after its start, or `{ on: noise, when? }` to
+  end it on the tick the user hears a noise; either ends the use with
+  `interrupted` (the item is kept).
 
 ```yaml
     use:
       label: Apply
       when: "self.hp < 100"
       duration: 3
-      interrupt: "heard(self, 0.2)"   # a noise nearby wastes the attempt
+      interrupt: { on: noise }        # a noise that reaches you wastes the attempt
       effects:
         - { type: apply, measurement: hp, delta: 20 }
 ```
@@ -1150,7 +1194,7 @@ shutters, resting.
 | `tools`     | list of item ids             | `[]`     | Held (≥ 1 unit) at start and at completion; never consumed |
 | `consume`   | map item id → integer ≥ 1    | `{}`     | Held at start and at completion; removed at completion |
 | `duration`  | number ≥ 0 or expression     | `0`      | Sim seconds (see below) |
-| `interrupt` | expression                   | none     | Checked every tick after the start; truthy cancels |
+| `interrupt` | expression or `{ on: noise, when? }` | none | Expression: checked every tick after the start, truthy cancels. Mapping: cancelled on the tick the actor hears a noise (see below) |
 | `effects`   | list                         | `[]`     | Run once, at completion. An action with no `effects` and no `consume` is a load error |
 
 **Targets.** `target: self` acts on the actor; `tile` is the cell under
@@ -1216,11 +1260,17 @@ snapshot and of `hash()`, and `world.activityProgress()` returns
   `use`, `take`, `put`, `drop`) end it with `cancelled`, before the new one is
   applied. Of several actions queued in one tick, the last one started
   wins.
-- **Interrupt:** in every tick **after** the start tick, `interrupt` (if
-  any) is evaluated first, with `self` = the actor; truthy ends it with
-  `interrupted`. Hearing runs after the work step, so `heard(self, s)` sees
-  a noise from the previous tick only when `s ≥ 0.2`. An entity never
-  hears its own noises, so the player's own hammering never interrupts the
+- **Interrupt:** with the expression form, in every tick **after** the
+  start tick, `interrupt` is evaluated first, with `self` = the actor;
+  truthy ends it with `interrupted`. Hearing runs after the work step, so
+  `heard(self, s)` sees a noise from the previous tick only when `s ≥ 0.2`.
+  With the **event form** `{ on: noise, when? }`, the activity ends as
+  `interrupted` on the tick its actor **hears a noise** (phase 4b, right
+  after hearing), when `when` (an optional expression in the activity's
+  usual scope) is truthy or absent. `on` is required and only `noise` is
+  valid; unknown keys are errors. It is not checked on the start tick
+  either, and the noise must land after the start. An entity never hears
+  its own noises, so the player's own hammering never interrupts the
   player.
 - **Complete:** in the work step of the tick where `tick == endTick` (a
   6-second action started on tick 100 completes on tick 160): `when`, the
@@ -1251,7 +1301,7 @@ actions:
     when: 'tile.has_tag("crypt")'
     unavailable: Only in the crypt
     duration: 10
-    interrupt: 'heard(self, 1)'
+    interrupt: { on: noise }           # any noise that reaches you wakes you
     effects:
       - { type: apply, measurement: hp, delta: 30 }
 ```
@@ -1321,7 +1371,7 @@ lifecycle as [actions](#actions): the same progress bar, cancellation,
 | `when`      | expression                   | `true`         | Checked at start and at completion |
 | `unavailable` | string                     | none           | UI text shown when `when` is falsy |
 | `duration`  | number ≥ 0 or expression     | `0`            | Sim seconds, as for actions |
-| `interrupt` | expression                   | none           | As for actions |
+| `interrupt` | expression or `{ on: noise, when? }` | none   | As for actions |
 | `effects`   | list (`apply`/`set`/`noise`) | `[]`           | Extra effects on the crafter, run last at completion; `set_tile` is a load error |
 | `progress`  | string                       | `<verb>: <label>` | Text shown while in progress |
 
@@ -1599,13 +1649,20 @@ are driven by their archetype's [behavior](#behaviors).
       does nothing in the tick it started;
 2. measurement drift: `rate` plus the `rates` of the statuses active at the
    **start** of the tick;
-3. systems that are due, in definition order;
+3. systems that are due (periodic ones on their period, `on: step` ones
+   for every entity that landed on a cell this tick), in definition order;
 4. **hear**: skipped when no noise was emitted this tick; otherwise each
    entity records the nearest noise it heard (see [noise](#systems)).
    Noises are emitted in order: player actions and completed activities
    (phase 1), then systems
    (definition order, entity order). `world.noises` lists this tick's
    noises until the next tick starts;
+   - 4b. **event interrupts, then `on: noise` systems**, for the entities
+     that heard a noise this tick (skipped, like hear, on a silent tick):
+     first every activity with `interrupt: { on: noise }` whose actor heard
+     one ends as `interrupted` (its `when` permitting), in entity id order;
+     then the `on: noise` systems, in definition order, entity order. A
+     `noise` emitted here is carried to the next tick's hear phase;
 5. clamp every measurement to `[min, max]`;
 6. status update: every `for`/`when`/`until` sees the statuses as they were
    at the start of this phase, so status definition order does not matter;
@@ -1622,7 +1679,8 @@ as after an outcome: the tick does not advance.
 Statuses are also evaluated once when the world is created, after the
 initial clamp. So a status entered on tick *t* first changes drift on tick
 *t + 1*. Likewise, statuses see a noise in the tick it is emitted, and
-behavior transitions see it in the next tick's think phase.
+behavior transitions see it in the next tick's think phase, and noise
+systems and event interrupts see it in the same tick, right after hearing.
 
 ### `start`
 
@@ -2502,7 +2560,10 @@ or duplicate `start`, a duplicate or malformed `clock` (non-positive
 `day_length`, times that aren't `HH:MM`, `dawn` not before `dusk`), and assets: missing files (with suggestions),
 unsupported extensions, malformed or out-of-range anchors, and unknown
 `sprite` references. For M2 content it also checks: `every` that is not
-positive or not a whole number of ticks; empty `effects`; unknown effect
+positive or not a whole number of ticks; `every` next to `on`, an `on` that
+is not `step` or `noise` (with a suggestion) or a `once` that is not a
+boolean; an `interrupt` mapping without `on: noise`, with an unknown key or
+that is neither an expression nor a mapping; empty `effects`; unknown effect
 types or fields; effects missing `measurement`/`delta`/`value`; unknown
 measurements in effects or `rates` keys (with suggestions); conditions
 (`for`/`when`/`until`/`defeat.when`/`victory.when`) that evaluate to an entity or tile;

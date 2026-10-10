@@ -35,10 +35,10 @@ systems:
     when: "self.hunger >= 100 or self.thirst >= 100"
     effects:
       - { type: apply, measurement: hp, delta: -3 }
-  # Noise: broken glass crunches underfoot (every step at a walk); anything
-  # that listens (behaviors) hears it.
+  # Noise: broken glass crunches underfoot, once per step onto it (never
+  # while standing still); anything that listens (behaviors) hears it.
   - id: crunch
-    every: 0.2
+    on: step
     for: 'self.has_tag("living")'
     when: 'tile.has_tag("glass")'
     effects:

@@ -22,10 +22,12 @@ journal:
     text: "Eat before hunger bites, and carry only what you need: a heavy pack wears you out."
 
 systems:
-  # The tip is added the first time the survivor is burdened or hungry.
+  # The tip is added the first time the survivor is burdened or hungry
+  # (`once`: the system fires at most once per entity, saved).
   - id: survival_tip
+    once: true
     every: 1
     for: 'self.has_tag("living")'
-    when: 'not in_journal("travel_light") and (self.has_status("burdened") or self.has_status("hungry"))'
+    when: 'self.has_status("burdened") or self.has_status("hungry")'
     effects:
       - { type: journal, entry: travel_light }

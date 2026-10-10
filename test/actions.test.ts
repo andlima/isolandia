@@ -869,26 +869,42 @@ test('zombie: loot a hammer, planks and nails (seed 1), then barricade a window 
   assert.ok(!w.availableActions().some((a) => a.action === 'town:barricade' && a.x === wx));
 });
 
-test('zombie: a bandage takes 3 s and a nearby noise wastes the attempt', () => {
-  const w = game('zombie', 1);
+test('town: a bandage takes 3 s; the noise that reaches you spoils it on the tick it lands', () => {
+  const w = game('vampire', 1);
+  const M = (x: number, y: number) => genreCell('vampire', x, y);
   const inv = w.player.inv!;
   const bandage = w.def.ids.items['town:bandage']!;
-  inv.stacks.push({ item: bandage, count: 1 });
+  inv.stacks.push({ item: bandage, count: 2 });
+  // By the coffin, the hall's bat spots the vampire and screeches every second
+  // while it is alert (see the rest scenario below): once the first screech has
+  // landed, the next one comes before the 3-second bandage is done.
+  walk(w, ...M(11, 5));
+  for (let i = 0; i < 100 && w.player.heardTick < 0; i++) w.step();
+  assert.ok(w.player.heardTick >= 0, 'no screech');
   w.player.m[w.def.ids.measurements['std:hp']!] = 50;
   w.queueAction({ kind: 'use', item: 'town:bandage' });
   w.step();
-  assert.equal(w.lastAction!.stage, 'start');
-  // A noise heard on the start tick (hearing runs after the work step).
-  w.player.heardTick = w.tick - 1;
-  w.step();
-  assert.equal(w.lastAction!.reason, 'interrupted');
+  assert.ok(w.player.activity, 'the bandage is being applied');
+  for (let i = 0; i < 100 && w.player.activity; i++) w.step();
+  assert.equal(w.lastAction!.item, 'town:bandage');
+  assert.equal(w.lastAction!.reason, 'interrupted', JSON.stringify(w.lastAction));
+  assert.equal(w.lastAction!.tick, w.player.heardTick, 'interrupted on the tick the noise landed');
+  assert.equal(countOf(inv, bandage), 2, 'the bandage is kept');
+
+  // Down in the wine cellar, out of the bats' sight, the bandage goes on.
+  walk(w, ...M(27, 16));
+  w.player.m[w.def.ids.measurements['std:hp']!] = 50;
+  let applied = false;
+  for (let attempt = 0; attempt < 10 && !applied; attempt++) {
+    w.queueAction({ kind: 'use', item: 'town:bandage' });
+    for (let i = 0; i < 40 && !applied; i++) {
+      w.step();
+      applied = w.lastAction!.item === 'town:bandage' && w.lastAction!.ok && w.lastAction!.stage === 'complete';
+      if (!w.player.activity) break;
+    }
+  }
+  assert.ok(applied, JSON.stringify(w.lastAction));
   assert.equal(countOf(inv, bandage), 1);
-  w.player.heardTick = -1;
-  w.queueAction({ kind: 'use', item: 'town:bandage' });
-  steps(w, 31);
-  assert.equal(w.lastAction!.ok, true);
-  assert.equal(w.lastAction!.stage, 'complete');
-  assert.equal(countOf(inv, bandage), 0);
 });
 
 test('vampire: shutter a window, then rest by a coffin until a bat screech wakes you', () => {

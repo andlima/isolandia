@@ -683,7 +683,7 @@ test('saves: a world saved mid-conversation restores into the same conversation'
   w.choose(pick(w, 'Rumors?'));
   const save = w.save();
   assert.equal(save.version, SAVE_VERSION);
-  assert.equal(SAVE_VERSION, 6);
+  assert.equal(SAVE_VERSION, 7);
   assert.deepEqual(save.state.conversation, { npc: KEEPER, dialogue: 't:chat', node: 'rumor', entries: 1 });
   assert.deepEqual(save.state.dialogueOnce, [['t:chat', 'gift']]);
   // Leave on the first tick, then both worlds run on identically.

@@ -81,10 +81,8 @@ items:
       label: Apply
       when: "self.hp < 100"
       duration: 3                   # sim seconds; moving or acting cancels it
-      # A noise nearby startles you and wastes the attempt (the bandage is
-      # kept). Hearing lands after the work step, so 0.2 s is the shortest
-      # window the next tick's interrupt check still sees.
-      interrupt: "heard(self, 0.2)"
+      # A noise nearby startles you and wastes the attempt (the bandage is kept).
+      interrupt: { on: noise }
       effects:
         - { type: apply, measurement: hp, delta: 20 }
   # Rings loud enough to be heard across the block.

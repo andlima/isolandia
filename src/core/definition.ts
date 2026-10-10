@@ -188,6 +188,16 @@ export interface DurationDef {
   readonly fn: Compiled | null;
 }
 
+/**
+ * An activity's `interrupt`: an expression checked every tick after the
+ * start (truthy ends the activity as `interrupted`), or an event: the
+ * activity ends on the tick its actor hears a noise, after the start tick,
+ * when `whenFn` (if any) is truthy.
+ */
+export type InterruptDef =
+  | { readonly kind: 'expr'; readonly fn: Compiled }
+  | { readonly kind: 'event'; readonly on: 'noise'; readonly whenFn: Compiled | null };
+
 /** `items[].use`: effects run on the user, then `consume` units are removed. */
 export interface ItemUseDef {
   /** Verb shown in the UI (default `"Use"`). */
@@ -199,8 +209,8 @@ export interface ItemUseDef {
   readonly consume: number;
   /** 0 ticks (the default) keeps the use instant. */
   readonly duration: DurationDef;
-  /** Cancels a timed use when truthy (checked every tick after the start); null = never. */
-  readonly interruptFn: Compiled | null;
+  /** Ends a timed use early (expression or event); null = never. */
+  readonly interrupt: InterruptDef | null;
 }
 
 /**
@@ -235,8 +245,8 @@ export interface ActionDef {
   /** Items that must be held, removed at completion. */
   readonly consume: readonly ItemCount[];
   readonly duration: DurationDef;
-  /** Cancels the activity when truthy (checked every tick after the start); null = never. */
-  readonly interruptFn: Compiled | null;
+  /** Ends the activity early (expression or event); null = never. */
+  readonly interrupt: InterruptDef | null;
   /** Run once, at completion. */
   readonly effects: readonly EffectDef[];
 }
@@ -269,8 +279,8 @@ export interface RecipeDef {
   /** UI text shown when `when` is falsy, or null for the default. */
   readonly unavailable: string | null;
   readonly duration: DurationDef;
-  /** Cancels the activity when truthy (checked every tick after the start); null = never. */
-  readonly interruptFn: Compiled | null;
+  /** Ends the recipe early (expression or event); null = never. */
+  readonly interrupt: InterruptDef | null;
   /** Extra effects on the crafter, run last at completion (never `set_tile`). */
   readonly effects: readonly EffectDef[];
 }
@@ -736,14 +746,24 @@ export interface DialogueDef {
   readonly nodes: readonly DialogueNodeDef[];
 }
 
-/** A periodic rule (`systems` domain), run once per matching entity. */
+/**
+ * A rule (`systems` domain), run once per matching entity: periodically
+ * (`every`), or on an event (`on`): the tick an entity lands on a cell
+ * (`step`) or hears a noise (`noise`).
+ */
 export interface SystemDef {
   readonly id: string;
   readonly index: number;
-  /** Period in sim seconds, as written. */
+  /** Event the system fires on, or null for a periodic system. */
+  readonly on: 'step' | 'noise' | null;
+  /** Period in sim seconds, as written (0 for an event system). */
   readonly every: number;
-  /** Period in ticks (≥ 1); fires on ticks where `(tick + 1) % period === 0`. */
+  /** Period in ticks (≥ 1); fires on ticks where `(tick + 1) % period === 0` (0 for an event system). */
   readonly period: number;
+  /** Fire at most once per entity: after its effects run for an entity, never again for it (saved state). */
+  readonly once: boolean;
+  /** Dense index among the `once` systems (the bit per entity), or -1. */
+  readonly onceIndex: number;
   /** Entity filter; null means always true. */
   readonly forFn: Compiled | null;
   /** Set when `for` is exactly `self.has_tag("<tag>")`, so it is decided once per archetype. */

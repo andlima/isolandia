@@ -59,9 +59,10 @@ systems:
     when: 'self.has_status("alert")'
     effects:
       - { type: noise, radius: 8 }
-  # Noise: old floorboards creak underfoot; bats hear it (behaviors).
+  # Noise: old floorboards creak underfoot, once per step onto them; bats
+  # hear it (behaviors).
   - id: creak
-    every: 0.1
+    on: step
     for: 'self.has_tag("undead")'
     when: 'tile.has_tag("creaky")'
     effects:
@@ -114,8 +115,8 @@ actions:
     duration: 2
     effects:
       - { type: set_tile, tile: shuttered_window }
-  # Lie down by a coffin on the crypt floor. Any noise wakes you early,
-  # and an interrupted rest restores nothing.
+  # Lie down by a coffin on the crypt floor. Any noise that reaches you
+  # wakes you early, and an interrupted rest restores nothing.
   - id: rest
     label: Rest
     progress: Resting
@@ -123,6 +124,6 @@ actions:
     when: 'tile.has_tag("crypt")'
     unavailable: Only in the crypt
     duration: 10
-    interrupt: 'heard(self, 1)'
+    interrupt: { on: noise }
     effects:
       - { type: apply, measurement: hp, delta: 30 }

@@ -22,7 +22,7 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
@@ -31,9 +31,10 @@ export const SAVE_VERSION = 6;
  * quest started and an empty journal. Versions 3 and 4 predate dialogues:
  * they load with no open conversation and no `once` choice chosen.
  * Versions 3 to 5 predate factions: every faction takes its starting
- * `reputation`.
+ * `reputation`. Versions 3 to 6 predate `once` systems: no system counts as
+ * fired for any entity.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, 6, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -108,7 +109,7 @@ const ACTION_KINDS = ['take', 'put', 'drop', 'use', 'act', 'craft', 'talk'] as c
 const CONTAINER_KINDS: readonly ContainerKind[] = ['tile', 'inventory', 'ground'];
 
 /** Id tables of a definition, by the name used in messages. */
-type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'var' | 'quest' | 'journal entry' | 'dialogue' | 'faction';
+type IdKind = 'archetype' | 'measurement' | 'status' | 'item' | 'tile' | 'action' | 'recipe' | 'system' | 'var' | 'quest' | 'journal entry' | 'dialogue' | 'faction';
 
 /** Collects errors (with JSON paths) and warnings in one pass. */
 class Checker {
@@ -185,6 +186,8 @@ class Checker {
         return ids.actions;
       case 'recipe':
         return ids.recipes;
+      case 'system':
+        return ids.systems;
       case 'var':
         return ids.vars;
       case 'quest':
@@ -358,6 +361,8 @@ interface EntityPlan {
   heard: [number, number, number, number] | null;
   activity: { kind: 'act' | 'use' | 'craft'; index: number; x: number; y: number; z: number; side: EdgeSide | null; startTick: number; endTick: number } | null;
   then: Action | null;
+  /** `onceIndex` of each `once` system that has fired for the entity. */
+  fired: number[];
 }
 
 interface ContainerPlan {
@@ -482,7 +487,9 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   // ── Entities ─────────────────────────────────────────────────────────────
   const plans: (EntityPlan | null)[] = [];
   const rawEntities = c.arr(s['entities'], 'state.entities') ?? [];
-  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player)));
+  // `fired` (version 7): older saves count no `once` system as fired.
+  const hasFired = (root['version'] as number) >= 7;
+  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player, hasFired)));
   if (player !== null && rawEntities.length > 0 && player >= rawEntities.length) c.err('state.player', `player ${player} is not one of the ${rawEntities.length} entities`);
   if (rawEntities.length === 0 && Array.isArray(s['entities'])) c.err('state.entities', 'no entities (the player must be one of them)');
 
@@ -597,6 +604,7 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       }
       if (e.behavior && p.plan) [e.planX, e.planY, e.planZ, e.planTick] = p.plan;
       if (p.heard) [e.heardX, e.heardY, e.heardZ, e.heardTick] = p.heard;
+      for (const k of p.fired) e.fired![k] = 1;
       if (p.activity) {
         const a = p.activity;
         const source = a.kind === 'act' ? host.actionSources[a.index]! : a.kind === 'craft' ? host.recipeSources[a.index]! : host.useSources[a.index]!;
@@ -768,8 +776,8 @@ function checkTalk(c: Checker, s: Record<string, unknown>, entityCount: number, 
   return plan;
 }
 
-/** Check one saved entity; null when it has errors. */
-function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): EntityPlan | null {
+/** Check one saved entity; null when it has errors. `hasFired`: the save version carries `fired` (7+). */
+function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFired: boolean): EntityPlan | null {
   const path = `state.entities[${i}]`;
   const o = c.obj(v, path);
   if (!o) return null;
@@ -908,6 +916,19 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     else then = c.action(o['then'], `${path}.then`);
   }
 
+  const fired: number[] = [];
+  if (hasFired && o['fired'] !== undefined) {
+    c.arr(o['fired'], `${path}.fired`)?.forEach((id, k) => {
+      const fp = `${path}.fired[${k}]`;
+      const s = c.id('system', id, fp);
+      if (s === null) return;
+      const sys = def.systems[s]!;
+      if (!sys.once) c.err(fp, `system '${sys.id}' is not a 'once' system`);
+      else if (fired.includes(sys.onceIndex)) c.err(fp, `system '${sys.id}' is listed twice`);
+      else fired.push(sys.onceIndex);
+    });
+  }
+
   if (c.errors.length !== n || !archetype || !pos || !facing || !from || !home || stepTick === null || moveCooldown === null || intent === undefined) return null;
   return {
     archetype,
@@ -933,5 +954,6 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean): Enti
     heard,
     activity,
     then,
+    fired,
   };
 }
