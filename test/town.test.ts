@@ -213,11 +213,11 @@ test('check --overrides: the zombie and vampire mods patch the town by overrides
     'zmb override map town:town_center [spawns]',
     'zmb override map town:house_c [populate]',
     'zmb override map town:city [populate]',
-    'zmb override start [defeat, victory]',
+    'zmb override start [defeat.when, defeat.message, victory.when, victory.message]',
   ]);
   assert.deepEqual(patches('vampire'), [
     'vamp override tile town:window [color, sprite]',
-    'vamp override start [map, player, defeat]',
+    'vamp override start [map, player, defeat.when, defeat.message]',
     'vamp override clock [start]',
     'vamp override lighting [tint]',
   ]);
@@ -247,7 +247,10 @@ test('joint: zombie + vampire warns only for start.defeat; the vampire (later) w
   const { def, warnings } = load('zombie', 'vampire');
   assert.deepEqual(
     warnings.map((w) => [w.pack, w.path]),
-    [['vamp', 'start.defeat']],
+    [
+      ['vamp', 'start.defeat.when'],
+      ['vamp', 'start.defeat.message'],
+    ],
   );
   assert.match(warnings[0]!.message, /also overridden by pack 'zmb' .*; 'vamp' wins \(later in load order\)/);
   assert.equal(def.maps[def.start.map]!.id, 'vamp:estate');
@@ -262,7 +265,10 @@ test('joint: vampire + zombie mirrors it; load order settles only the conflictin
   const { def, warnings } = load('vampire', 'zombie');
   assert.deepEqual(
     warnings.map((w) => [w.pack, w.path]),
-    [['zmb', 'start.defeat']],
+    [
+      ['zmb', 'start.defeat.when'],
+      ['zmb', 'start.defeat.message'],
+    ],
   );
   assert.match(warnings[0]!.message, /also overridden by pack 'vamp' .*; 'zmb' wins \(later in load order\)/);
   // The zombie never overrides start.map or start.player: still the estate and the vampire.

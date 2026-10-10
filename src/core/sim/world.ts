@@ -47,6 +47,8 @@ export interface Entity extends ExprEntity {
   readonly m: Float64Array;
   /** Resolved max per measurement as of the last clamp (Infinity if unbounded). */
   readonly max: Float64Array;
+  /** 1 at each measurement index of the archetype (shared per archetype). */
+  readonly hasM: Uint8Array;
   /** Ticks until the entity may step again. */
   moveCooldown: number;
   /** Direction the entity faces; it turns toward a new direction before stepping. */
@@ -1085,6 +1087,7 @@ export class World {
       z,
       m,
       max,
+      hasM: this.hasM[archetype.index]!,
       tags: this.tagSets[archetype.index]!,
       moveCooldown: 0,
       facing: DEFAULT_FACING,

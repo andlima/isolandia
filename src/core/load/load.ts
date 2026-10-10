@@ -74,7 +74,7 @@ import {
 import { CARDINALS, FACINGS, MIRROR, facingTable, isDiagonal, isFacing, type Facing } from '../facing.ts';
 import { compileSource, isPointType, nearMiss, type Compiled, type CompiledExpr } from '../expr/index.ts';
 import { at, ErrorSink, formatPath, lineOf, PackLoadError, type LoadError, type Src } from './errors.ts';
-import { ID_RE, isObject, parsePack, type Json, type ListDomain, type PackSource, type RawPack } from './pack.ts';
+import { ID_RE, isObject, parsePack, type Json, type JsonObject, type ListDomain, type PackSource, type RawPack } from './pack.ts';
 import { applyPatches, type Defined, type LoadedPack, type Merged } from './patch.ts';
 import { SymbolTable, type Scope } from './resolve.ts';
 import { normalizePath, readTiledMap, type TiledMap } from './tiled.ts';
@@ -159,14 +159,22 @@ class Loader {
   private readonly questTargets = new Set<number>();
   /** Set while a dialogue is read: `npc` and `on: npc` are only valid there. */
   private inDialogue = false;
+  /** Per item tag, 1 at each item index carrying it (from the merged entries, before any expression compiles). */
+  private readonly itemTagFlags = new Map<string, Uint8Array>();
+  /** The built measurements, filled first; `fraction` reads their bounds at call time. */
+  private readonly measurementDefs: MeasurementDef[] = [];
+  /** Compiled expressions by location and text: one location compiles once (a file's `defaults.for` is shared by its entries). */
+  private readonly compiled = new Map<string, CompiledExpr | null>();
 
   run(sources: readonly PackSource[]): LoadResult {
     this.parsePacks(sources);
     this.applyPatches();
     this.readTiledMaps();
     this.collectRoomTags();
+    this.collectItemTags();
     this.collectStageNames();
-    const measurements = this.defined.measurements.map((d) => this.measurement(d));
+    const measurements = this.measurementDefs;
+    for (const d of this.defined.measurements) measurements.push(this.measurement(d));
     const assets = this.defined.assets.map((d) => this.asset(d));
     const items = this.defined.items.map((d) => this.item(d));
     const tiles = this.defined.tiles.map((d) => this.tile(d));
@@ -341,6 +349,9 @@ class Loader {
 
   /** Compile an expression of any type; reports and returns null on error. */
   private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
+    const key = `${src.source.pack}\0${src.source.file}\0${formatPath(src.path)}\0${this.inDialogue ? 1 : 0}\0${source}`;
+    const memo = this.compiled.get(key);
+    if (memo !== undefined) return memo;
     const resolver = (kind: 'measurement' | 'status' | 'item' | 'action' | 'var' | 'journal entry' | 'quest' | 'faction') => (ref: string) => {
       const r = this.symbols.resolve(kind, ref, scope);
       return 'error' in r ? r : { index: r.index };
@@ -349,6 +360,8 @@ class Loader {
       resolveMeasurement: resolver('measurement'),
       resolveStatus: resolver('status'),
       resolveItem: resolver('item'),
+      resolveItemTag: (tag) => this.itemTag(tag, src),
+      resolveBounds: (ref) => this.bounds(ref, scope),
       resolveRoomTag: (tag) => this.roomTag(tag),
       resolveAction: resolver('action'),
       resolveVar: resolver('var'),
@@ -358,11 +371,50 @@ class Loader {
       resolveFaction: resolver('faction'),
       npc: this.inDialogue,
     });
+    let out: CompiledExpr | null = expr;
     if (errors.length) {
       for (const e of errors) this.sink.add(src, `${syntax ? 'expression syntax error' : 'expression error'} in "${source}": ${e.message}`);
-      return null;
+      out = null;
     }
-    return expr;
+    this.compiled.set(key, out);
+    return out;
+  }
+
+  /** Item tags of every merged item entry → per-item flags (`count_tagged`/`has_tagged` resolve against them). */
+  private collectItemTags(): void {
+    const n = this.defined.items.length;
+    for (const d of this.defined.items) {
+      const tags = d.entry.value['tags'];
+      if (!Array.isArray(tags)) continue;
+      for (const t of tags) {
+        if (typeof t !== 'string' || !ID_RE.test(t)) continue;
+        let flags = this.itemTagFlags.get(t);
+        if (!flags) this.itemTagFlags.set(t, (flags = new Uint8Array(n)));
+        flags[d.index] = 1;
+      }
+    }
+  }
+
+  /** An item tag for `count_tagged`/`has_tagged`: a tag no item carries warns at `src` and never matches. */
+  private itemTag(tag: string, src: Src): { flags: Uint8Array } | { error: string } {
+    if (!ID_RE.test(tag)) return { error: `invalid item tag '${tag}': tags must match [a-z][a-z0-9_]*` };
+    const flags = this.itemTagFlags.get(tag);
+    if (flags) return { flags };
+    const s = nearMiss(tag, this.itemTagFlags.keys());
+    this.sink.warn(src, `no item carries the tag '${tag}'${s ? ` (did you mean '${s}'?)` : ''}, so it never matches`);
+    return { flags: new Uint8Array(this.defined.items.length) };
+  }
+
+  /** A measurement for `fraction`: it needs a `max`; its bounds are read from the built definition at call time. */
+  private bounds(ref: string, scope: Scope): { index: number; bounds(): MeasurementDef } | { error: string } {
+    const r = this.symbols.resolve('measurement', ref, scope);
+    if ('error' in r) return r;
+    const d = this.defined.measurements[r.index]!;
+    const max = d.entry.value['max'];
+    if (max === undefined || max === null) return { error: `measurement '${r.id}' has no 'max': no maximum to take a fraction of` };
+    const defs = this.measurementDefs;
+    const index = r.index;
+    return { index, bounds: () => defs[index]! };
   }
 
   /**
@@ -1785,7 +1837,11 @@ class Loader {
     (list ?? []).forEach((raw, i) => {
       const src = f.at('effects', i);
       if (!isObject(raw)) {
-        this.sink.add(src, `effects must be mappings like { type: apply, measurement: energy, delta: -1 }`);
+        this.sink.add(src, `effects must be mappings like { apply: { energy: -1 } } or { type: apply, measurement: energy, delta: -1 }`);
+        return;
+      }
+      if (raw['apply'] !== undefined || raw['set'] !== undefined) {
+        effects.push(...this.effectShorthand(raw, src, scope));
         return;
       }
       const type = raw['type'];
@@ -1869,16 +1925,58 @@ class Loader {
       const ef = new Fields(this.sink, src, raw, ['type', 'measurement', valueKey, 'on'], `'${t}' effect`);
       const m = ef.present('measurement') ? this.symbols.ref('measurement', ef.raw('measurement'), scope, ef.at('measurement'), this.sink) : null;
       const term = ef.present(valueKey) ? this.numberTerm(ef.raw(valueKey), valueKey, scope, ef.at(valueKey)) : null;
-      const on = ef.raw('on');
-      let onNpc = false;
-      if (on !== undefined && on !== null) {
-        if (!this.inDialogue) this.sink.add(ef.at('on'), `field 'on' is only allowed in the effects of dialogues`);
-        else if (on === 'npc') onNpc = true;
-        else if (on !== 'self') this.sink.add(ef.at('on'), `field 'on' must be 'self' or 'npc', got ${JSON.stringify(on)}`);
-      }
+      const onNpc = this.effectOn(ef);
       if (m && term) effects.push({ type: t, measurement: m.index, ...term, ...(onNpc ? { on: 'npc' as const } : {}) });
     });
     return effects;
+  }
+
+  /** A measurement effect's optional `on` (`npc` only in dialogues): whether it acts on the NPC. */
+  private effectOn(ef: Fields): boolean {
+    const on = ef.raw('on');
+    if (on === undefined || on === null) return false;
+    if (!this.inDialogue) this.sink.add(ef.at('on'), `field 'on' is only allowed in the effects of dialogues`);
+    else if (on === 'npc') return true;
+    else if (on !== 'self') this.sink.add(ef.at('on'), `field 'on' must be 'self' or 'npc', got ${JSON.stringify(on)}`);
+    return false;
+  }
+
+  /**
+   * The `{ apply: { m: delta, … } }` / `{ set: { m: value, … } }` shorthand:
+   * one `apply`/`set` effect per key, in mapping order, resolved and
+   * validated exactly like the long form. Problems are reported at the key
+   * inside the mapping; an entry that is not one shorthand yields nothing.
+   */
+  private effectShorthand(raw: JsonObject, src: Src, scope: Scope): EffectDef[] {
+    if (raw['apply'] !== undefined && raw['set'] !== undefined) {
+      this.sink.add(src, `an effect takes either 'apply' or 'set', not both`);
+      return [];
+    }
+    const kind: 'apply' | 'set' = raw['apply'] !== undefined ? 'apply' : 'set';
+    if (raw['type'] !== undefined) {
+      this.sink.add(at(src, 'type'), `'type' cannot be combined with the '${kind}' shorthand: write { ${kind}: { <measurement>: <${EFFECT_FIELDS[kind]}> } } or the long form with 'type'`);
+      return [];
+    }
+    const ef = new Fields(this.sink, src, raw, [kind, 'on'], `'${kind}' effect`);
+    const map = raw[kind];
+    if (!isObject(map)) {
+      this.sink.add(ef.at(kind), `'${kind}' must be a mapping of measurement id → ${EFFECT_FIELDS[kind]} (a number or an expression), got ${typeof map === 'object' ? (Array.isArray(map) ? 'list' : 'null') : typeof map}`);
+      return [];
+    }
+    const keys = Object.keys(map);
+    if (keys.length === 0) {
+      this.sink.add(ef.at(kind), `'${kind}' must list at least one measurement`);
+      return [];
+    }
+    const onNpc = this.effectOn(ef);
+    const out: EffectDef[] = [];
+    for (const ref of keys) {
+      const ksrc = ef.at(kind, ref);
+      const m = this.symbols.ref('measurement', ref, scope, ksrc, this.sink);
+      const term = this.numberTerm(map[ref], ref, scope, ksrc);
+      if (m && term) out.push({ type: kind, measurement: m.index, ...term, ...(onNpc ? { on: 'npc' as const } : {}) });
+    }
+    return out;
   }
 
   // ── Factions ──────────────────────────────────────────────────────────
@@ -2396,12 +2494,12 @@ class Loader {
     return { id: d.id, index: d.index, label, verb, category, progress, tools, consume, produce, station, whenFn, unavailable, duration, interrupt, effects };
   }
 
-  /** `start.defeat` / `start.victory`: `{ when, message? }`. */
-  private outcome(f: Fields, key: 'defeat' | 'victory', scope: Scope, defaultMessage: string): OutcomeDef | null {
+  /** `start.defeat` / `start.victory`: `{ when, message? }`; each sub-field is located at, and resolves in, the pack that wrote it. */
+  private outcome(f: Fields, key: 'defeat' | 'victory', d: Merged, defaultMessage: string): OutcomeDef | null {
     const raw = f.mapping(key);
     if (!raw) return null;
-    const df = new Fields(this.sink, f.at(key), raw, ['when', 'message'], key);
-    const when = this.condition(df, 'when', scope, true);
+    const df = new Fields(this.sink, f.at(key), raw, ['when', 'message'], key, (sub) => at(d.srcOf(`${key}.${sub}`), key));
+    const when = this.condition(df, 'when', d.scopeOf(`${key}.when`), true);
     const message = df.string('message', false) ?? defaultMessage;
     return when ? { when, message } : null;
   }
@@ -2418,9 +2516,9 @@ class Loader {
       return null;
     }
     const f = this.fields(d, ['map', 'player', 'defeat', 'victory', 'simulation'], 'start');
-    const simulation = this.simulation(f);
-    const defeat = this.outcome(f, 'defeat', d.scopeOf('defeat'), DEFAULT_DEFEAT_MESSAGE);
-    const victory = this.outcome(f, 'victory', d.scopeOf('victory'), DEFAULT_VICTORY_MESSAGE);
+    const simulation = this.simulation(f, d);
+    const defeat = this.outcome(f, 'defeat', d, DEFAULT_DEFEAT_MESSAGE);
+    const victory = this.outcome(f, 'victory', d, DEFAULT_VICTORY_MESSAGE);
     const map = f.has('map') ? this.symbols.ref('map', f.raw('map'), d.scopeOf('map'), f.at('map'), this.sink) : f.string('map');
     const player = f.has('player') ? this.symbols.ref('archetype', f.raw('player'), d.scopeOf('player'), f.at('player'), this.sink) : f.string('player');
     if (!map || typeof map !== 'object' || !player || typeof player !== 'object') return null;
@@ -2437,11 +2535,11 @@ class Loader {
     return { map: map.index, player: player.index, defeat, victory, simulation };
   }
 
-  /** `start.simulation`: optional scale settings, defaults otherwise. */
-  private simulation(f: Fields): SimulationDef {
+  /** `start.simulation`: optional scale settings, defaults otherwise; each sub-field is located at the pack that wrote it. */
+  private simulation(f: Fields, d: Merged): SimulationDef {
     const raw = f.mapping('simulation');
     if (!raw) return DEFAULT_SIMULATION;
-    const sf = new Fields(this.sink, f.at('simulation'), raw, ['active_radius', 'npc_path_budget', 'player_path_budget'], 'simulation');
+    const sf = new Fields(this.sink, f.at('simulation'), raw, ['active_radius', 'npc_path_budget', 'player_path_budget'], 'simulation', (sub) => at(d.srcOf(`simulation.${sub}`), 'simulation'));
     const int = (key: string, min: number, fallback: number, none = false): number | null => {
       const v = sf.raw(key);
       if (v === undefined || v === null) return fallback;
