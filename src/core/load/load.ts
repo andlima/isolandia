@@ -55,7 +55,7 @@ import {
   type NumberTerm,
   type PackInfo,
   type PopulateDef,
-  populateCandidates,
+  populatePlan,
   DEFAULT_SIMULATION,
   type SimulationDef,
   type RecipeDef,
@@ -347,9 +347,9 @@ class Loader {
     return expr;
   }
 
-  /** Compile an expression of any type; reports and returns null on error. */
-  private compile(source: string, scope: Scope, src: Src): CompiledExpr | null {
-    const key = `${src.source.pack}\0${src.source.file}\0${formatPath(src.path)}\0${this.inDialogue ? 1 : 0}\0${source}`;
+  /** Compile an expression of any type; reports and returns null on error. `tileOnly` is a populate `where` (see `CompileSymbols`). */
+  private compile(source: string, scope: Scope, src: Src, tileOnly = false): CompiledExpr | null {
+    const key = `${src.source.pack}\0${src.source.file}\0${formatPath(src.path)}\0${this.inDialogue ? 1 : 0}\0${tileOnly ? 1 : 0}\0${source}`;
     const memo = this.compiled.get(key);
     if (memo !== undefined) return memo;
     const resolver = (kind: 'measurement' | 'status' | 'item' | 'action' | 'var' | 'journal entry' | 'quest' | 'faction') => (ref: string) => {
@@ -370,6 +370,7 @@ class Loader {
       resolveStage: (q, stage) => this.stage(q, stage),
       resolveFaction: resolver('faction'),
       npc: this.inDialogue,
+      tileOnly,
     });
     let out: CompiledExpr | null = expr;
     if (errors.length) {
@@ -1281,14 +1282,43 @@ class Loader {
         this.sink.add(src, `populate entries must be mappings like { archetype: guard, count: 10 }`);
         return;
       }
-      const pf = new Fields(this.sink, src, raw, ['archetype', 'count', 'rect', 'floor', 'room'], 'populate');
+      const pf = new Fields(this.sink, src, raw, ['archetype', 'count', 'density', 'where', 'rect', 'floor', 'room'], 'populate');
       const arch = pf.has('archetype') ? this.symbols.ref('archetype', pf.raw('archetype'), scope, pf.at('archetype'), this.sink) : pf.string('archetype');
       let ok = !!arch && typeof arch === 'object';
-      const count = pf.raw('count');
-      if (count === undefined || count === null) ok = pf.present('count') && ok;
-      else if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
-        this.sink.add(pf.at('count'), `field 'count' must be an integer ≥ 1, got ${JSON.stringify(count)}`);
+      // Exactly one of `count` (an integer ≥ 1) and `density` (per 100 candidate cells, > 0).
+      let count: number | null = null;
+      let density: number | null = null;
+      if (pf.has('count') && pf.has('density')) {
+        this.sink.add(src, `populate entries take exactly one of 'count' and 'density', not both`);
         ok = false;
+      } else if (!pf.has('count') && !pf.has('density')) {
+        this.sink.add(src, `missing required field 'count' or 'density' (populate entries take exactly one)`);
+        ok = false;
+      } else if (pf.has('count')) {
+        const v = pf.raw('count');
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+          this.sink.add(pf.at('count'), `field 'count' must be an integer ≥ 1, got ${JSON.stringify(v)}`);
+          ok = false;
+        } else count = v;
+      } else {
+        const v = pf.raw('density');
+        if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+          this.sink.add(pf.at('density'), `field 'density' must be a number > 0 (entities per 100 candidate cells), got ${JSON.stringify(v)}`);
+          ok = false;
+        } else density = v;
+      }
+      let where: Compiled | null = null;
+      if (pf.has('where')) {
+        const v = pf.string('where');
+        if (v === undefined) ok = false;
+        else {
+          const e = this.compile(v, scope, pf.at('where'), true);
+          if (!e) ok = false;
+          else if (e.type !== 'boolean' && e.type !== 'any') {
+            this.sink.add(pf.at('where'), `populate 'where' "${v}" must produce a boolean, got ${e.type}`);
+            ok = false;
+          } else where = e.fn;
+        }
       }
       let rect = [0, 0, width, height];
       if (pf.has('rect')) {
@@ -1323,35 +1353,26 @@ class Loader {
       }
       if (!ok) return;
       const [x, y, w, h] = rect as [number, number, number, number];
-      out.push({ def: { archetype: (arch as { index: number }).index, count: count as number, x, y, w, h, z, room }, src });
+      out.push({ def: { archetype: (arch as { index: number }).index, count, density, where, x, y, w, h, z, room }, src });
     });
     return out;
   }
 
   /**
-   * Each populate entry's `count` must fit its candidate cells, minus the
-   * cells earlier entries may take from them (cells are never reused), so the
-   * number placed never depends on the seed.
+   * Each populate entry's count (`count`, or the one its `density` derives)
+   * must fit its candidate cells, minus the cells earlier entries may take
+   * from them (cells are never reused), so the number placed never depends
+   * on the seed.
    */
   private checkPopulate(map: MapDef, srcs: readonly Src[]): void {
-    const cands = map.populate.map((p) => populateCandidates(map, this.tileDefs, p));
-    const mark = new Int32Array(map.cells.length).fill(-1);
-    map.populate.forEach((p, k) => {
-      const mine = cands[k]!;
-      for (const i of mine) mark[i] = k;
-      let taken = 0;
-      for (let j = 0; j < k; j++) {
-        const q = map.populate[j]!;
-        if (q.z !== p.z || q.x >= p.x + p.w || p.x >= q.x + q.w || q.y >= p.y + p.h || p.y >= q.y + q.h) continue;
-        let shared = 0;
-        for (const i of cands[j]!) if (mark[i] === k) shared++;
-        taken += Math.min(q.count, shared);
-      }
-      const what = `populate count ${p.count} of '${this.defined.archetypes[p.archetype]!.id}' in '${map.id}'`;
-      if (p.count > mine.length) {
-        this.sink.add(srcs[k]!, `${what} is more than its ${mine.length} candidate cell${mine.length === 1 ? '' : 's'} (walkable, no container, not the player start, in its rect, floor and room)`);
-      } else if (p.count > mine.length - taken) {
-        this.sink.add(srcs[k]!, `${what} may not fit: earlier entries can take ${taken} of its ${mine.length} candidate cells`);
+    populatePlan(map, this.tileDefs).forEach(({ candidates, count, taken }, k) => {
+      const p = map.populate[k]!;
+      const n = candidates.length;
+      const what = `populate count ${count}${p.density !== null ? ` (density ${p.density})` : ''} of '${this.defined.archetypes[p.archetype]!.id}' in '${map.id}'`;
+      if (count > n) {
+        this.sink.add(srcs[k]!, `${what} is more than its ${n} candidate cell${n === 1 ? '' : 's'} (walkable, no container, not the player start, in its rect, floor and room, where its 'where' holds)`);
+      } else if (count > n - taken) {
+        this.sink.add(srcs[k]!, `${what} may not fit: earlier entries can take ${taken} of its ${n} candidate cells`);
       }
     });
   }

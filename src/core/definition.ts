@@ -4,8 +4,8 @@
  * compiled closure, every id is qualified (`ns:id`).
  */
 
-import type { ClockDef } from './clock.ts';
-import type { Compiled } from './expr/index.ts';
+import { DEFAULT_CLOCK, type ClockDef } from './clock.ts';
+import { NO_FACTIONS, type Compiled, type ExprContext, type ExprEntity } from './expr/index.ts';
 import type { Facing, FacingImage } from './facing.ts';
 
 export const TICKS_PER_SECOND = 10;
@@ -425,7 +425,12 @@ export interface SpawnDef {
  */
 export interface PopulateDef {
   readonly archetype: number;
-  readonly count: number;
+  /** Fixed count, or null for a `density` entry. */
+  readonly count: number | null;
+  /** Entities per 100 candidate cells, or null for a `count` entry (see `populateCount`). */
+  readonly density: number | null;
+  /** Compiled `where` filter over the candidate cell (`tile`), or null for all. */
+  readonly where: Compiled | null;
   /** Rectangle in this map's coordinates (already clipped to a part's area). */
   readonly x: number;
   readonly y: number;
@@ -470,10 +475,70 @@ export interface MapDef {
   readonly composite: boolean;
 }
 
+/** An entity no load-time expression reads (populate `where` sees only `tile`). */
+const NO_ENTITY: ExprEntity = { x: 0, y: 0, z: 0, m: new Float64Array(0), tags: new Set(), st: new Uint8Array(0), inv: null, heardTick: -1 };
+
+/**
+ * Expression context of a populate `where`: `tile` is the cell set by
+ * `at()`; there is no world yet, so everything else is inert (the compiler
+ * rejects the names that would read it).
+ */
+function tileContext(map: MapDef, tiles: readonly TileDef[]): { ctx: ExprContext; at(x: number, y: number, z: number): void } {
+  const tagSets = new Map<number, ReadonlySet<string>>();
+  const tagsOf = (t: number): ReadonlySet<string> => {
+    let set = tagSets.get(t);
+    if (!set) tagSets.set(t, (set = new Set(tiles[t]?.tags ?? [])));
+    return set;
+  };
+  const target = { x: 0, y: 0, z: 0 };
+  const { width, height } = map;
+  const index = (x: number, y: number, z: number): number => (x >= 0 && y >= 0 && z >= 0 && x < width && y < height && z < map.floors ? (z * height + y) * width + x : -1);
+  const EMPTY: ReadonlySet<string> = new Set();
+  const ctx: ExprContext = {
+    self: NO_ENTITY,
+    player: NO_ENTITY,
+    target,
+    tick: 0,
+    ticksPerSecond: 1,
+    clock: DEFAULT_CLOCK,
+    random: () => 0,
+    tileIdAt: (x, y, z) => {
+      const i = index(x, y, z);
+      const t = i < 0 ? EMPTY_TILE : map.cells[i]!;
+      return t === EMPTY_TILE ? '' : (tiles[t]?.id ?? '');
+    },
+    tileTagsAt: (x, y, z) => {
+      const i = index(x, y, z);
+      const t = i < 0 ? EMPTY_TILE : map.cells[i]!;
+      return t === EMPTY_TILE ? EMPTY : tagsOf(t);
+    },
+    inRoom: (x, y, z, tag) => {
+      const i = index(x, y, z);
+      return i >= 0 && map.rooms.sets[map.rooms.cellSet[i]!]!.includes(tag);
+    },
+    los: () => false,
+    warn: () => {},
+    vars: new Float64Array(0),
+    questStage: new Int32Array(0),
+    questEnd: new Uint8Array(0),
+    journalHas: new Uint8Array(0),
+    factions: NO_FACTIONS,
+  };
+  return {
+    ctx,
+    at(x, y, z) {
+      target.x = x;
+      target.y = y;
+      target.z = z;
+    },
+  };
+}
+
 /**
  * Candidate cells of a populate entry, ascending cell index: walkable, inside
- * the rect, on its floor, in its room (when set), not a container tile and not
- * the player start. Independent of the seed.
+ * the rect, on its floor, in its room (when set), not a container tile, not
+ * the player start, and where the entry's `where` holds. Independent of the
+ * seed.
  */
 export function populateCandidates(map: MapDef, tiles: readonly TileDef[], p: PopulateDef): number[] {
   const out: number[] = [];
@@ -486,6 +551,8 @@ export function populateCandidates(map: MapDef, tiles: readonly TileDef[], p: Po
     inRoom = new Uint8Array(sets.length);
     sets.forEach((set, k) => (inRoom![k] = set.includes(p.room!) ? 1 : 0));
   }
+  const where = p.where;
+  const scope = where ? tileContext(map, tiles) : null;
   const x1 = Math.min(width, p.x + p.w);
   const y1 = Math.min(height, p.y + p.h);
   for (let y = Math.max(0, p.y); y < y1; y++) {
@@ -497,10 +564,57 @@ export function populateCandidates(map: MapDef, tiles: readonly TileDef[], p: Po
       if (!tile.walkable || tile.container) continue;
       if (inRoom && inRoom[map.rooms.cellSet[i]!] !== 1) continue;
       if (start && start.x === x && start.y === y && start.z === p.z) continue;
+      if (where) {
+        scope!.at(x, y, p.z);
+        if (!where(scope!.ctx)) continue;
+      }
       out.push(i);
     }
   }
   return out;
+}
+
+/**
+ * Entities a populate entry places: its `count`, or `round(density ×
+ * candidates / 100)` for a density entry (0 places nothing). `candidates` is
+ * the entry's own candidate count, before earlier entries take cells.
+ */
+export function populateCount(p: PopulateDef, candidates: number): number {
+  return p.count !== null ? p.count : Math.round((p.density! * candidates) / 100);
+}
+
+/** What a populate entry places on a map, as checked at load (see `populatePlan`). */
+export interface PopulatePlan {
+  /** Candidate cells (see `populateCandidates`). */
+  readonly candidates: number[];
+  /** Entities placed (see `populateCount`). */
+  readonly count: number;
+  /** Candidates that earlier overlapping entries can take, so `candidates.length - taken` are sure to be free. */
+  readonly taken: number;
+}
+
+/**
+ * Candidates, count and the cells earlier entries may take, for every
+ * populate entry of `map` in application order. Shared by the load check,
+ * world creation and `check --populate`, so they agree by construction.
+ */
+export function populatePlan(map: MapDef, tiles: readonly TileDef[]): PopulatePlan[] {
+  const plans: PopulatePlan[] = [];
+  const mark = new Int32Array(map.cells.length).fill(-1);
+  map.populate.forEach((p, k) => {
+    const candidates = populateCandidates(map, tiles, p);
+    for (const i of candidates) mark[i] = k;
+    let taken = 0;
+    for (let j = 0; j < k; j++) {
+      const q = map.populate[j]!;
+      if (q.z !== p.z || q.x >= p.x + p.w || p.x >= q.x + q.w || q.y >= p.y + p.h || p.y >= q.y + q.h) continue;
+      let shared = 0;
+      for (const i of plans[j]!.candidates) if (mark[i] === k) shared++;
+      taken += Math.min(plans[j]!.count, shared);
+    }
+    plans.push({ candidates, count: populateCount(p, candidates.length), taken });
+  });
+  return plans;
 }
 
 /** A numeric term: a folded constant, or a closure when `fn` is set. */

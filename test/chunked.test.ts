@@ -16,6 +16,8 @@ import {
   type MapDef,
 } from '../src/core/index.ts';
 import { chunkKeyOf, chunkLayout, chunkOf, chunksInView, ChunkLru, chunkBounds, chunkCount, inShownChunk, MAX_BUILT_CHUNKS, spriteDiff } from '../src/iso/chunks.ts';
+import { formatPopulate } from '../src/cli/populate.ts';
+import { populateCandidates, populatePlan } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { perfLine, PerfMeter, Samples } from '../src/web/perf.ts';
 import { assertRoundTrip, fixture, GAMES, GENRE_AT } from './helpers.ts';
@@ -334,6 +336,209 @@ test('populate: the world RNG and loot are unchanged; saves keep the placed enti
   for (let i = 0; i < 5; i++) w.step();
   const copy = assertRoundTrip(w, () => {}, 20);
   assert.equal(copy.entities.length, w.entities.length, 'restore never re-populates');
+});
+
+// ── Populate by density ─────────────────────────────────────────────────────
+
+const DENSE_TILES = `tiles:
+  - { id: floor, label: Floor, glyph: ".", color: white, walkable: true }
+  - { id: wall, label: Wall, glyph: "#", color: gray, walkable: false }
+  - { id: grass, label: Grass, glyph: ",", color: green, walkable: true, tags: [grass] }
+`;
+
+const YARD_ROWS = `    legend:
+      ".": { tile: floor }
+      "#": { tile: wall }
+      ",": { tile: grass }
+      "@": { tile: floor, player: true }
+    rows:
+      - "############"
+      - "#....,,,,,.#"
+      - "#....,,,,,.#"
+      - "#@...,,,,,.#"
+      - "#..........#"
+      - "############"
+    rooms:
+      - { rect: [1, 1, 4, 3], tags: [den] }
+`;
+
+/** A 12×6 yard: 39 candidate cells (the player start excluded), 15 of them tagged `grass`, 11 in the `den`. */
+const YARD = (populate: string) => ({
+  'tiles.yaml': DENSE_TILES,
+  'map.yaml': `maps:
+  - id: yard
+${YARD_ROWS}    populate:
+${populate}start: { map: yard, player: hero }
+`,
+});
+
+/** The yard as a part placed twice, its own populate once per placement. */
+const PAIR = (populate: string) => ({
+  'tiles.yaml': DENSE_TILES,
+  'map.yaml': `maps:
+  - id: yard
+${YARD_ROWS}    populate:
+${populate}  - id: pair
+    size: [24, 6]
+    fill: floor
+    player: [1, 3]
+    parts:
+      - { map: yard, at: [0, 0] }
+      - { map: yard, at: [12, 0] }
+start: { map: pair, player: hero }
+`,
+});
+
+const GRASS = `      - { archetype: rock, density: 20, where: 'tile.has_tag("grass")' }\n`;
+
+test('populate density: exactly one of count/density, a density > 0, and a boolean where over tile only', () => {
+  expectError(YARD('      - { archetype: rock, count: 1, density: 1 }\n'), /populate entries take exactly one of 'count' and 'density', not both/);
+  expectError(YARD('      - { archetype: rock }\n'), /missing required field 'count' or 'density' \(populate entries take exactly one\)/);
+  for (const bad of ['0', '-1', '"2"', 'true', '[1]']) expectError(YARD(`      - { archetype: rock, density: ${bad} }\n`), /field 'density' must be a number > 0 \(entities per 100 candidate cells\)/);
+  expectError(YARD('      - { archetype: rock, density: 300 }\n'), /populate count 117 \(density 300\) of 't:rock' in 't:yard' is more than its 39 candidate cells/);
+  // `where` sees only `tile`: every other scope name and the RNG/world built-ins are errors naming the field.
+  for (const src of ['self.hp > 1', 'player.x > 1', 'npc.x > 1', 'world.is_day', 'self == player', 'random(1, 2) > 1', 'roll(1, 6) > 3', 'has_status(self, "x")', 'var("x") > 0', 'can_see(tile, tile)']) {
+    const name = /^[a-z_]+/.exec(src)![0];
+    expectError(YARD(`      - { archetype: rock, density: 10, where: '${src}' }\n`), new RegExp(`populate 'where' sees only 'tile': '${name}' is not available at load`));
+  }
+  expectError(YARD("      - { archetype: rock, density: 10, where: 'tile.x' }\n"), /populate 'where' "tile.x" must produce a boolean, got number/);
+  expectError(YARD("      - { archetype: rock, density: 10, where: 'tile.id' }\n"), /must produce a boolean, got string/);
+  expectError(YARD('      - { archetype: rock, density: 10, where: 5 }\n'), /field 'where' must be a string/);
+  expectError(YARD("      - { archetype: rock, density: 10, where: 'tile.x >' }\n"), /expression syntax error in "tile.x >"/);
+  expectError(YARD("      - { archetype: rock, density: 10, where: 'tile.in_room(\"dne\")' }\n"), /unknown room tag 'dne' \(did you mean 'den'\?\)/);
+  // `where` composes with rect, floor and room: the expression filters what the fields left.
+  expectError(YARD("      - { archetype: rock, count: 2, room: den, where: 'tile.x == 4 and tile.y == 2' }\n"), /populate count 2 of 't:rock' in 't:yard' is more than its 1 candidate cell \(/);
+  expectError(YARD("      - { archetype: rock, count: 6, rect: [5, 1, 5, 3], where: 'tile.y == 1' }\n"), /populate count 6 of 't:rock' in 't:yard' is more than its 5 candidate cells/);
+  expectError(YARD("      - { archetype: rock, count: 1, where: 'tile.z == 1' }\n"), /populate count 1 of 't:rock' in 't:yard' is more than its 0 candidate cells/);
+  assert.equal(rocksOf(World.create(loadPacksOrThrow([fixture(YARD("      - { archetype: rock, density: 100, where: 'tile.z == 0' }\n"))]), 1)).length, 39);
+});
+
+test('populate density: where sees the cell as tile; room: den and tile.in_room("den") agree', () => {
+  const cands = (populate: string) => {
+    const def = loadPacksOrThrow([fixture(YARD(populate))]);
+    const m = def.maps[def.start.map]!;
+    return m.populate.map((p) => populateCandidates(m, def.tiles, p));
+  };
+  const [byRoom] = cands('      - { archetype: rock, count: 1, room: den }\n');
+  const [byWhere] = cands("      - { archetype: rock, count: 1, where: 'tile.in_room(\"den\")' }\n");
+  assert.deepEqual(byWhere, byRoom);
+  assert.equal(byRoom!.length, 11);
+  const [grass, row, all, none] = cands(
+    "      - { archetype: rock, count: 1, where: 'tile.has_tag(\"grass\")' }\n" +
+      "      - { archetype: rock, count: 1, where: 'tile.id == \"t:grass\" and tile.y == 1' }\n" +
+      "      - { archetype: rock, count: 1, where: 'tile.z == 0 and not tile.has_tag(\"wall\")' }\n" +
+      "      - { archetype: rock, density: 50, where: 'tile.in_room(\"den\") and tile.has_tag(\"grass\")' }\n",
+  );
+  assert.deepEqual([grass!.length, row!.length, all!.length, none!.length], [15, 5, 39, 0]);
+});
+
+test('populate density: round(d × candidates / 100), 0 places nothing, the overlap check, per placement on a part', () => {
+  const rocks = (populate: string, seed = 1) => rocksOf(World.create(loadPacksOrThrow([fixture(YARD(populate))]), seed));
+  assert.equal(rocks('      - { archetype: rock, density: 10 }\n').length, 4); // round(3.9)
+  assert.equal(rocks('      - { archetype: rock, density: 1 }\n').length, 0); // round(0.39): nothing, and no error
+  const onGrass = rocks(GRASS);
+  assert.equal(onGrass.length, 3); // round(20 × 15 / 100)
+  for (const e of onGrass) assert.ok(e.x >= 5 && e.x <= 9 && e.y >= 1 && e.y <= 3, cells([e]).join());
+  assert.equal(rocks("      - { archetype: rock, density: 40, where: 'tile.has_tag(\"grass\") and tile.y == 1' }\n").length, 2);
+  // A density entry before a count entry: the overlap check uses the derived count.
+  const grassAll = "      - { archetype: rock, density: 100, where: 'tile.has_tag(\"grass\")' }\n";
+  expectError(YARD(`${grassAll}      - { archetype: rock, count: 25 }\n`), /populate count 25 of 't:rock' in 't:yard' may not fit: earlier entries can take 15 of its 39 candidate cells/);
+  const full = rocks(`${grassAll}      - { archetype: rock, count: 24 }\n`);
+  assert.equal(full.length, 39);
+  assert.equal(new Set(cells(full)).size, 39);
+  // On a part placed twice: one draw per placement, each sized by its own candidates on the composed map.
+  const def = loadPacksOrThrow([fixture(PAIR(GRASS))]);
+  const m = def.maps[def.start.map]!;
+  assert.deepEqual(
+    m.populate.map((p) => [p.x, p.count, p.density, p.where !== null]),
+    [
+      [0, null, 20, true],
+      [12, null, 20, true],
+    ],
+  );
+  assert.deepEqual(populatePlan(m, def.tiles).map((p) => [p.candidates.length, p.count, p.taken]), [
+    [15, 3, 0],
+    [15, 3, 0],
+  ]);
+  for (const seed of [1, 2, 3]) {
+    const placed = rocksOf(World.create(def, seed));
+    assert.equal(placed.length, 6);
+    assert.ok(placed.slice(0, 3).every((e) => e.x >= 5 && e.x <= 9) && placed.slice(3).every((e) => e.x >= 17 && e.x <= 21), cells(placed).join(' '));
+  }
+});
+
+test('populate density: the same seed gives the same cells; count entries, the world RNG and loot are as before this spec', () => {
+  const dense = loadPacksOrThrow([fixture(YARD(GRASS))]);
+  const plain = loadPacksOrThrow([fixture(YARD('      - { archetype: rock, count: 1 }\n'))]);
+  for (const seed of [1, 5, 9]) {
+    assert.deepEqual(cells(rocksOf(World.create(dense, seed))), cells(rocksOf(World.create(dense, seed))));
+    assert.equal(World.create(dense, seed).rng.state, World.create(plain, seed).rng.state, 'the world RNG never sees populate');
+  }
+  // Worlds whose populate uses `count` hash as they did before densities existed (recorded at 192e453).
+  const field = loadPacksOrThrow([fixture(FIELD('      - { archetype: rock, count: 3, room: den }\n      - { archetype: rock, count: 12 }\n'))]);
+  assert.deepEqual(
+    [1, 7, 42].map((seed) => World.create(field, seed).hash()),
+    ['ae90ca61', '3385aa6e', '1b6da8fe'],
+  );
+  assert.deepEqual(
+    [1, 7].map((seed) => World.create(ESTATE, seed).hash()),
+    ['2fe549a0', 'eeaa3060'],
+  );
+});
+
+test('check --populate: one line per entry (count or density → N, candidates, free cells), then the total; byte-stable', () => {
+  const def = loadPacksOrThrow([fixture(YARD(`${GRASS}      - { archetype: rock, count: 24 }\n      - { archetype: rock, density: 1 }\n`))]);
+  assert.deepEqual(formatPopulate(def), [
+    'populate:',
+    '  t:yard',
+    '    t:rock  density 20 → 3  15 candidates, 15 free',
+    '    t:rock  count 24        39 candidates, 36 free',
+    '    t:rock  density 1 → 0   39 candidates, 12 free',
+    '    total 27',
+  ]);
+  // A part's entries are listed on the part and, per placement, on the composite.
+  assert.deepEqual(formatPopulate(loadPacksOrThrow([fixture(PAIR(GRASS))])), [
+    'populate:',
+    '  t:yard',
+    '    t:rock  density 20 → 3  15 candidates, 15 free',
+    '    total 3',
+    '  t:pair',
+    '    t:rock  density 20 → 3  15 candidates, 15 free',
+    '    t:rock  density 20 → 3  15 candidates, 15 free',
+    '    total 6',
+  ]);
+  assert.deepEqual(formatPopulate(loadPacksOrThrow([fixture()])), ['populate:', '  none']);
+});
+
+test('zombie: the city is populated by density over three rooms: ~896 in all, the centre block left to its spawns, downtown denser', () => {
+  const city = CITY.maps[CITY.start.map]!;
+  const plans = populatePlan(city, CITY.tiles);
+  const own = city.populate.map((p, k) => [p, plans[k]!] as const).filter(([p]) => p.density !== null);
+  assert.equal(own.length, 4, 'four density entries (the rest are house_c placements)');
+  const total = own.reduce((a, [, plan]) => a + plan.count, 0);
+  assert.ok(total >= 806 && total <= 986, `${total} populated by the city's own entries (896 ± 10 %)`);
+  const w = World.create(CITY, 1);
+  assert.equal(w.entities.length, 1 + city.spawns.length + plans.reduce((a, p) => a + p.count, 0));
+  type Rect = readonly [number, number, number, number];
+  const CENTER: Rect = [137, 137, 69, 69];
+  const DOWNTOWN: Rect = [73, 73, 197, 197];
+  const TOWN: Rect = [9, 9, 325, 325];
+  const inRect = (e: Entity, [x, y, wd, h]: Rect) => e.x >= x && e.x < x + wd && e.y >= y && e.y < y + h;
+  const npcs = w.entities.filter((e) => e !== w.player);
+  assert.equal(city.spawns.length, 6);
+  // The centre block holds town_center's six spawns (and house_c's own crawlers upstairs): the density entries place nothing there.
+  const firstOwn = city.spawns.length + city.populate.filter((p) => p.density === null).length; // ids above this come from the density entries
+  const centre = npcs.filter((e) => inRect(e, CENTER));
+  assert.deepEqual(centre.filter((e) => e.id <= city.spawns.length).map((e) => e.id), [1, 2, 3, 4, 5, 6]);
+  assert.ok(centre.every((e) => e.id <= firstOwn && (e.id <= city.spawns.length || e.z === 1)), `${centre.length} in the centre block`);
+  const populated = npcs.filter((e) => e.id > city.spawns.length && e.z === 0);
+  const downtown = populated.filter((e) => inRect(e, DOWNTOWN) && !inRect(e, CENTER)).length / 8;
+  const suburbs = populated.filter((e) => inRect(e, TOWN) && !inRect(e, DOWNTOWN)).length / 16;
+  const fields = populated.filter((e) => !inRect(e, TOWN)).length;
+  assert.ok(downtown > 1.5 * suburbs, `${downtown} per downtown block vs ${suburbs} per suburban block`);
+  assert.ok(fields >= 40 && fields <= 56, `${fields} in the fields`);
+  const crawlers = npcs.filter((e) => e.archetype.id === 'zmb:crawler' && inRect(e, DOWNTOWN) && e.z === 0 && e.id > 6).length;
+  assert.ok(crawlers >= 40 && crawlers <= 60, `${crawlers} crawlers downtown`);
 });
 
 // ── Simulation settings ────────────────────────────────────────────────────

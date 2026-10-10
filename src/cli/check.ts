@@ -1,15 +1,16 @@
 import type { LoadError } from '../core/index.ts';
 import { fail, loadOrExitIf, parseArgs, stackOrExit } from './common.ts';
 import { formatOverrides, patchSummary } from './overrides.ts';
+import { formatPopulate } from './populate.ts';
 import { readSaveFile } from './saves.ts';
 
 const args = parseArgs(
   process.argv.slice(2),
-  'usage: npm run check -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--save <file>] [--overrides]',
+  'usage: npm run check -- <pack|pack-dir> [<pack|pack-dir>…] [--packs-dir <dir>] [--save <file>] [--overrides] [--populate]',
   ['--seed', '--save', '--packs-dir'],
-  ['--overrides'],
+  ['--overrides', '--populate'],
 );
-const { save, overrides } = args;
+const { save, overrides, populate } = args;
 const dirs = stackOrExit(args);
 
 /**
@@ -35,6 +36,7 @@ if (!r.ok) {
       `${def.vars.length} vars, ${def.quests.length} quests, ${def.journal.length} journal entries, ${def.dialogues.length} dialogues, ${def.factions.length} factions`,
   );
   for (const line of overrides ? formatOverrides(def) : patchSummary(def)) console.log(line);
+  if (populate) for (const line of formatPopulate(def)) console.log(line);
   if (save !== null) {
     const s = readSaveFile(def, save);
     if (!s.ok) {

@@ -19,47 +19,27 @@ maps:
       - { archetype: crawler, count: 1, floor: 1, room: bedroom }
   - id: town:city
     override: true
-    # One rect per 59×59 block and the roads around it: denser downtown (the 8
-    # blocks around town_center), sparser further out; town_center's own
-    # block is left to its handful of spawns.
+    # Three nested regions of the 343×343 city, in composite coordinates
+    # (the base city has no rooms of its own): `town` is the 5×5 grid of
+    # blocks and the roads between them, `downtown` the 3×3 around the old
+    # town block, `center` that block itself (left to its spawns above).
+    rooms:
+      - { rect: [9, 9, 325, 325], tags: [town] }
+      - { rect: [73, 73, 197, 197], tags: [downtown] }
+      - { rect: [137, 137, 69, 69], tags: [center] }
+    # Density is entities per 100 candidate cells (walkable, no furniture,
+    # floor 0); `npm run check -- zombie --populate` lists the cells and the
+    # counts (about 895 in all: 400 + 50 downtown, 397 in the suburbs, 48 in
+    # the fields).
     populate:
-      - { archetype: shambler, count: 25, rect: [9, 9, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [73, 9, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [137, 9, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [201, 9, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [265, 9, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [9, 73, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [73, 73, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [73, 73, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [137, 73, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [137, 73, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [201, 73, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [201, 73, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [265, 73, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [9, 137, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [73, 137, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [73, 137, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [201, 137, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [201, 137, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [265, 137, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [9, 201, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [73, 201, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [73, 201, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [137, 201, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [137, 201, 69, 69] }
-      - { archetype: shambler, count: 50, rect: [201, 201, 69, 69] }
-      - { archetype: crawler, count: 6, rect: [201, 201, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [265, 201, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [9, 265, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [73, 265, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [137, 265, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [201, 265, 69, 69] }
-      - { archetype: shambler, count: 25, rect: [265, 265, 69, 69] }
-      # The fields around the town.
-      - { archetype: shambler, count: 12, rect: [0, 0, 343, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 334, 343, 9] }
-      - { archetype: shambler, count: 12, rect: [0, 9, 9, 325] }
-      - { archetype: shambler, count: 12, rect: [334, 9, 9, 325] }
+      # Downtown: 1.2 per 100 of its ~33 300 cells, twice the suburbs.
+      - { archetype: shambler, density: 1.2, where: 'tile.in_room("downtown") and not tile.in_room("center")' }
+      # One crawler for every eight shamblers downtown.
+      - { archetype: crawler, density: 0.15, where: 'tile.in_room("downtown") and not tile.in_room("center")' }
+      # The suburbs: 0.6 per 100 of the ~66 200 cells of the outer 16 blocks.
+      - { archetype: shambler, density: 0.6, where: 'tile.in_room("town") and not tile.in_room("downtown")' }
+      # The fields around the town: 0.4 per 100 of ~12 000 grass cells.
+      - { archetype: shambler, density: 0.4, where: 'not tile.in_room("town")' }
 
 archetypes:
   - id: town:resident
