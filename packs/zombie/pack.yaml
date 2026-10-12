@@ -3,4 +3,5 @@ name: Zombie Town
 version: 0.2.0
 depends: [std, std_needs, town]
 kind: mod
+featured: 2
 description: The dead rise in the town. Find a car battery and get out.

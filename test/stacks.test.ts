@@ -83,6 +83,51 @@ test('catalog: duplicate namespace, bad kind and malformed manifests are errors;
   assert.equal(c.errors.length, 6);
 });
 
+test('catalog: featured is a positive integer on a game or mod, null when absent', () => {
+  const c = buildCatalog([
+    { dir: 'a', manifest: m('a', 'kind: game\nfeatured: 1\n') },
+    { dir: 'b', manifest: m('b', 'kind: mod\ndepends: [a]\n') },
+    { dir: 'z', manifest: m('z', 'kind: game\nfeatured: 0\n') },
+    { dir: 'x', manifest: m('x', 'kind: game\nfeatured: x\n') },
+    { dir: 'f', manifest: m('f', 'kind: game\nfeatured: 1.5\n') },
+    { dir: 'l', manifest: m('l', 'kind: game\nfeatured: [1]\n') },
+    { dir: 'n', manifest: m('n', 'kind: game\nfeatured: -2\n') },
+    { dir: 'lib', manifest: m('lib', 'kind: library\nfeatured: 2\n') },
+  ]);
+  assert.deepEqual(
+    c.packs.map((p) => [p.dir, p.featured]),
+    [
+      ['a', 1],
+      ['b', null],
+    ],
+  );
+  for (const dir of ['z', 'x', 'f', 'l', 'n']) {
+    const e = c.errors.filter((e) => e.pack === dir);
+    assert.equal(e.length, 1, dir);
+    assert.equal(e[0]!.path, 'featured');
+    assert.equal(e[0]!.message, "field 'featured' must be a positive integer");
+  }
+  const lib = c.errors.filter((e) => e.pack === 'lib');
+  assert.equal(lib.length, 1);
+  assert.equal(lib[0]!.path, 'featured');
+  assert.equal(lib[0]!.message, 'only game and mod packs can be featured');
+});
+
+test('catalog: the shipped featured packs are garden, zombie, vampire and western', () => {
+  assert.deepEqual(
+    SHIPPED.packs
+      .filter((p) => p.featured !== null)
+      .sort((a, b) => a.featured! - b.featured!)
+      .map((p) => [p.dir, p.featured]),
+    [
+      ['garden', 1],
+      ['zombie', 2],
+      ['vampire', 3],
+      ['western', 4],
+    ],
+  );
+});
+
 test('loader: bad kind is a load error too (shared manifest validation)', () => {
   const r = loadPacks([pack('p', { 'pack.yaml': m('p', 'kind: library\n') }), pack('q', { 'pack.yaml': m('q', 'kind: plugin\n') })]);
   assert.ok(!r.ok);
@@ -224,6 +269,10 @@ test('kind: PackInfo carries kind and description; shipped stacks load as before
     ],
   );
   assert.ok(r.definition.packs.every((p) => typeof p.description === 'string' && p.description.length > 0));
+  assert.deepEqual(
+    r.definition.packs.map((p) => p.featured),
+    [null, null, null, 2],
+  );
 });
 
 // ── CLI argument resolver ─────────────────────────────────────────────────

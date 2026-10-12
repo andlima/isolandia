@@ -31,8 +31,9 @@ npm install
 npm run dev          # browser game (Vite) at http://localhost:5173
 ```
 
-The page opens on a title screen: pick a game (and optional mods) and a
-seed. Or go straight to a game with query parameters; dependencies are
+The page opens on a title screen: click a quick-play card to start a
+featured game at once, or open the Advanced section to pick a game,
+optional mods and a seed. Or go straight to a game with query parameters; dependencies are
 added for you:
 
 ```

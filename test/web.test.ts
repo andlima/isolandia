@@ -242,6 +242,55 @@ test('picker: choosing a mod; mods already in its stack are disabled', () => {
   assert.equal(pickerModel(webCatalog(STACK_YAML), 'broken', []).query, null);
 });
 
+test('picker: featured packs become quick-play cards, by featured then directory', () => {
+  assert.deepEqual(pickerModel(webCatalog(STACK_YAML), null, []).featured, []);
+  const feat = (dir: string, n: number) => {
+    const key = `/packs/${dir}/pack.yaml`;
+    return { [key]: `${(STACK_YAML as Record<string, string>)[key]}featured: ${n}\n` };
+  };
+  const c = webCatalog({ ...STACK_YAML, ...feat('other', 1), ...feat('game', 2), ...feat('broken', 3) });
+  assert.deepEqual(c.errors, []);
+  const v = pickerModel(c, null, []);
+  assert.deepEqual(
+    v.featured.map((f) => [f.dir, f.enabled, f.query]),
+    [
+      ['other', true, '?packs=other&seed=1'],
+      ['game', true, '?packs=game&seed=1'],
+      ['broken', false, null],
+    ],
+  );
+  const game = v.featured[1]!;
+  assert.equal(game.name, 'Game');
+  assert.equal(game.description, 'A game.');
+  assert.deepEqual(game.stack, ['base', 'game']);
+  assert.equal(game.reason, null);
+  const broken = v.featured[2]!;
+  assert.deepEqual(broken.stack, []);
+  assert.match(broken.reason!, /depends on unknown pack 'nothing'/);
+  // A custom seed flows into the card queries.
+  assert.deepEqual(
+    pickerModel(c, null, [], 7).featured.map((f) => f.query),
+    ['?packs=other&seed=7', '?packs=game&seed=7', null],
+  );
+  // Ties fall back to the directory.
+  const tie = pickerModel(webCatalog({ ...STACK_YAML, ...feat('other', 1), ...feat('game', 1) }), null, []);
+  assert.deepEqual(
+    tie.featured.map((f) => f.dir),
+    ['game', 'other'],
+  );
+  // Rows, mods and the query do not change with featuring.
+  const plain = webCatalog(STACK_YAML);
+  for (const [chosen, checked] of [
+    [null, []],
+    ['game', ['hardmode', 'extra']],
+    ['hardmode', []],
+  ] as const) {
+    const a = pickerModel(plain, chosen, checked, 3);
+    const b = pickerModel(c, chosen, checked, 3);
+    assert.deepEqual([b.rows, b.mods, b.stack, b.query, b.errors], [a.rows, a.mods, a.stack, a.query, a.errors]);
+  }
+});
+
 test('picker: catalog errors are listed', () => {
   const v = pickerModel(webCatalog({ ...STACK_YAML, '/packs/bad/pack.yaml': 'name: X\n' }), null, []);
   assert.equal(v.errors.length, 1);

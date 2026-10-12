@@ -337,6 +337,16 @@
       #picker .picker-footer { margin-top: 16px; }
       #picker input[type=number] { width: 80px; font: inherit; }
       #picker button#picker-play { font: inherit; padding: 2px 16px; cursor: pointer; }
+      #picker .picker-cards { display: grid; gap: 8px; margin-bottom: 16px; }
+      @media (min-width: 480px) { #picker .picker-cards { grid-template-columns: 1fr 1fr; } }
+      #picker .picker-card {
+        display: block; width: 100%; min-height: 44px; text-align: left; padding: 14px 14px; font: inherit; color: inherit;
+        background: #262a31; border: 1px solid #3a404b; border-radius: 4px; cursor: pointer;
+      }
+      #picker .picker-card .picker-name { display: block; font-size: 16px; margin-bottom: 4px; }
+      #picker .picker-card:hover:enabled, #picker .picker-card:focus-visible { border-color: #ffd23f; background: #333a44; outline: none; }
+      #picker .picker-card:disabled { opacity: 0.5; cursor: default; }
+      #picker .picker-advanced summary { cursor: pointer; color: #c9a25a; }
     </style>
   </head>
   <body>
