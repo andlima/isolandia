@@ -44,16 +44,26 @@ Without a `packs` parameter, the page shows a **title screen** instead of
 a game. It is built from the bundled catalog (every `packs/<dir>/pack.yaml`
 in the Vite glob), so `src/` stays genre-agnostic.
 
-- It lists every pack of [kind](packs.md#manifest-packyaml) `game`, then
-  every `mod`, with its `name`, `description` and resolved stack. A pack
-  whose stack does not resolve is disabled with the reason.
-- Choosing one shows **checkboxes for the other mods**. A mod can be
-  checked only if the chosen pack plus the checked mods plus it still
-  resolve; otherwise it is disabled with the reason (a mod already in the
-  stack is disabled too). Checked mods are appended in click order, which
-  decides the load order between unrelated mods.
-- **Play** navigates to `?packs=<chosen>,<checked…>&seed=<seed>`; the seed
-  field defaults to 1.
+- At the top, **quick-play cards**: one big button per pack whose
+  `pack.yaml` sets [`featured: N`](packs.md#manifest-packyaml), in that
+  order, with its `name` and `description`. One click starts the game at
+  once (`?packs=<dir>&seed=<seed>`, with the seed field's value, default
+  1). A featured pack whose stack does not resolve is shown disabled with
+  the reason. The shipped cards are `garden`, `zombie`, `vampire` and
+  `western`.
+- Below them, a collapsed **Advanced: build your own stack** section
+  (closed when there are cards, open when no pack is featured) holds the
+  full picker:
+  - It lists every pack of [kind](packs.md#manifest-packyaml) `game`, then
+    every `mod`, with its `name`, `description` and resolved stack. A pack
+    whose stack does not resolve is disabled with the reason.
+  - Choosing one shows **checkboxes for the other mods**. A mod can be
+    checked only if the chosen pack plus the checked mods plus it still
+    resolve; otherwise it is disabled with the reason (a mod already in the
+    stack is disabled too). Checked mods are appended in click order, which
+    decides the load order between unrelated mods.
+  - **Play** navigates to `?packs=<chosen>,<checked…>&seed=<seed>`; the seed
+    field defaults to 1 and is shared with the cards.
 
 The screen is a thin DOM layer (`src/web/picker-dom.ts`) over the pure
 `pickerModel(catalog, chosen, checked, seed)` in `src/web/picker.ts`.

@@ -85,7 +85,7 @@ function parseFile(pack: string, file: string, text: string, sink: ErrorSink): S
 export const PACK_KINDS = ['game', 'mod', 'library'] as const;
 export type PackKind = (typeof PACK_KINDS)[number];
 
-const MANIFEST_FIELDS = ['namespace', 'name', 'version', 'kind', 'description', 'depends'];
+const MANIFEST_FIELDS = ['namespace', 'name', 'version', 'kind', 'description', 'featured', 'depends'];
 
 /** A validated `pack.yaml`: what the loader and the catalog both need. */
 export interface Manifest {
@@ -94,6 +94,8 @@ export interface Manifest {
   readonly version: string;
   readonly kind: PackKind;
   readonly description: string;
+  /** Title-screen quick-play order (lower first), or null when not featured. */
+  readonly featured: number | null;
   readonly depends: readonly { ns: string; src: Src }[];
   readonly manifest: SourceFile;
 }
@@ -154,6 +156,12 @@ export function readManifest(label: string, text: string | undefined, sink: Erro
   if (description !== undefined && description !== null && typeof description !== 'string') {
     sink.add(at(mroot, 'description'), `field 'description' must be a string`);
   }
+  const featured = m['featured'];
+  const featuredOk = typeof featured === 'number' && Number.isInteger(featured) && featured > 0;
+  if (featured !== undefined && featured !== null) {
+    if (!featuredOk) sink.add(at(mroot, 'featured'), `field 'featured' must be a positive integer`);
+    else if (kind === 'library') sink.add(at(mroot, 'featured'), 'only game and mod packs can be featured');
+  }
   const depends: { ns: string; src: Src }[] = [];
   const dep = m['depends'];
   if (dep !== undefined && dep !== null) {
@@ -172,6 +180,7 @@ export function readManifest(label: string, text: string | undefined, sink: Erro
     version: String(version ?? ''),
     kind,
     description: typeof description === 'string' ? description : '',
+    featured: featuredOk ? featured : null,
     depends,
     manifest,
   };

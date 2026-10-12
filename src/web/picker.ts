@@ -1,7 +1,8 @@
 /**
- * The title screen's model (DOM in `picker-dom.ts`): every `game` and `mod`
- * pack of the catalog, and once one is chosen, checkboxes for the other
- * mods. A pure function of the catalog and the current choice.
+ * The title screen's model (DOM in `picker-dom.ts`): quick-play cards for
+ * the featured packs, every `game` and `mod` pack of the catalog, and once
+ * one is chosen, checkboxes for the other mods. A pure function of the
+ * catalog and the current choice.
  */
 
 import { formatError, resolveStack, type Catalog, type CatalogPack } from '../core/index.ts';
@@ -31,7 +32,23 @@ export interface PickerMod {
   readonly reason: string | null;
 }
 
+/** A quick-play card: one featured pack, started with one click. */
+export interface PickerCard {
+  readonly dir: string;
+  readonly name: string;
+  readonly description: string;
+  /** Namespaces of the resolved stack, in load order (empty when it does not resolve). */
+  readonly stack: readonly string[];
+  readonly enabled: boolean;
+  /** Why the card is disabled, or null. */
+  readonly reason: string | null;
+  /** `?packs=<dir>&seed=<seed>`, or null when disabled. */
+  readonly query: string | null;
+}
+
 export interface PickerView {
+  /** Featured packs, by `featured` then directory. */
+  readonly featured: readonly PickerCard[];
   /** Games first, then mods, each by directory. */
   readonly rows: readonly PickerRow[];
   /** The other mods, when a row is chosen (else empty). */
@@ -45,6 +62,14 @@ export interface PickerView {
 }
 
 const byDir = (a: CatalogPack, b: CatalogPack) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0);
+
+// Keep the commas readable: `?packs=game,hard&seed=1`.
+function queryOf(tokens: readonly string[], seed: number): string {
+  const q = new URLSearchParams();
+  q.set('packs', tokens.join(','));
+  q.set('seed', String(seed));
+  return `?${q.toString().replace(/%2C/g, ',')}`;
+}
 
 function stackOf(catalog: Catalog, tokens: readonly string[]): { stack: string[]; reason: string | null } {
   const r = resolveStack(catalog, tokens);
@@ -62,9 +87,16 @@ export function pickerModel(catalog: Catalog, chosen: string | null, checked: re
     const { stack, reason } = stackOf(catalog, [p.dir]);
     return { dir: p.dir, name: p.name, kind: p.kind as 'game' | 'mod', description: p.description, stack, chosen: p.dir === chosen, enabled: reason === null, reason };
   });
+  const featured = catalog.packs
+    .filter((p) => p.featured !== null)
+    .sort((a, b) => a.featured! - b.featured! || byDir(a, b))
+    .map((p): PickerCard => {
+      const { stack, reason } = stackOf(catalog, [p.dir]);
+      return { dir: p.dir, name: p.name, description: p.description, stack, enabled: reason === null, reason, query: reason === null ? queryOf([p.dir], seed) : null };
+    });
   const errors = catalog.errors.map(formatError);
   const row = rows.find((r) => r.chosen && r.enabled);
-  if (!row) return { rows, mods: [], stack: [], query: null, errors };
+  if (!row) return { featured, rows, mods: [], stack: [], query: null, errors };
 
   // Keep the checked mods that still resolve, in click order.
   const kept: string[] = [];
@@ -82,9 +114,5 @@ export function pickerModel(catalog: Catalog, chosen: string | null, checked: re
       const { reason } = stackOf(catalog, [row.dir, ...kept, m.dir]);
       return { ...base, checked: false, enabled: reason === null, reason };
     });
-  const q = new URLSearchParams();
-  q.set('packs', [row.dir, ...kept].join(','));
-  q.set('seed', String(seed));
-  // Keep the commas readable: `?packs=game,hard&seed=1`.
-  return { rows, mods: modRows, stack: current, query: `?${q.toString().replace(/%2C/g, ',')}`, errors };
+  return { featured, rows, mods: modRows, stack: current, query: queryOf([row.dir, ...kept], seed), errors };
 }

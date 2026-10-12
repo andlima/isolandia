@@ -130,6 +130,7 @@ name: Zombie Town       # required
 version: 0.2.0          # required
 depends: [std, std_needs, town]  # optional; each loads before this pack
 kind: mod               # optional: game | mod | library (default: library)
+featured: 2             # optional: quick-play card order on the title screen (game or mod only)
 description: The dead rise in the town. Find a car battery and get out.  # optional
 ```
 
@@ -147,6 +148,15 @@ string. Both end up in `Definition.packs` (`PackInfo.kind`,
 `PackInfo.description`). The shipped `std` and `std-needs` are libraries;
 `town` and `garden` are games; `zombie`, `vampire` and `hardship` are mods
 (see [Shipped packs](#shipped-packs)).
+
+`featured: N` puts the pack on the browser's title screen as a one-click
+**quick-play card**; N is a positive integer (1, 2, 3…) giving the order
+among featured packs (lower first, ties by directory). Any other value
+(a string, 0, a negative or non-integer number, a list) is an error,
+`field 'featured' must be a positive integer`, and only `game` and `mod`
+packs can be featured (on a `library` it is the error `only game and mod
+packs can be featured`). It ends up in `PackInfo.featured` and
+`CatalogPack.featured` (null when absent).
 
 ## Stacks
 
@@ -2475,6 +2485,9 @@ More stdpacks are added as genres repeat patterns.
 Everything under `packs/`, extending the [stdpack](#standard-packs) table.
 One genre-free base game, `town`, carries the generic content; the genres
 are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
+`garden`, `zombie`, `vampire` and `western` are
+[featured](#manifest-packyaml) (`featured: 1` to `4`, in that order) and
+appear as quick-play cards on the browser's title screen.
 
 | Pack (directory) | Namespace | Kind | Depends | Contents |
 |---|---|---|---|---|

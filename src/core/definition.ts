@@ -27,6 +27,8 @@ export interface PackInfo {
   readonly kind: 'game' | 'mod' | 'library';
   /** Manifest `description` (empty when absent). */
   readonly description: string;
+  /** Manifest `featured`: the title screen's quick-play order (lower first), or null. */
+  readonly featured: number | null;
   readonly depends: readonly string[];
 }
 

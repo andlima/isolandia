@@ -3,4 +3,5 @@ name: Vampire Mansion
 version: 0.2.0
 depends: [std, town]
 kind: mod
+featured: 3
 description: Play a vampire stalking the night across a mansion estate.

@@ -79,7 +79,8 @@ try {
   if (!text.includes("unknown pack 'nosuchpack'")) failures.push(`[error screen] expected an unknown-pack error, got ${JSON.stringify(text)}`);
   await page.close();
 
-  // The bare URL shows the title screen with at least one row.
+  // The bare URL shows the title screen with at least one card or row (the
+  // rows sit in a closed <details> when there are cards, so wait for either).
   const title = await browser.newPage();
   const titleProblems = [];
   title.on('console', (m) => {
@@ -87,10 +88,11 @@ try {
   });
   title.on('pageerror', (e) => titleProblems.push(`page error: ${e.message}`));
   await title.goto(baseUrl);
-  await title.waitForSelector('#picker .picker-row', { timeout: 15_000 }).catch(() => null);
+  await title.waitForSelector('#picker .picker-card, #picker .picker-row', { timeout: 15_000 }).catch(() => null);
+  const cards = await title.$$eval('#picker .picker-card', (els) => els.length);
   const rows = await title.$$eval('#picker .picker-row', (els) => els.length);
-  console.log(`smoke: title screen with ${rows} row(s)`);
-  if (rows < 1) titleProblems.push('no rows on the title screen');
+  console.log(`smoke: title screen with ${cards} card(s) and ${rows} row(s)`);
+  if (cards + rows < 1) titleProblems.push('no cards or rows on the title screen');
   await title.screenshot({ path: resolve(outDir, 'title.png') });
   for (const p of titleProblems) failures.push(`[title screen] ${p}`);
   await title.close();

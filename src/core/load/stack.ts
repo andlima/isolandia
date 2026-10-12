@@ -17,6 +17,8 @@ export interface CatalogPack {
   readonly version: string;
   readonly kind: PackKind;
   readonly description: string;
+  /** Manifest `featured`: the title screen's quick-play order (lower first), or null. */
+  readonly featured: number | null;
   /** Namespaces, as listed in the manifest. */
   readonly depends: readonly string[];
 }
@@ -61,6 +63,7 @@ export function buildCatalog(entries: readonly { dir: string; manifest: string |
       version: m.version,
       kind: m.kind,
       description: m.description,
+      featured: m.featured,
       depends: m.depends.map((d) => d.ns),
     };
     byNs.set(m.namespace, pack);

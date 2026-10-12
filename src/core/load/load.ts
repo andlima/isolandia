@@ -226,6 +226,7 @@ class Loader {
           version: raw.version,
           kind: raw.kind,
           description: raw.description,
+          featured: raw.featured,
           depends: raw.depends.map((d) => d.ns),
         }),
       ),
