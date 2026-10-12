@@ -1,5 +1,6 @@
 .spec-state/
 .worktrees/
+.spec-workspaces/
 .spec.local.toml
 .claude/settings.local.json
 .codex/
