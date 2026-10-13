@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { luminance, parseColor, shade } from '../src/iso/colors.ts';
 import { fadeCells } from '../src/iso/cutaway.ts';
+import { imageResolution } from '../src/iso/resolution.ts';
 import { depthKey, diagonalOf, Layer } from '../src/iso/depth.ts';
 import {
   BLOCK_H,
@@ -196,4 +197,16 @@ test('colors: hex, names, shading, luminance', () => {
   assert.equal(shade(0x808080, 0.5), 0x404040);
   assert.equal(shade(0xf0f0f0, 2), 0xffffff);
   assert.ok(luminance(0xffffff) > 0.99 && luminance(0) === 0);
+});
+
+test('imageResolution: a PNG named @Nx (N from 1 to 4) is drawn at 1/N of its size', () => {
+  assert.equal(imageResolution('assets/a@2x.png'), 2);
+  assert.equal(imageResolution('a@3x.PNG'), 3);
+  assert.equal(imageResolution('a@1x.png'), 1);
+  assert.equal(imageResolution('a@4x.png'), 4);
+  assert.equal(imageResolution('a.png'), 1);
+  assert.equal(imageResolution('a@2x.svg'), 1, 'SVGs use SVG_RESOLUTION');
+  assert.equal(imageResolution('a@0x.png'), 1);
+  assert.equal(imageResolution('a@5x.png'), 1);
+  assert.equal(imageResolution('a@2x-old.png'), 1);
 });

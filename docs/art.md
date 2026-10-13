@@ -1,8 +1,9 @@
 # Pixel art
 
 Every image in the shipped packs (`std`, `town`, `zombie`, `vampire`, `garden`) is pixel art,
-drawn by a small generator and stored as SVG. This guide gives the
-conventions. Asset fields, anchors and the facing table are documented in
+drawn by a small generator and stored as SVG, except the
+[imported art](#imported-art) of a skin like `zombie-kenney`. This guide
+gives the conventions. Asset fields, anchors and the facing table are documented in
 [packs.md](packs.md#assets); projection and depth sorting are in
 [iso.md](iso.md). `test/art.test.ts` enforces the rules marked **(tested)**.
 
@@ -114,7 +115,8 @@ node scripts/pixel-art.mjs vampire --only 'bat_' --preview /tmp/bats.png  # just
   art pixel. Iso boxes are shaded through the inverse projection, so a
   face shader gets its own coordinates (`px()` turns them into art-pixel
   rows and columns). There are also text grids, outlines and pixel
-  shadows, and the SVG and PNG writers. Each SVG row is written as runs
+  shadows, and the SVG writer and contact sheet (the PNG code is in
+  `art/png.mjs`). Each SVG row is written as runs
   of one colour, and identical runs on following rows are merged.
 - `art/characters.mjs` holds the shared humanoid body (one text grid per
   drawn facing), the crawler, the bat and the item-pile helper.
@@ -126,6 +128,54 @@ node scripts/pixel-art.mjs vampire --only 'bat_' --preview /tmp/bats.png  # just
 When you add a drawing, use only names from the pack's palette. Keep each
 pack at **32 colours or fewer** **(tested)**. Then reference the file in
 the pack's `assets.yaml`.
+
+## Imported art
+
+A pack may **import third-party art** instead of drawing it: PNG images in
+any style, made reproducibly from a published source. `packs/zombie-kenney`
+is the example: a skin mod that re-dresses the zombie game's road, grass,
+floor and cars with Kenney's CC0 isometric packs (the
+[spike write-up](spikes/kenney-skin.md) says how it turned out).
+
+- **`@Nx` names.** An imported image is a PNG whose file name ends in
+  `@Nx.png` (N from 1 to 4), and both its pixel sizes are multiples of N
+  **(tested)**. The renderer draws it at 1/N of its pixel size
+  (`imageResolution` in `src/iso/resolution.ts`): `road@2x.png` is 128×64
+  px and covers the 64×32 diamond, staying sharp when zoomed in. Use `@2x`
+  unless the source is much larger.
+- **What applies.** The [size and anchor table](#sizes-and-anchors-per-kind-tested)
+  applies to the logical size (pixels over N) **(tested)**, as do the
+  facings and mirroring. The art-pixel grid and the 32-colour palette
+  rules do **not**: imported PNGs are exempt by design (the tests scan
+  SVGs only).
+- **Flat tiles** are masked to the exact diamond **(tested)**: opaque
+  inside, fully transparent outside, on the same 2:1 staircase as the
+  pixel-art flats (judged per art pixel, 2N px at `@Nx`; `inDiamond` in
+  `art/png.mjs`), so imported and drawn tiles meet without seams.
+- **`CREDITS.md` is mandatory** in a pack with imported art **(tested)**:
+  for each source its title, author, licence, page URL, zip URL and
+  SHA-256, and which asset was made from which file.
+- **Licences.** CC0 is accepted. CC-BY only with the attribution written in
+  `CREDITS.md`. Nothing else (no CC-BY-SA, NC, ND or "free for personal
+  use").
+- **Reproducible.** The PNGs are generated, never edited by hand. A recipe
+  `art/imports/<pack>.mjs` exports `sources` (`{ id, url, sha256 }` per
+  zip) and `images()` (per output file: the zip entry and the operations,
+  `crop`, `resize` by area averaging, integer `scale`, the `diamond` mask,
+  and layers composed onto a canvas). Then:
+
+  ```sh
+  node scripts/import-art.mjs zombie-kenney                          # rewrite packs/zombie-kenney/assets/
+  node scripts/import-art.mjs zombie-kenney --preview /tmp/skin.png  # plus a contact sheet
+  ```
+
+  The script downloads each zip into the git-ignored `.cache/art/` (or
+  uses the copy already there), refuses one whose SHA-256 differs, and
+  needs only `node:zlib` (`art/png.mjs` reads zips and decodes and encodes
+  PNG). Its output is deterministic: rerunning it leaves `git status`
+  clean, so a reviewer can check the committed PNGs. Offline with an empty
+  cache it stops and names the zip and its URL; nothing else (tests, the
+  build) needs the network.
 
 ## Palettes
 

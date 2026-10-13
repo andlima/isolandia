@@ -22,6 +22,7 @@ import {
 import { luminance, parseColor, shade } from './colors.ts';
 import { growReach, maskFromRgba, type HitMask, type Reach } from './hit.ts';
 import { BLOCK_H, MAX_ZOOM, TILE_H, TILE_W } from './projection.ts';
+import { imageResolution } from './resolution.ts';
 
 /** A texture plus the normalized image point that goes on the sprite's anchor spot. */
 export interface AnchoredTexture {
@@ -41,7 +42,7 @@ const HW = TILE_W / 2;
 const HH = TILE_H / 2;
 /** Generated textures are rasterized at this resolution so zooming in stays crisp. */
 const BAKE_RESOLUTION = 3;
-/** Iso px per art pixel (SVG art and placeholders; PNGs use their own pixels). */
+/** Iso px per art pixel (SVG art and placeholders; PNGs use one mask cell per logical pixel, see `imageResolution`). */
 const ART_PX = 2;
 const EMPTY_MASK: HitMask = { cols: 1, rows: 1, bits: new Uint8Array(1) };
 /** SVG pack assets are rasterized at the maximum zoom, so pixel-art edges stay sharp at every zoom level. */
@@ -68,7 +69,7 @@ export async function loadAssetTextures(def: Definition, urls: readonly (readonl
           }
           const svg = file.toLowerCase().endsWith('.svg');
           try {
-            return await Assets.load<Texture>({ src, parser: svg ? 'svg' : 'texture', data: svg ? { resolution: SVG_RESOLUTION } : undefined });
+            return await Assets.load<Texture>({ src, parser: svg ? 'svg' : 'texture', data: { resolution: svg ? SVG_RESOLUTION : imageResolution(file) } });
           } catch (e) {
             console.warn(`asset ${a.id}: failed to load ${a.pack}/${file}; using a placeholder`, e);
             return null;

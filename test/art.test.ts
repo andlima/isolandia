@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { formatError, loadPacks, type Definition } from '../src/core/index.ts';
+import { formatError, loadPacks, World, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
+import { imageResolution } from '../src/iso/resolution.ts';
+import { decodePng, inDiamond, pngSize } from '../art/png.mjs';
 
-// Pixel-art conventions for the shipped packs (docs/art.md).
+// Pixel-art conventions for the shipped packs (docs/art.md), and the rules
+// for imported PNG art (docs/art.md#imported-art).
 
 const STACKS = [
   ['std', 'std-needs', 'town'],
   ['std', 'std-needs', 'town', 'zombie'],
+  ['std', 'std-needs', 'town', 'zombie', 'zombie-kenney'],
   ['std', 'std-needs', 'town', 'vampire'],
   ['std', 'std-needs', 'town', 'hardship'],
   ['std', 'std-needs', 'town', 'noir'],
@@ -91,6 +95,16 @@ function scanSvg(text: string): Svg {
   return { width: Number(root.width), height: Number(root.height), fills };
 }
 
+/** Logical size of a pack image: an SVG's checked size, or a PNG's IHDR size over its `@Nx` resolution. */
+function imageSize(path: string): { width: number; height: number } {
+  if (!path.toLowerCase().endsWith('.png')) return scanSvg(readFileSync(path, 'utf8'));
+  const { width, height } = pngSize(readFileSync(path));
+  const n = imageResolution(path);
+  return { width: width / n, height: height / n };
+}
+
+// Imported PNGs are exempt from the grid and palette checks by design (they
+// are not pixel art); only SVGs are scanned there.
 function svgFiles(dir: string): string[] {
   try {
     return readdirSync(`packs/${dir}/assets`)
@@ -131,7 +145,7 @@ test('art: image sizes and anchors follow the per-kind conventions', () => {
     const check = (sprite: number | null, what: string, ok: (w: number, h: number, anchor: readonly [number, number]) => boolean) => {
       const asset = def.assets[sprite!]!;
       for (const img of asset.images) {
-        const { width, height } = scanSvg(readFileSync(`packs/${dirOf.get(asset.pack)}/${img.file}`, 'utf8'));
+        const { width, height } = imageSize(`packs/${dirOf.get(asset.pack)}/${img.file}`);
         assert.ok(ok(width, height, img.anchor), `${what}: ${img.file} is ${width}×${height} anchored at [${img.anchor}]`);
       }
     };
@@ -190,4 +204,75 @@ test('art: the SVG scan rejects what the grid does not allow', () => {
     [svg('', 'width="3" height="4" viewBox="0 0 3 4" shape-rendering="crispEdges"'), /not even/],
   ];
   for (const [text, err] of bad) assert.throws(() => scanSvg(text), err, text);
+});
+
+// ── Imported art ──────────────────────────────────────────────────────────
+
+test('art: imported PNGs are referenced, named @Nx, credited, and flat tiles are masked to the exact diamond', () => {
+  // Flat tiles drawn with a PNG in any shipped stack (the mask rule).
+  const flats = new Set<string>();
+  for (const dirs of STACKS) {
+    const { def, dirOf } = load(dirs);
+    for (const t of def.tiles) {
+      if (t.sprite === null || t.edge || t.raised) continue;
+      const asset = def.assets[t.sprite]!;
+      for (const img of asset.images) if (img.file.toLowerCase().endsWith('.png')) flats.add(`packs/${dirOf.get(asset.pack)}/${img.file}`);
+    }
+  }
+  let n = 0;
+  let masked = 0;
+  for (const dir of readdirSync('packs')) {
+    let files: string[];
+    try {
+      files = readdirSync(`packs/${dir}/assets`).filter((f) => f.toLowerCase().endsWith('.png'));
+    } catch {
+      continue;
+    }
+    if (!files.length) continue;
+    const assets = readFileSync(`packs/${dir}/assets.yaml`, 'utf8');
+    let credits = '';
+    try {
+      credits = readFileSync(`packs/${dir}/CREDITS.md`, 'utf8');
+    } catch {
+      assert.fail(`packs/${dir}: imports PNG art but has no CREDITS.md`);
+    }
+    for (const f of files) {
+      const path = `packs/${dir}/assets/${f}`;
+      assert.ok(assets.includes(`assets/${f}`), `${path}: not referenced by packs/${dir}/assets.yaml`);
+      const m = /@([1-4])x\.png$/i.exec(f);
+      assert.ok(m, `${path}: an imported PNG is named with an @Nx suffix`);
+      const res = Number(m[1]);
+      const { width, height } = pngSize(readFileSync(path));
+      assert.ok(width % res === 0 && height % res === 0, `${path}: ${width}×${height} is not a multiple of ${res}`);
+      const row = credits.split('\n').find((l) => l.includes(`\`${f}\``));
+      assert.ok(row && /\b\w+\.zip\b/.test(row), `${path}: CREDITS.md names no source zip for it`);
+      if (flats.has(path)) {
+        const img = decodePng(readFileSync(path));
+        for (let y = 0; y < img.height; y++)
+          for (let x = 0; x < img.width; x++) {
+            const a = img.data[(y * img.width + x) * 4 + 3];
+            assert.equal(a, inDiamond(x, y, img.width, img.height, 2 * res) ? 255 : 0, `${path}: alpha at (${x}, ${y})`);
+          }
+        masked++;
+      }
+      n++;
+    }
+  }
+  assert.ok(n > 0 && masked > 0);
+});
+
+test('art: the zombie-kenney skin changes only sprites, so it plays exactly like zombie', () => {
+  const base = load(['std', 'std-needs', 'town', 'zombie']).def;
+  const skin = load(['std', 'std-needs', 'town', 'zombie', 'zombie-kenney']).def;
+  const noSprite = (def: Definition) => def.tiles.map(({ sprite: _sprite, ...t }) => t);
+  assert.deepEqual(noSprite(skin), noSprite(base));
+  const changed = skin.tiles.filter((t, i) => skin.assets[t.sprite!]!.id !== base.assets[base.tiles[i]!.sprite!]!.id).map((t) => t.id);
+  assert.deepEqual(changed.sort(), ['std:floor', 'std:landing', 'town:car', 'town:grass', 'town:road']);
+  const a = World.create(base, 3);
+  const b = World.create(skin, 3);
+  for (let i = 0; i < 200; i++) {
+    a.step();
+    b.step();
+  }
+  assert.equal(b.hash(), a.hash());
 });

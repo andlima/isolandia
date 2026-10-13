@@ -235,7 +235,10 @@ the pure logic is `src/iso/hit.ts` and `src/iso/pick.ts`, tested headless).
 - **Hit masks.** Every texture drawn for a tile, archetype or item gets a
   mask of its opaque pixels (alpha ≥ 0.5), read back from the texture's
   pixels on its art-pixel grid (2×2 iso px for SVG art and placeholders,
-  one pixel for PNGs). Asset masks are built when the `TextureBank` is
+  one **logical** pixel for PNGs: a `@2x` PNG
+  ([art.md](art.md#imported-art)) still gets one cell per iso px, sampled
+  from its larger pixel buffer, so picking it works as for any other
+  image). Asset masks are built when the `TextureBank` is
   created (`textures.maskMs` times it); placeholder masks when the
   placeholder is first baked. Drop shadows and glass are not hits. A
   mirrored facing reads its partner's mask right to left, around the
@@ -296,6 +299,11 @@ tile's ground centre. All assets
 are loaded before the first frame; one that fails to load logs a warning
 and falls back to its placeholder. SVG assets are rasterized at `MAX_ZOOM`
 resolution, so pixel art stays sharp at every zoom (see [art.md](art.md)).
+A PNG named `…@Nx.png` (N from 1 to 4) is loaded at resolution N and so
+drawn at 1/N of its pixel size: a 128×64 `road@2x.png` covers the 64×32
+diamond and stays sharp when zoomed in (`imageResolution` in
+`src/iso/resolution.ts` reads N from the pack-relative file name, not the
+served URL). Other PNGs load at resolution 1.
 
 Without a sprite, a placeholder is generated lazily, at most once per
 definition entry and facing, from its `color`:

@@ -1,0 +1,7 @@
+namespace: zkn
+name: Zombie Town (Kenney art)
+version: 0.1.0
+depends: [std, town, zmb]
+kind: mod
+featured: 5
+description: The zombie game with Kenney's CC0 art outdoors (roads, grass, floors and cars).

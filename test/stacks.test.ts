@@ -42,6 +42,7 @@ test('catalog: records from the shipped manifests, with kind and description', (
       ['vampire', 'vamp', 'mod', 'std,town'],
       ['western', 'wst', 'mod', 'std,std_needs,town'],
       ['zombie', 'zmb', 'mod', 'std,std_needs,town'],
+      ['zombie-kenney', 'zkn', 'mod', 'std,town,zmb'],
     ],
   );
   const zmb = SHIPPED.packs.find((p) => p.namespace === 'zmb')!;
@@ -113,7 +114,7 @@ test('catalog: featured is a positive integer on a game or mod, null when absent
   assert.equal(lib[0]!.message, 'only game and mod packs can be featured');
 });
 
-test('catalog: the shipped featured packs are garden, zombie, vampire and western', () => {
+test('catalog: the shipped featured packs are garden, zombie, vampire, western and zombie-kenney', () => {
   assert.deepEqual(
     SHIPPED.packs
       .filter((p) => p.featured !== null)
@@ -124,6 +125,7 @@ test('catalog: the shipped featured packs are garden, zombie, vampire and wester
       ['zombie', 2],
       ['vampire', 3],
       ['western', 4],
+      ['zombie-kenney', 5],
     ],
   );
 });
@@ -153,6 +155,7 @@ test('resolver: every explicit stack used in the repo resolves to itself', () =>
     ['std', 'std-needs', 'town', 'zombie'],
     ['std', 'std-needs', 'town', 'vampire'],
     ['std', 'std-needs', 'town', 'zombie', 'hardship'],
+    ['std', 'std-needs', 'town', 'zombie', 'zombie-kenney'],
     ['std', 'garden'],
     ['std', 'std-needs'],
     ['std'],

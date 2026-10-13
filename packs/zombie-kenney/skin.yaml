@@ -1,0 +1,19 @@
+# The skin: the zombie game's ground and cars in Kenney's art. Only the
+# `sprite` changes, so the ASCII view, the HUD and the sim are untouched;
+# walls, furniture, items and characters keep the pixel art.
+tiles:
+  - id: std:floor
+    override: true
+    sprite: floor_img
+  - id: std:landing
+    override: true
+    sprite: floor_img
+  - id: town:road
+    override: true
+    sprite: road_img
+  - id: town:grass
+    override: true
+    sprite: grass_img
+  - id: town:car
+    override: true
+    sprite: car_img
