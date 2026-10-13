@@ -177,6 +177,7 @@ Every milestone ends **playable** and passes the two-genre rule.
 | M7 | Packs/mods: stacking, overrides, joint validation | Zombie and vampire as mods of the same base | ✅ done |
 | M8 | Social layer: factions, dialogues, quests, journal | A short noir mystery / a wild-west duel | ✅ done |
 | M9 | Sandboxed script hooks | A mod that is "impossible" in pure YAML |  |
+| M10 | Look and feel: animation frames and gaits, local lights, ambient tiles, weather, sound, camera and transition polish | The same town, alive: a sneaking player, lamps in the night, rain on the street, footsteps you hear |  |
 
 ¹ S0: the headless simulation benchmark is measured; the **browser fps**
 numbers (mid-range laptop and phone) are still **pending** — the manual
@@ -192,7 +193,11 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
 
 - **Isometric art is expensive**, and it is what makes one genre *look*
   like another. Start with placeholders (colored blocks, Kenney packs)
-  until ~M4.
+  until ~M4. *Update (M10):* animation multiplies it. A character is 5
+  drawings today; three gaits of ~6 frames plus idle is ~100. The
+  generator (`art/characters.mjs`, one text grid per drawing) is the
+  mitigation: a frame is a grid edit, not a new painting, and every pack
+  that shares the humanoid body gets the frames at once.
 - **Performance:** compile expressions to closures at load; per-chunk
   depth sorting; NPCs beyond an active radius go dormant (M6). Measured on
   the 343×343 zombie city with 961 entities (`docs/perf.md`): **0.26 ms avg,
@@ -772,6 +777,63 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
   determinism; a load keeps them. No slow motion, no in-sim time skips
   (sleep), no automatic drop to 1× on danger yet. The conversation pause
   stays world state.
+- How does the iso view get richer without leaving pre-rendered sprites?
+  **Proposed (M10, specs `m10-*`):** six additions, each a pack-level
+  schema entry the loader validates, so that a third-party pack gets them
+  too. All but the first are **visual only**: like `lighting`, the
+  simulation and expressions never see them, the ASCII shell ignores them,
+  and nothing about them is saved or hashed. The renderer stays a
+  consumer of `(world state, alpha, wall clock)`; animation never feeds
+  back into the sim. **No real-time 3D, no skeletal animation, no change
+  to the projection or to the pixel-art rules** in `docs/art.md`.
+  - **Frames and gaits** (spec `m10-anim-gaits`). The one piece that
+    touches the sim: a per-entity **`gait`** (`walk`, `run`, `sneak`;
+    archetype `gaits` give each a `ticks_per_step` and a footstep noise
+    level, so sneaking is quiet and running is loud through the existing
+    noise events). It is simulation state (snapshots, hashes, a glyph or
+    label in ASCII); the browser toggles it with a held key. Assets gain
+    **`animations`** (`walk`, `run`, `sneak`, `idle`, plus activity poses)
+    as frame lists per drawn facing, or a spritesheet with a frame size,
+    normalized by the loader to `[facing][frame]` under the same mirroring
+    rules as `directions`. The renderer picks a **pose** `(animation,
+    facing, frame)`: the frame of a locomotion cycle comes from the step
+    progress `renderPosition` already computes, so feet stay locked to the
+    ground; idle and activity poses step from the wall clock; the scene
+    swaps the texture when any of the three changes (today only the
+    facing). Hit masks are per texture already, so frames pick correctly.
+    Speeds are whole ticks per tile at 10 ticks/s (10, 5, 3.3, 2.5
+    tiles/s): run 1, walk 2, sneak 4; a finer tick rate is out of scope.
+    Smooth turns (the intermediate facing shown for a beat) ride on the
+    same pose function.
+  - **Local lights** (spec `m10-local-lights`). A `light` on tiles and
+    archetypes (`radius`, `color`, optional `flicker`) that lifts the night
+    tint around lamps, windows, fires and flashlights. Today `lighting.tint`
+    is one multiply on whole containers; this needs a per-sprite tint or an
+    additive light layer, and should respect `tile.exposed` (an indoor lamp
+    does not light the street). Gaslight for `noir`, candles for
+    `vampire`, fireflies for `garden`.
+  - **Ambient tiles** (spec `m10-ambient-tiles`). Tile assets with
+    `animations` too: water, neon, a flickering TV, swaying grass, chimney
+    smoke, stepped from the wall clock. Chunks keep a short list of their
+    animated sprites and swap textures only on that list.
+  - **Weather** (spec `m10-weather`). Pack `weather` entries keyed to the
+    clock as `lighting.tint` is: rain, snow, leaves, dust, fog as a
+    particle layer, drawn only over `exposed` cells, with wind driving the
+    sway tiles above. Visual only in this step; a sim-visible `weather`
+    var is a later decision.
+  - **Sound** (spec `m10-sound`). Not graphics, but the largest perceived
+    jump for the cost: the sim already emits positioned **noise events**
+    (footsteps, glass, screams). A pack maps noise kinds to clips and names
+    ambient loops per time of day; the browser shell plays them with
+    distance attenuation. Nothing in the sim changes.
+  - **Polish** (spec `m10-polish`, small items that fit one spec): a
+    separate shadow sprite under entities and blocks, skewed by the tint
+    schedule; eased camera follow, a brief shake on a loud noise nearby;
+    fades on load, floor change and the cutaway; a pixel-art rim on the
+    hovered target and an animated path marker.
+  - Order: local lights, then frames and gaits (with activity poses),
+    ambient tiles, weather, sound, polish anywhere in between. M10 touches
+    the renderer and the asset schema, so it can run alongside M9.
 
 ## 8. Next step
 
@@ -792,6 +854,13 @@ The next step is to author, via `spec-orchestrator`, the **M9 spec**:
 its playable result. §7 says what the M8 games found awkward, and none of
 it needs a hook, so the spec has to pick its evidence mod with care, and
 decide the language (sandboxed JS or Lua).
+
+In parallel, **M10, look and feel**, is sketched in §7 and in the roadmap:
+frames and gaits, local lights, ambient tiles, weather, sound and polish,
+each its own `m10-*` spec, visual only except for the gait, and starting
+with local lights. It needs no engine decision that M9 waits on, and its
+playable result is the existing town with nothing new to do in it, but
+alive.
 
 M7 is delivered: **overrides and removals** by qualified id (spec
 `m7-overrides`), **stacks** with a pack catalog, a resolver and a title
