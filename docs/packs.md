@@ -281,7 +281,7 @@ see [art.md](art.md).
 | Field        | Type                 | Default    | Notes |
 |--------------|----------------------|------------|-------|
 | `id`         | id                   | required   | |
-| `file`       | path                 | —          | Relative to the pack root; must exist in the pack and end in `.svg` or `.png` |
+| `file`       | path                 | —          | Relative to the pack root; must exist in the pack and end in `.svg` or `.png`. A PNG named `…@Nx.png` (N from 1 to 4) is drawn at 1/N of its pixel size ([imported art](art.md#imported-art)) |
 | `directions` | facing → path or `{ file, anchor? }` | — | One image per drawn facing (see below) |
 | `anchor`     | `[ax, ay]`           | `[0.5, 1]` | Normalized image point (each in `[0, 1]`) placed on the entry's anchor spot; shared by every direction |
 
@@ -361,7 +361,9 @@ tiles:
 Entries without a `sprite` get a placeholder generated from their `color`.
 The ASCII renderer ignores sprites. The art of the shipped packs is pixel
 art on a 2 px grid; [art.md](art.md) is its style guide (sizes, anchors,
-shading, palettes and the generator).
+shading, palettes and the generator). Third-party PNG art follows
+[Imported art](art.md#imported-art): `@Nx` names, a `CREDITS.md` and an
+import script.
 
 ### `tiles`
 
@@ -2485,8 +2487,8 @@ More stdpacks are added as genres repeat patterns.
 Everything under `packs/`, extending the [stdpack](#standard-packs) table.
 One genre-free base game, `town`, carries the generic content; the genres
 are [mods](#mods-and-overrides) of it, so switching genre is switching mod.
-`garden`, `zombie`, `vampire` and `western` are
-[featured](#manifest-packyaml) (`featured: 1` to `4`, in that order) and
+`garden`, `zombie`, `vampire`, `western` and `zombie-kenney` are
+[featured](#manifest-packyaml) (`featured: 1` to `5`, in that order) and
 appear as quick-play cards on the browser's title screen.
 
 | Pack (directory) | Namespace | Kind | Depends | Contents |
@@ -2495,6 +2497,7 @@ appear as quick-play cards on the browser's title screen.
 | `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
 | `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
 | `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`; `senses` that notice the living at 8 tiles); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
+| `zombie-kenney` | `zkn` | mod | `std`, `town`, `zmb` | the zombie game with Kenney's CC0 art outdoors: a skin that overrides only the `sprite` of `std:floor`, `std:landing`, `town:road`, `town:grass` and `town:car` with imported `@2x` PNGs (see [Imported art](art.md#imported-art) and its `CREDITS.md`) |
 | `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
 | `noir` | `noir` | mod | `std`, `town` | *Death on Elm Street*: a night-time murder on the old town block; factions `police`, `mob` and the hidden `neighbours`; Sgt. Hale, an `officer` on a `beat` (`wander`), the widow, the lodger, Dot and Mickey the Fixer, each with a dialogue; seven clues as `Clues` journal entries, from dialogue and from `search`/`force_drawer` actions on the crime scene's own furniture (a witnessed `reputation` effect with `spread`); quest `elm_street` ending in `solved`, `wrong_man` or `cold_case` (dawn); overrides `town_center` (`rooms` adds `crime_scene`, `spawns`), `city` (`player`, `populate`), the resident's label (*Detective*), `start`, `clock` (starts at 21:00) and `lighting` (cold blue-grey nights). See the [worked example](#worked-example-a-story-from-vars-quests-dialogues-and-factions) |
 | `western` | `wst` | mod | `std`, `std_needs`, `town` | *High Noon*: measurements `aim`, `nerve` and `liquor`; items `coin`, `bullet`, `revolver` and `whiskey` (status `tipsy`); factions `townsfolk`, `law` and the `gang` (Hostile from the start); Sheriff Cobb, Doc, the bartender in the `saloon`, the kid, two `rider`s (behavior `rider`: idle until ten, then `pursue` the Stranger their `senses` see; systems drain `nerve` while they crowd the player) and Black Jack (waits at the end of Main Street, walks to the noon bell); action `shoot_bottles` on the yards' crates; loot `garage_ammo` with a `distributions` entry for the garages; quest `high_noon` ending in `won`, `talked_down`, `paid_off`, `shot` or `coward`, the duel being a dialogue with a seeded `roll`; overrides `town_center` (`spawns`), `city` (`rooms` adds `saloon`, `populate`), the resident (*Stranger*, measurements, inventory), `start`, `clock` (starts at 06:00) and `lighting` (a bleached noon) |

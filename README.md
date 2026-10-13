@@ -87,6 +87,7 @@ packs/
   town/       # game "Town": a genre-free 343×343 town with furniture, food,
               #   loot, cooking, barricading; a quiet sandbox on its own
   zombie/     # mod "Zombie Town": the dead fill the town; find a car battery
+  zombie-kenney/ # skin mod: the zombie game with Kenney's CC0 art outdoors
   vampire/    # mod "Vampire Mansion": blood, sunlight, coffins, on its estate
               #   (reuses the town's generic content)
   noir/       # mod "Death on Elm Street": a night-time murder on the old
@@ -99,7 +100,8 @@ packs/
 ```
 
 Switching genre is switching mod: `zombie`, `vampire`, `noir` and
-`western` all stack on `town` (see
+`western` all stack on `town`, and `zombie-kenney` re-skins the zombie game
+with Kenney's CC0 art outdoors (see
 [docs/packs.md](docs/packs.md#shipped-packs)).
 
 Validate a pack stack without running it:
