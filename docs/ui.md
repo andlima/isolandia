@@ -522,3 +522,23 @@ shows your floor only (empty cells are spaces), and the status lines add
 `Floor N` on multi-floor maps. While any NPC is dormant (beyond the active
 radius, see `docs/packs.md#simulation`), the bottom line ends with
 `active N, dormant M`.
+
+## Benchmark mode
+
+`?bench=S` with `?packs=` (and optionally `?seed=`) loads the game as usual
+and then runs an S-second benchmark instead of play: pointer, keyboard and
+gesture input are ignored (the overlay's **Copy JSON** button and **F3**
+excepted), the pause menu, controls overlay and panels stay closed, the
+pace is 1× and never pauses, and the camera follows a fixed path (a 1 s
+warm-up on the player, a serpentine sweep over the map at zoom 0.75, then
+an overview of the whole map at the minimum zoom) instead of following the
+player. The world ticks normally from the seed; the player stands where
+the map starts it. A small overlay at the top right shows the progress
+and, when the run ends, the key figures (fps avg/p5, frame p95, tick
+avg/p95, per-phase fps, the GPU string) with a **Copy JSON** button; the
+full result is also `window.__benchResult` and one `BENCH_RESULT <json>`
+console line. The F3 perf line is on from the start. A non-positive or
+non-integer value shows the parameter error screen, like a bad `?seed=`;
+without `?packs=` the title screen shows and `bench` is ignored. See
+[docs/perf.md, Browser](perf.md#browser) for what the phases measure and
+`npm run bench`, which runs it on the shipped games.

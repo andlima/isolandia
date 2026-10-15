@@ -9,7 +9,7 @@ Spec: `specs/s0-iso-spike.md`. Stack under test: TypeScript (strict) + PixiJS v8
 npm ci
 npm run dev            # open the printed URL
 npm test               # headless unit tests (node:test via tsx)
-npm run bench          # build + serve + Playwright Chromium, n=500 and n=2000
+BENCH_TARGETS=spike npm run bench   # build + serve + Playwright Chromium, n=500 and n=2000 (the default also runs the shipped games)
 npm run bench:sim      # headless Sim.step() tick times (no browser)
 ```
 
@@ -27,10 +27,13 @@ click or tap a tile to walk the player (yellow, larger) there. The target tile
 is outlined yellow (red flash if it is blocked). `H` toggles the HUD, `Space`
 centres on the player.
 
-`npm run bench` env vars: `BENCH_SECONDS` (default 20), `BENCH_N` (default
+`npm run bench` env vars: `BENCH_SECONDS` (default 20 for the spike), `BENCH_N` (default
 `500,2000`), `BENCH_SEED`, `BENCH_HEADED=1` (headed browser, real GPU),
 `BENCH_CHROMIUM=/path/to/chrome` (use a system browser when Playwright cannot
-download its own). Output: `docs/spikes/s0-bench.json`.
+download its own), `BENCH_CDP=<endpoint>` (attach to a running browser, e.g.
+Windows Chrome from WSL: see [docs/perf.md, Browser](../perf.md#browser)).
+Output: `docs/bench/spike.json` (the shipped games write `docs/bench/<game>.json`
+next to it; `BENCH_TARGETS=spike` runs the spike alone).
 
 The bench run is: 1 s warm-up (not measured), 80 % of the time a serpentine
 sweep over every chunk row at zoom 0.75, 20 % a zoomed-out (0.2) view of the
@@ -82,14 +85,14 @@ under 5 % of it, so the sim is not a bottleneck at this scale.
 
 ### Browser benchmark (`npm run bench`)
 
-**Pending.** The implementation environment (Ubuntu 20.04 under WSL2, sandboxed)
-cannot install Playwright's Chromium: Playwright 1.63 reports
-`Playwright does not support chromium on ubuntu20.04-x64`, and there is no
-Linux Chrome installed. `docs/spikes/s0-bench.json` has **not** been generated
-yet. Run `npm run bench` on a supported host, or use
-`BENCH_CHROMIUM=/path/to/chrome npm run bench`. Then fill in this table from
-the JSON and note whether the `gpu` field shows a hardware GPU or SwiftShader
-(software rendering):
+**Pending.** The implementation environment (WSL2, sandboxed) runs Chromium
+only headless with software GL (`llvmpipe`, about 6 fps at n=500), which
+says nothing about the renderer, so `docs/bench/spike.json` has **not** been
+generated on a real GPU yet and is not committed. Run `npm run bench` on a
+host with a GPU, or attach Windows Chrome from WSL with `BENCH_CDP` (see
+[docs/perf.md, Browser](../perf.md#browser)). Then fill in this table from
+the JSON and check that the `gpu` field names a hardware GPU, not SwiftShader
+or llvmpipe (software rendering, never a result):
 
 | n | fps avg | fps p5 | fps min | frame p95 | tick avg | tick p95 | renderer | GPU / software |
 |---|---|---|---|---|---|---|---|---|

@@ -181,9 +181,10 @@ Every milestone ends **playable** and passes the two-genre rule.
 
 ¹ S0: the headless simulation benchmark is measured; the **browser fps**
 numbers (mid-range laptop and phone) are still **pending** — the manual
-table and `s0-bench.json` still need to be filled in (see
-`docs/spikes/s0-results.md`, "Browser benchmark"). The spike's verdict is
-only confirmed after that.
+table and `docs/bench/spike.json` still need to be filled in on a real GPU
+(`npm run bench`, or `BENCH_CDP` to attach Windows Chrome from WSL; see
+`docs/spikes/s0-results.md`, "Browser benchmark", and `docs/perf.md`,
+"Browser"). The spike's verdict is only confirmed after that.
 
 ² Added after M1 (spec `iso-directional-sprites`): 4/8-way assets with
 mirroring, character facing (simulation state since spec `turn-before-move`), legend `facing` for tiles; see

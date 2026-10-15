@@ -122,14 +122,157 @@ switched off or measured right before it landed):
 6. **Renderer**: lazy, evicted chunks and culled sprites (see
    `docs/iso.md#lazy-chunks-and-culling`); not measurable headless.
 
-## Browser fps (manual)
+## Browser
 
-Chromium is unavailable in the sandbox (as in S0), so browser numbers are
-a manual follow-up. Open `npm run dev`, press **F3**, walk across the city
-and fill in:
+`npm run bench` measures the real renderer (`src/iso`) in a browser: it
+builds, serves the build once, runs `?bench=<seconds>` on each target and
+writes `docs/bench/<target>.json` (`generatedAt`, `host`, `browser`,
+`seconds`, `runs`) with a one-line summary per run on the console.
+`BENCH_TARGETS` (default `spike,zombie,vampire`) names the targets:
+`spike` is the S0 spike page (`spike.html`, 20 s, one run per `BENCH_N`
+count, see `docs/spikes/s0-results.md`); any other name is a game, run on
+the game page with that game's resolved stack (`?packs=<game>` lets the
+resolver add the dependencies, as `npm run smoke` does), 60 s by default.
 
-| Device | Browser | Zoom | fps (typical) | fps (min) | Tick p95 | Built chunks | Visible chunks |
-|---|---|---|---|---|---|---|---|
-| Mid-range laptop | | 1 | | | | | |
-| Mid-range laptop | | 0.25 (zoomed out) | | | | | |
-| Phone | | 1 | | | | | |
+```bash
+npm run bench                                       # spike (n=500, 2000), zombie and vampire
+BENCH_TARGETS=zombie BENCH_SECONDS=30 npm run bench  # one game, shorter
+BENCH_HEADED=1 npm run bench                        # a visible Chromium (the real GPU when there is one)
+BENCH_CHROMIUM=/usr/bin/chromium npm run bench      # a system browser when Playwright's own is missing
+BENCH_SEED=7 npm run bench                          # the world seed (default 1)
+```
+
+`npm run bench` and `npm run smoke` both build to `dist/` and serve on
+fixed ports (4174, 4175): run them one at a time.
+
+### What a run measures
+
+`index.html?packs=<game>&bench=<s>[&seed=N]` loads the game as usual and
+then runs the benchmark instead of play: pointer, keys and gestures are
+ignored, no window or menu opens, the pace is 1× and never pauses, and the
+world ticks from the seed (NPCs move; the player stands where the map
+starts it, so the view floor is the start floor and the cutaway is the
+one you see in play). The camera follows a path that depends only on
+elapsed time, map size and viewport (`src/web/bench.ts`):
+
+1. **Warm-up** (1 s, not measured): on the player at 1×, while the first
+   chunks and sprites are built.
+2. **Sweep** (80 % of the duration): a serpentine over every 16-cell
+   render-chunk row of the map at zoom 0.75, left to right on even rows
+   and back on odd ones, hopping one chunk down at the end of each row. It
+   covers the whole map whatever the duration, so its speed depends on the
+   map and is recorded as `sweepCellsPerSecond` (the city's 22 rows of
+   343 cells: ~164 cells/s in a 60 s run). It exercises chunk building
+   and eviction, entity sprites coming and going, and the depth sort of a
+   moving view.
+3. **Overview** (the last 20 %): the map centre at the minimum zoom
+   (0.25). Far more chunks are in view than `MAX_BUILT_CHUNKS` (160)
+   keeps built, so this is the chunk LRU under pressure and the most
+   sprites on screen at once.
+
+Per frame the run records the frame interval, the CPU time of the shell's
+frame (sim ticks + scene update + render call) and the scene stats
+(visible entities, built and visible chunks); per tick, the tick time. The
+summary is published three ways when the run ends: `window.__benchResult`,
+one `BENCH_RESULT <json>` line on the console, and an on-screen overlay
+with the key figures and a **Copy JSON** button (for a phone, or a browser
+without a debugger attached). It holds `fpsAvg`, `fpsP5`, `fpsMin`,
+`frameMsP95`, `cpuMsAvg`, `cpuMsP95`, `tickMsAvg`, `tickMsP95`, `ticks`,
+`frames`, `visibleEntitiesAvg`, `builtChunksMax`, `visibleChunksAvg`,
+`activeAvg`, `dormantAvg`, `droppedMs` (the loop's backlog dropped under
+its tick cap: anything but 0 means the sim could not keep up),
+`worldEndedAtTick` (null unless the game ended during the run, which goes
+on regardless), `phases.sweep` and `phases.overview` (the frame figures
+per phase), and `renderer` (`webgl` or `webgpu`), `gpu`, `userAgent`,
+`viewport` (width, height, devicePixelRatio, Pixi resolution), `packs`
+(the resolved directories), `map` (id, width, height, floors),
+`entities`, `seed` and `durationS`. Percentiles are nearest-rank, as the
+perf line's. The **F3** perf line is on from the start of a run and the
+key still toggles it.
+
+The world is deterministic per seed, but the number of frames, and so the
+number of ticks each frame runs, depends on the machine: two runs step the
+same world but render different tick boundaries. That is fine for a
+benchmark; compare the figures, not the frames.
+
+### Software rendering is not a result
+
+A `gpu` string naming **SwiftShader** or **llvmpipe** is software
+rendering: it is what headless Chromium, and any Linux session without
+GPU access (the agent sandbox, a plain WSL shell), falls back to, and its
+single-digit fps say nothing about the renderer. Never record such a run
+in the tables below and never commit its JSON. `docs/bench/*.json` is
+committed only when it was generated on a real GPU; a software-rendered
+file is left out (delete it after reading it).
+
+### A real GPU from WSL: attach Windows Chrome
+
+Headless Chromium under WSL renders in software and a headed one needs
+WSLg. The real GPU is reached by attaching the script to a Chrome that
+runs on Windows with its DevTools port open:
+
+```bat
+:: in Windows (cmd or PowerShell), on a scratch profile
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir=%TEMP%\chrome-bench
+```
+
+```bash
+# in WSL
+BENCH_CDP=http://localhost:9222 npm run bench
+```
+
+`BENCH_CDP` (an `http://host:port` or `ws://…` DevTools endpoint) makes
+the script connect over CDP instead of launching: it opens its pages in a
+new window (context) of that browser and, on exit, closes only that window
+and disconnects. Windows Chrome reaches the WSL preview at `localhost`, so
+the default URL works; WSL reaches Windows' `localhost:9222` with WSL2's
+mirrored networking mode (or WSL1; otherwise forward the port with
+`netsh interface portproxy`). The envelope's `browser` says `(attached)`.
+`BENCH_VIEWPORT=WxH` sets the window size (an attached browser otherwise
+keeps its own; a launched one defaults to 1920×1080). `BENCH_HOST` (default
+`localhost`) is the address the preview binds and `BENCH_PUBLIC_URL`
+(default the preview's own URL) the base URL the browser opens, for a
+browser that sees the server at another address (`BENCH_HOST=0.0.0.0` with
+the machine's LAN address in `BENCH_PUBLIC_URL`).
+
+### A phone
+
+The phone route is manual: serve the build on the LAN, open the URL on the
+phone and read the overlay.
+
+```bash
+npm run build && npm run preview -- --host    # prints the network URL
+# on the phone: http://<lan address>:4173/index.html?packs=zombie&bench=60
+```
+
+When the run ends the overlay shows fps avg/p5, frame p95, tick avg/p95,
+the per-phase fps and the `gpu` string; **Copy JSON** puts the full result
+on the clipboard to paste into a note or a chat. Driving a phone from the
+script (remote debugging over USB) is not supported.
+
+### Results
+
+Per game: the automated row is filled from `docs/bench/<game>.json` when a
+real GPU is available; the laptop and phone rows are filled by a human
+with the device (`BENCH_CDP` from WSL, or the phone route). A row stays
+**pending** until a hardware `gpu` string has been seen.
+
+**Zombie city** (343×343×2, ~960 entities; 22 chunk rows, 60 s):
+
+| Device | Browser | GPU | fps avg | fps p5 | frame p95 | tick avg / p95 | sweep fps | overview fps | built chunks max | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Dev machine (`npm run bench`) | | | | | | | | | | **pending**: the sandbox's headless Chromium reports `llvmpipe` (software); run with `BENCH_CDP` or `BENCH_HEADED=1` on a host with a GPU |
+| Mid-range laptop | | | | | | | | | | |
+| Phone | | | | | | | | | | |
+
+**Vampire estate** (128×128×2, ~154 entities; 8 chunk rows, 60 s):
+
+| Device | Browser | GPU | fps avg | fps p5 | frame p95 | tick avg / p95 | sweep fps | overview fps | built chunks max | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Dev machine (`npm run bench`) | | | | | | | | | | **pending**: as above |
+| Mid-range laptop | | | | | | | | | | |
+| Phone | | | | | | | | | | |
+
+The free-play check still works for a quick look: `npm run dev`, press
+**F3**, walk across the city and watch the perf line (tick avg/p95, fps,
+active and dormant entities, built and visible chunks).

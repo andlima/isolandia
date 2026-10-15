@@ -1,12 +1,15 @@
 /**
  * Query parameters: `?packs=a,b,…` (pack directory names or namespaces;
- * dependencies are added by the stack resolver in `main.ts`) and `?seed=N`.
+ * dependencies are added by the stack resolver in `main.ts`), `?seed=N` and
+ * `?bench=S` (a benchmark run of S seconds instead of play, see `bench.ts`).
  */
 
 export interface Params {
   /** The requested pack tokens, or null without a `packs` parameter (the title screen). */
   readonly packs: string[] | null;
   readonly seed: number;
+  /** Benchmark duration in seconds; 0 without a `bench` parameter (play as usual). */
+  readonly bench: number;
   readonly errors: string[];
 }
 
@@ -25,5 +28,12 @@ export function parseParams(search: string): Params {
     if (s.trim() === '' || !Number.isInteger(n)) errors.push(`?seed= expects an integer, got '${s}'`);
     else seed = n;
   }
-  return { packs, seed, errors };
+  let bench = 0;
+  const b = q.get('bench');
+  if (b !== null) {
+    const n = Number(b);
+    if (b.trim() === '' || !Number.isInteger(n) || n <= 0) errors.push(`?bench= expects a positive whole number of seconds, got '${b}'`);
+    else bench = n;
+  }
+  return { packs, seed, bench, errors };
 }
