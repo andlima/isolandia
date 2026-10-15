@@ -5,12 +5,15 @@
  * per-frame interpolation.
  */
 
-import { Application, type Container } from 'pixi.js';
+import { Application, type Container, type WebGLRenderer } from 'pixi.js';
 import { journalToast, loadedNote, loadPacks, logLines, MessageLog, noteLine, Pace, renderPosition, resolveStack, World, type GotoRecord } from '../core/index.ts';
 import { CameraRig } from '../iso/camera.ts';
+import { CHUNK } from '../iso/chunks.ts';
 import { FLOOR_H, groundCentreIso, isoToScreen } from '../iso/projection.ts';
-import { IsoScene } from '../iso/scene.ts';
+import { IsoScene, type SceneStats } from '../iso/scene.ts';
 import { loadAssetTextures, TextureBank } from '../iso/textures.ts';
+import { BenchRun } from './bench.ts';
+import { BenchOverlay, benchGuard } from './bench-dom.ts';
 import { bindingFor } from './bindings.ts';
 import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
@@ -18,7 +21,7 @@ import { escapeTarget, hintText, readHelpSeen, trackWindows, writeHelpSeen, type
 import { FirstRunHint, HelpOverlay, PauseMenu } from './help-dom.ts';
 import { Hud, hudTimeView, type HudTimeHandlers } from './hud.ts';
 import { Hover } from './hover-dom.ts';
-import { Input } from './input.ts';
+import { Input, type InputHandlers } from './input.ts';
 import { LogView } from './log-dom.ts';
 import { FixedTickLoop } from './loop.ts';
 import { PerfMeter } from './perf.ts';
@@ -36,6 +39,8 @@ declare global {
   interface Window {
     /** Set once the first frame is drawn; used by `npm run smoke`. */
     __iso?: { ready: boolean; packs: string[]; distinctColors(): number; maskMs: number };
+    /** The `?bench=` result once the run ends (a `BenchResult`); read by `npm run bench`. */
+    __benchResult?: unknown;
   }
 }
 
@@ -93,6 +98,18 @@ class GameSession {
   }
 }
 
+/** Unmasked GPU string (tells a hardware GPU apart from SwiftShader or llvmpipe); the adapter's description under WebGPU. */
+function gpuInfo(app: Application): string {
+  if (app.renderer.name === 'webgl') {
+    const gl = (app.renderer as WebGLRenderer).gl;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  }
+  const info = (app.renderer as unknown as { gpu?: { adapter?: { info?: Record<string, unknown> } } }).gpu?.adapter?.info;
+  const parts = info ? ['vendor', 'architecture', 'device', 'description'].map((k) => info[k]).filter((v) => typeof v === 'string' && v !== '') : [];
+  return parts.length ? parts.join(' ') : app.renderer.name;
+}
+
 /** Offer `text` as a file download. */
 function download(name: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
@@ -145,6 +162,12 @@ async function main(): Promise<void> {
   const time: HudTimeHandlers = { togglePause: () => pace.togglePause(), cycleSpeed: () => pace.cycleSpeed() };
   let session = new GameSession(World.create(def, params.seed), app.stage, textures, icons, log, time);
 
+  // `?bench=`: the camera follows the bench path, play input is off, the perf line is on (see `bench.ts`).
+  const startMap = def.maps[def.start.map]!;
+  const bench = params.bench > 0 ? new BenchRun(params.bench, { width: startMap.width, height: startMap.height, chunk: CHUNK }) : null;
+  const benchOverlay = bench ? new BenchOverlay(document.body) : null;
+  if (bench) session.hud.togglePerf();
+
   const rig = new CameraRig();
   const playerIso = (alpha: number) => {
     const w = session.world;
@@ -169,12 +192,14 @@ async function main(): Promise<void> {
   const perf = new PerfMeter();
   const loop = new FixedTickLoop(
     () => {
-      input.beforeTick();
+      input?.beforeTick();
       const t0 = performance.now();
       const world = session.world;
       const tick = world.tick;
       world.step();
-      perf.tick(performance.now() - t0);
+      const t1 = performance.now();
+      perf.tick(t1 - t0);
+      bench?.recordTick(t1, t1 - t0);
       // A step that did nothing (game over, conversation open) leaves last tick's events in place.
       if (world.tick !== tick) log.push(logLines(world), performance.now());
       // `journalEvents` holds only the last tick's events: read them right after each step.
@@ -272,7 +297,7 @@ async function main(): Promise<void> {
     titleScreen: () => location.assign(location.pathname),
   });
   // The first game start in this browser: the hint shows once (again when storage is blocked) and lands in the log.
-  if (!readHelpSeen(store)) {
+  if (!bench && !readHelpSeen(store)) {
     const text = hintText(inputKind);
     hint.show(text);
     log.push([noteLine(session.world, text)], performance.now());
@@ -319,7 +344,12 @@ async function main(): Promise<void> {
     }
   };
 
-  const input = new Input(app.canvas, () => session.world, {
+  // A benchmark registers no play input at all; the guard swallows what the DOM would still deliver (buttons, keys).
+  if (benchOverlay) {
+    app.canvas.style.touchAction = 'none';
+    benchGuard(benchOverlay, () => session.hud.togglePerf());
+  }
+  const handlers: InputHandlers = {
     pan: (dx, dy) => {
       session.menu.close();
       rig.pan(dx, dy);
@@ -415,22 +445,52 @@ async function main(): Promise<void> {
       const intent = world.climbIntent(dz);
       if (intent) world.queueIntent(intent);
     },
-  });
+  };
+  const input = bench ? null : new Input(app.canvas, () => session.world, handlers);
+
+  /** After a benchmark frame: record it and, once the run is over, publish the result (the page keeps running). */
+  const benchFrame = (now: number, frameMs: number, cpuMs: number, stats: SceneStats) => {
+    if (!bench || !benchOverlay) return;
+    const { world } = session;
+    if (world.ended && bench.worldEndedAtTick === null) bench.worldEndedAtTick = world.tick;
+    const active = world.activeCount;
+    bench.recordFrame(now, { frameMs, cpuMs, stats, active, dormant: world.entities.length - active });
+    if (bench.done) return;
+    if (!bench.finished(now)) return benchOverlay.progress(bench.progress(now));
+    const result = bench.result({
+      packs,
+      map: { id: startMap.id, width: startMap.width, height: startMap.height, floors: startMap.floors },
+      entities: world.entities.length,
+      droppedMs: Math.round(loop.droppedMs),
+      renderer: app.renderer.name,
+      gpu: gpuInfo(app),
+      userAgent: navigator.userAgent,
+      viewport: { width: app.screen.width, height: app.screen.height, devicePixelRatio: window.devicePixelRatio, resolution: app.renderer.resolution },
+      seed: params.seed,
+    });
+    window.__benchResult = result;
+    console.log('BENCH_RESULT ' + JSON.stringify(result));
+    benchOverlay.show(result);
+  };
 
   let last = performance.now();
   let wasPaused = false;
   const frame = (now: number) => {
-    input.frame(now);
-    pace.windows(session.panels.windowOpen || game.open || logView.open, autoPause);
-    // The overlay and the pause menu pause the world (nothing is left to pause after defeat or victory).
-    pace.modal((help.open || pauseMenu.open) && !session.world.ended);
+    input?.frame(now);
+    if (!bench) {
+      pace.windows(session.panels.windowOpen || game.open || logView.open, autoPause);
+      // The overlay and the pause menu pause the world (nothing is left to pause after defeat or victory).
+      pace.modal((help.open || pauseMenu.open) && !session.world.ended);
+    }
     windows();
-    const paused = pace.paused;
+    // A benchmark runs at 1× and never pauses.
+    const paused = !bench && pace.paused;
     // A movement key held into the pause must be pressed again afterwards.
-    if (paused && !wasPaused) input.clearMoves();
+    if (paused && !wasPaused) input?.clearMoves();
     wasPaused = paused;
-    loop.setPace(paused, pace.speed);
+    loop.setPace(paused, bench ? 1 : pace.speed);
     const elapsed = Math.min(now - last, 1000);
+    const t0 = performance.now();
     loop.advance(elapsed);
     last = now;
     const s = session;
@@ -444,7 +504,7 @@ async function main(): Promise<void> {
       if (s.lastGoto && !s.lastGoto.ok) scene.flashUnreachable(s.lastGoto.x, s.lastGoto.y, s.lastGoto.z, now);
     }
     const { width, height } = app.screen;
-    const cam = rig.update(playerIso(loop.alpha), width, height);
+    const cam = bench ? bench.camera(now, width, height, playerIso(loop.alpha)) : rig.update(playerIso(loop.alpha), width, height);
     scene.markMenuTarget(s.menu.target);
     const stats = scene.update(cam, width, height, loop.alpha, now);
     // Hover picks against the camera just applied; its outline shows from this frame on.
@@ -469,6 +529,7 @@ async function main(): Promise<void> {
     s.panels.update();
     logView.update(now);
     app.renderer.render(app.stage);
+    if (bench) benchFrame(now, elapsed, performance.now() - t0, stats);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame((now) => {

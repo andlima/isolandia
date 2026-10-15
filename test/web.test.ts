@@ -99,9 +99,9 @@ test('web packs: equivalent to the Node reader for the real packs', () => {
 // ── Query params ───────────────────────────────────────────────────────────
 
 test('params: packs list, seed, title screen and errors', () => {
-  assert.deepEqual(parseParams(''), { packs: null, seed: 1, errors: [] });
-  assert.deepEqual(parseParams('?seed=3'), { packs: null, seed: 3, errors: [] });
-  assert.deepEqual(parseParams('?packs=base,%20other&seed=42'), { packs: ['base', 'other'], seed: 42, errors: [] });
+  assert.deepEqual(parseParams(''), { packs: null, seed: 1, bench: 0, errors: [] });
+  assert.deepEqual(parseParams('?seed=3'), { packs: null, seed: 3, bench: 0, errors: [] });
+  assert.deepEqual(parseParams('?packs=base,%20other&seed=42'), { packs: ['base', 'other'], seed: 42, bench: 0, errors: [] });
   assert.deepEqual(parseParams('?seed=abc').errors, ["?seed= expects an integer, got 'abc'"]);
   assert.equal(parseParams('?packs=').errors.length, 1);
 });

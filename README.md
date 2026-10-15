@@ -127,6 +127,7 @@ assumptions stay out of the engine.
 | `npm run build` | Production build of the browser game |
 | `npm run packs` | List the pack catalog (`-- --stack <packs…>` for a resolved stack) |
 | `npm run bench:sim` | Headless simulation benchmark |
+| `npm run bench` | Browser benchmark of the renderer on the spike and the shipped games, to `docs/bench/` (see `docs/perf.md`) |
 | `npm run map:export -- <pack-dir>… --map <id> --out <dir>` | Export a map as an isometric Tiled map + tileset (see `docs/packs.md`) |
 
 Source layout:

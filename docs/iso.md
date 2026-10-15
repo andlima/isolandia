@@ -24,6 +24,7 @@ screen.
 |------------------|---------------|---------|
 | `?packs=a,b,…`   | none: the title screen | Packs to play: directory names under `packs/` or namespaces. Dependencies are added and ordered by the [stack resolver](packs.md#stacks), as on the command line |
 | `?seed=N`        | `1`           | Integer world seed |
+| `?bench=S`       | off           | With `?packs=`: run the S-second [browser benchmark](ui.md#benchmark-mode) instead of play |
 
 For example `?packs=town`, `?packs=vampire&seed=7`, or
 `?packs=zombie,hardship` for the town with two mods
