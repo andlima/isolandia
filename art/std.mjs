@@ -1,6 +1,6 @@
 // std: genre-neutral floor, wall, door, stairs and landing, and an everyday person.
 
-import { humanoid, FACINGS } from './characters.mjs';
+import { humanoidImages } from './characters.mjs';
 import { blockTile, edgeTile, ET, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
@@ -127,6 +127,6 @@ export function images() {
     { file: 'door.svg', canvas: door(), note: 'edge: an open doorway in a stone frame' },
     ...['s', 'w'].map((f) => ({ file: `stairs_${f}.svg`, canvas: stairs(f), note: `block, rising toward ${f}` })),
     { file: 'landing.svg', canvas: landing(), note: 'flat tile' },
-    ...FACINGS.map((f) => ({ file: `humanoid_${f}.svg`, canvas: humanoid(f, person), note: `facing ${f}` })),
+    ...humanoidImages('humanoid', person),
   ];
 }

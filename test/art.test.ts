@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { formatError, loadPacks, World, type Definition } from '../src/core/index.ts';
+import { FACINGS, formatError, loadPacks, World, type Definition } from '../src/core/index.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { imageResolution } from '../src/iso/resolution.ts';
 import { decodePng, inDiamond, pngSize } from '../art/png.mjs';
@@ -20,6 +20,9 @@ const STACKS = [
   ['std', 'garden'],
 ];
 const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow', 'stairs', 'ladder'];
+/** Archetypes drawn as a single image per facing: no walk cycle (every other archetype is a humanoid and walks). */
+const STILL = ['crawler', 'bat', 'bunny', 'cat', 'fox', 'butterfly'];
+const WALK_FRAMES = 4;
 const MAX_COLOURS = 32;
 
 function load(dirs: string[]): { def: Definition; dirOf: Map<string, string> } {
@@ -158,6 +161,37 @@ test('art: image sizes and anchors follow the per-kind conventions', () => {
     for (const c of def.archetypes) check(c.sprite, `archetype ${c.id}`, (w, h, a) => w === 32 && h === 48 && a[0] === 0.5 && a[1] > 0.85 && a[1] < 1);
     for (const i of def.items) check(i.sprite, `item ${i.id}`, (w, h, a) => w <= 32 && h <= 32 && a[0] === 0.5 && a[1] === 0.5);
   }
+});
+
+test('art: every humanoid character has a 4-frame walk cycle per facing; critters, the crawler and the bat stay single drawings', () => {
+  let walkers = 0;
+  for (const dirs of STACKS) {
+    const { def, dirOf } = load(dirs);
+    for (const c of def.archetypes) {
+      const asset = def.assets[c.sprite!]!;
+      const name = c.id.split(':').pop()!;
+      if (STILL.includes(name)) {
+        assert.equal(asset.walk, null, `archetype ${c.id} is a single drawing per facing`);
+        continue;
+      }
+      assert.ok(asset.walk, `archetype ${c.id} has a walk cycle`);
+      walkers++;
+      FACINGS.forEach((f, i) => {
+        const standing = asset.byFacing[i]!;
+        const frames = asset.walk![i]!;
+        assert.equal(frames.length, WALK_FRAMES, `${c.id} ${f}`);
+        frames.forEach((k, n) => {
+          const img = asset.images[k]!;
+          assert.notEqual(k, standing.image, `${c.id} ${f}: frame ${n} is not the standing image`);
+          if (!standing.mirrored) assert.match(img.file, new RegExp(`_${f}_walk${n + 1}\\.svg$`), `${c.id} ${f}: frame file name`);
+          assert.deepEqual(img.anchor, asset.images[standing.image]!.anchor, `${c.id} ${f}: a frame uses its facing's anchor`);
+          const { width, height } = imageSize(`packs/${dirOf.get(asset.pack)}/${img.file}`);
+          assert.ok(width === 32 && height === 48, `${c.id} ${f}: ${img.file} is ${width}×${height}`);
+        });
+      });
+    }
+  }
+  assert.ok(walkers >= 15, `${walkers} walking archetypes across the stacks`);
 });
 
 // ── Pixel-art format and palettes ─────────────────────────────────────────

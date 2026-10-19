@@ -8,6 +8,8 @@
 # [0.5, 0.92] on the tile's ground centre; ground piles are 32×32, centred.
 # Directional assets list one image per drawn facing; the rest are mirrored
 # (see docs/packs.md).
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - { id: road_img, file: assets/road.svg }
   - { id: grass_img, file: assets/grass.svg }
@@ -36,6 +38,13 @@ assets:
       ne: assets/resident_ne.svg
       w: assets/resident_w.svg
       nw: assets/resident_nw.svg
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/resident_s_walk1.svg, assets/resident_s_walk2.svg, assets/resident_s_walk3.svg, assets/resident_s_walk4.svg]
+        se: [assets/resident_se_walk1.svg, assets/resident_se_walk2.svg, assets/resident_se_walk3.svg, assets/resident_se_walk4.svg]
+        ne: [assets/resident_ne_walk1.svg, assets/resident_ne_walk2.svg, assets/resident_ne_walk3.svg, assets/resident_ne_walk4.svg]
+        w:  [assets/resident_w_walk1.svg, assets/resident_w_walk2.svg, assets/resident_w_walk3.svg, assets/resident_w_walk4.svg]
+        nw: [assets/resident_nw_walk1.svg, assets/resident_nw_walk2.svg, assets/resident_nw_walk3.svg, assets/resident_nw_walk4.svg]
   - { id: canned_beans_img, file: assets/canned_beans.svg, anchor: [0.5, 0.5] }
   - { id: crackers_img, file: assets/crackers.svg, anchor: [0.5, 0.5] }
   - { id: water_bottle_img, file: assets/water_bottle.svg, anchor: [0.5, 0.5] }

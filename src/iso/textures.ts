@@ -2,8 +2,9 @@
  * Sprite textures for tiles and archetypes: loaded pack assets when a
  * definition entry has a `sprite`, generated placeholders from its `color`
  * otherwise. Directional assets pick an image per facing (mirroring the
- * partner image where needed); placeholders get a facing cue. Every texture
- * is built at most once per definition entry and facing.
+ * partner image where needed) and, mid-step, a walk frame of it; placeholders
+ * get a facing cue. Every texture is built at most once per definition entry
+ * and facing.
  */
 
 import { Assets, Container, Graphics, Text, type Renderer, type Texture } from 'pixi.js';
@@ -204,13 +205,25 @@ export class TextureBank {
   /**
    * Texture for an archetype facing `facing`; its anchor goes on the tile's
    * ground centre. `prev` is the facing last shown for this sprite (snap
-   * stickiness for 4-way assets, see `resolveFacing`).
+   * stickiness for 4-way assets, see `resolveFacing`). `frame` picks a walk
+   * frame of the shown facing (`AssetDef.walk`; a mirrored facing's frames
+   * come out mirrored); -1, or an asset without a walk cycle, gives the
+   * standing image.
    */
-  archetype(a: ArchetypeDef, facing: Facing = DEFAULT_FACING, prev: Facing | null = null): FacedTexture {
-    const fromAsset = this.fromAsset(a.sprite, facing, prev);
+  archetype(a: ArchetypeDef, facing: Facing = DEFAULT_FACING, prev: Facing | null = null, frame = -1): FacedTexture {
+    const fromAsset = this.fromAsset(a.sprite, facing, prev, frame);
     if (fromAsset) return fromAsset;
     const slot = a.index * 8 + FACINGS.indexOf(facing);
     return (this.archetypes[slot] ??= { ...this.bakeMasked(marker(a.color, a.glyph, facing)), facing });
+  }
+
+  /** Frames in an archetype's walk cycle (the same for every facing), or 0 when its asset has none. */
+  walkFrames(a: ArchetypeDef): number {
+    if (a.sprite === null) return 0;
+    const walk = this.def.assets[a.sprite]!.walk;
+    if (!walk) return 0;
+    for (const list of walk) if (list) return list.length;
+    return 0;
   }
 
   /** Texture for a ground pile of an item (always facing `s`); its anchor goes on the tile's ground centre. */
@@ -233,13 +246,20 @@ export class TextureBank {
     return t;
   }
 
-  private fromAsset(index: number | null, facing: Facing, prev: Facing | null): FacedTexture | null {
+  private fromAsset(index: number | null, facing: Facing, prev: Facing | null, frame = -1): FacedTexture | null {
     if (index === null) return null;
     const asset = this.def.assets[index]!;
     const r = resolveFacing(asset.byFacing, facing, prev);
-    const texture = this.assets[index]?.[r.image];
+    let image = r.image;
+    if (frame >= 0 && asset.walk) {
+      // A frame that failed to load falls back to the standing image, not to a placeholder.
+      const frames = asset.walk[FACINGS.indexOf(r.facing)];
+      const k = frames?.[frame];
+      if (k !== undefined && this.assets[index]?.[k]) image = k;
+    }
+    const texture = this.assets[index]?.[image];
     if (!texture) return null;
-    const [anchorX, anchorY] = asset.images[r.image]!.anchor;
+    const [anchorX, anchorY] = asset.images[image]!.anchor;
     return { texture, anchorX, anchorY, mirrored: r.mirrored, facing: r.facing };
   }
 

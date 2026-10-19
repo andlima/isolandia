@@ -4,6 +4,8 @@
 # with their feet at [0.5, 0.92] on the tile's ground centre. Directional
 # assets list one image per drawn facing; the rest are mirrored (see
 # docs/packs.md).
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - id: shambler_img      # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
@@ -13,6 +15,13 @@ assets:
       ne: assets/shambler_ne.svg
       w: assets/shambler_w.svg
       nw: assets/shambler_nw.svg
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/shambler_s_walk1.svg, assets/shambler_s_walk2.svg, assets/shambler_s_walk3.svg, assets/shambler_s_walk4.svg]
+        se: [assets/shambler_se_walk1.svg, assets/shambler_se_walk2.svg, assets/shambler_se_walk3.svg, assets/shambler_se_walk4.svg]
+        ne: [assets/shambler_ne_walk1.svg, assets/shambler_ne_walk2.svg, assets/shambler_ne_walk3.svg, assets/shambler_ne_walk4.svg]
+        w:  [assets/shambler_w_walk1.svg, assets/shambler_w_walk2.svg, assets/shambler_w_walk3.svg, assets/shambler_w_walk4.svg]
+        nw: [assets/shambler_nw_walk1.svg, assets/shambler_nw_walk2.svg, assets/shambler_nw_walk3.svg, assets/shambler_nw_walk4.svg]
   - id: crawler_img       # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
     directions:

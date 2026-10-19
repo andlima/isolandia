@@ -3,7 +3,7 @@
 // character is told apart by hat, coat or dress: a peaked cap and badge for
 // the police, a fedora and trench coat for the Family, dresses for the women.
 
-import { humanoid, FACINGS } from './characters.mjs';
+import { humanoidImages, FACINGS } from './characters.mjs';
 import { palette as town } from './town.mjs';
 
 export const palette = {
@@ -109,5 +109,5 @@ const mickey = {
 const PEOPLE = { hale, officer, widow, pike, dot, mickey };
 
 export function images() {
-  return Object.entries(PEOPLE).flatMap(([id, look]) => FACINGS.map((f) => ({ file: `${id}_${f}.svg`, canvas: humanoid(f, look), note: `facing ${f}` })));
+  return Object.entries(PEOPLE).flatMap(([id, look]) => humanoidImages(id, look));
 }

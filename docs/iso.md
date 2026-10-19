@@ -361,6 +361,22 @@ down-right, `se` = toward the camera…; the full table is in
   otherwise the clockwise one (`ne→e`, `se→s`, `sw→w`, `nw→n`). The
   last-shown facing is renderer state only (`resolveFacing` in
   `core/facing.ts` is the pure rule).
-- The scene checks each visible entity's facing every frame but swaps the
-  texture, anchor and mirroring only when the direction it shows changes.
-  Depth sorting, culling and the day/night tint are unaffected.
+- **Walk frames.** An entity's **pose** is `(shown facing, frame)`. While
+  it is mid-step and its asset has a `walk` animation
+  ([packs.md](packs.md#animations)), the frame comes from the step progress
+  `renderPosition` already interpolates with (`stepProgress`, the same
+  clamp): `walkFrame(progress, stride, n)` is `floor((stride + progress) ×
+  n / 2)`, so a cycle spans **two steps**, one footfall per tile, and the
+  feet stay locked to the ground. A frame lasts `ticks_per_step × 100 ms /
+  (n / 2)`: 100 ms with 4 frames at the default 2-tick step, 300 ms for the
+  crawler's 6 (if it had frames). The **stride parity** (which step of the
+  pair this is) flips whenever the entity's `stepTick` changes; it is
+  renderer-only state like the snapping `prev`, never saved. When the
+  entity stands (progress 1, or it has never stepped) or its asset has no
+  `walk`, the standing `directions` image shows, as before.
+- The scene checks each visible entity's facing and frame every frame but
+  swaps the texture, anchor and mirroring only when its pose changes,
+  refreshing the pick candidate so hover and click use the drawn frame's
+  mask. Computing the pose is a few arithmetic ops per visible entity with
+  no allocation. Depth sorting, culling and the day/night tint are
+  unaffected.

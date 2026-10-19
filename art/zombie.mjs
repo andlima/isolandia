@@ -1,7 +1,7 @@
 // zombie: the dead that rise in the town, in the town's palette (art/town.mjs)
 // plus their skin.
 
-import { crawler, humanoid, FACINGS } from './characters.mjs';
+import { crawler, humanoidImages, FACINGS } from './characters.mjs';
 import { palette as town } from './town.mjs';
 
 export const palette = {
@@ -27,7 +27,8 @@ const shambler = {
 
 export function images() {
   return [
-    ...FACINGS.map((f) => ({ file: `shambler_${f}.svg`, canvas: humanoid(f, shambler), note: `facing ${f}` })),
+    ...humanoidImages('shambler', shambler),
+    // The crawler drags itself: a single drawing per facing, no walk frames.
     ...FACINGS.map((f) => ({ file: `crawler_${f}.svg`, canvas: crawler(f, { outline: 'outline', key: deadKey }), note: `facing ${f}` })),
   ];
 }

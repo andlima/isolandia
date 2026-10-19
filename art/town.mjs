@@ -1,7 +1,7 @@
 // town: suburban houses, wrecks, kitchen furniture, and the resident.
 // The zombie mod (art/zombie.mjs) draws its dead with this palette.
 
-import { humanoid, item, FACINGS } from './characters.mjs';
+import { humanoidImages, item } from './characters.mjs';
 import { blockTile, edgeTile, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
@@ -376,7 +376,7 @@ export function images() {
     ...furn('cupboard', cupboard),
     ...furn('cabinet', cabinet),
     ...furn('dresser', dresser),
-    ...FACINGS.map((f) => ({ file: `resident_${f}.svg`, canvas: humanoid(f, resident), note: `facing ${f}` })),
+    ...humanoidImages('resident', resident),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),
   ];
 }

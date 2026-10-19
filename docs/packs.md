@@ -274,9 +274,9 @@ checked too when `max` is a number).
 ### `assets`
 
 Images used by the isometric renderer: a single image, or one image per
-direction (no spritesheets or animation yet). Asset ids are namespaced and
-referenced like any other id. For the conventions the shipped art follows,
-see [art.md](art.md).
+direction, optionally with a walk animation as a frame list per direction
+(no spritesheets yet). Asset ids are namespaced and referenced like any
+other id. For the conventions the shipped art follows, see [art.md](art.md).
 
 | Field        | Type                 | Default    | Notes |
 |--------------|----------------------|------------|-------|
@@ -284,6 +284,7 @@ see [art.md](art.md).
 | `file`       | path                 | —          | Relative to the pack root; must exist in the pack and end in `.svg` or `.png`. A PNG named `…@Nx.png` (N from 1 to 4) is drawn at 1/N of its pixel size ([imported art](art.md#imported-art)) |
 | `directions` | facing → path or `{ file, anchor? }` | — | One image per drawn facing (see below) |
 | `anchor`     | `[ax, ay]`           | `[0.5, 1]` | Normalized image point (each in `[0, 1]`) placed on the entry's anchor spot; shared by every direction |
+| `animations` | `{ walk: facing → [paths…] }` | — | Walk frames per drawn facing, for a directional asset only (see [Animations](#animations)) |
 
 An asset has **either** `file` **or** `directions` (both, or neither, is a
 load error).
@@ -357,6 +358,58 @@ assets:
 tiles:
   - { id: car, label: Wrecked car, glyph: "&", color: "#a33a2a", walkable: false, sprite: car_img }
 ```
+
+#### Animations
+
+A directional asset may add `animations` with a **`walk`** cycle: per
+facing, the list of frame files shown while an entity of that asset is
+mid-step (the standing `directions` image shows when it stands; see
+[iso.md](iso.md#facing)). `walk` is the only animation known so far.
+
+- `walk` maps facings to **non-empty lists of paths**. Every path follows
+  the `file` rules (`.svg` or `.png`, `@Nx` allowed, must exist in the
+  pack, near-miss suggestions on a miss). A frame has no anchor of its own:
+  it uses the anchor of its facing (the direction's `{ anchor }` if given,
+  else the entry's).
+- The set of facings under `walk` must **equal** the set under
+  `directions`: a facing with frames but no standing image, or a standing
+  facing without frames, is a load error naming it. Unknown facing keys get
+  the same message as under `directions`. Mirroring works as for
+  `directions`: a missing facing shows its partner's frames flipped.
+- Every facing lists the **same number** of frames, and that number is
+  **even** (at least 2): a cycle spans two steps, one footfall per tile, so
+  the first half of the frames plays during one step and the second half
+  during the next. Four frames (contact, passing, contact, passing) at the
+  default 2-tick step give 100 ms per frame.
+- Errors: `animations` on a `file` asset ("only a directional asset can have
+  animations"), an empty `animations` mapping, an animation other than
+  `walk`, a value that is not a list of file paths, mismatched or odd frame
+  counts.
+
+```yaml
+# packs/std/assets.yaml
+assets:
+  - id: humanoid_img
+    anchor: [0.5, 0.92]
+    directions:
+      s:  assets/humanoid_s.svg
+      se: assets/humanoid_se.svg
+      ne: assets/humanoid_ne.svg
+      w:  assets/humanoid_w.svg
+      nw: assets/humanoid_nw.svg
+    animations:
+      walk:
+        s:  [assets/humanoid_s_walk1.svg, assets/humanoid_s_walk2.svg, assets/humanoid_s_walk3.svg, assets/humanoid_s_walk4.svg]
+        se: [assets/humanoid_se_walk1.svg, assets/humanoid_se_walk2.svg, assets/humanoid_se_walk3.svg, assets/humanoid_se_walk4.svg]
+        ne: [assets/humanoid_ne_walk1.svg, assets/humanoid_ne_walk2.svg, assets/humanoid_ne_walk3.svg, assets/humanoid_ne_walk4.svg]
+        w:  [assets/humanoid_w_walk1.svg, assets/humanoid_w_walk2.svg, assets/humanoid_w_walk3.svg, assets/humanoid_w_walk4.svg]
+        nw: [assets/humanoid_nw_walk1.svg, assets/humanoid_nw_walk2.svg, assets/humanoid_nw_walk3.svg, assets/humanoid_nw_walk4.svg]
+```
+
+An asset without `animations` shows its standing image mid-step too. The
+ASCII shell, the simulation, saves and the world hash ignore animations
+entirely. An override (`override: true`) replaces `animations` whole, like
+any mapping field, and `animations: null` clears it.
 
 Entries without a `sprite` get a placeholder generated from their `color`.
 The ASCII renderer ignores sprites. The art of the shipped packs is pixel
@@ -2578,7 +2631,7 @@ list or tree):
   id (with a *did you mean*).
 - **Shallow merge:** every top-level field the override lists replaces the
   current one; omitted fields are kept. Nested values are replaced
-  **whole**: a mapping (`inventory`, `use`, `directions`, `target`…) or a
+  **whole**: a mapping (`inventory`, `use`, `directions`, `animations`, `target`…) or a
   list (`tags`, `parts`, `populate`, `effects`, `rows`…). There are no list
   operators and no deep merge (the one exception is `start`'s `defeat`,
   `victory` and `simulation`, see [Singletons](#singletons)).

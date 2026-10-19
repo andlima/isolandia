@@ -550,7 +550,7 @@ class Loader {
   }
 
   private asset(d: Defined): AssetDef {
-    const f = this.fields(d, ['id', 'file', 'anchor', 'directions'], 'asset');
+    const f = this.fields(d, ['id', 'file', 'anchor', 'directions', 'animations'], 'asset');
     // The image paths are relative to the files of the pack that wrote them.
     const pack = this.packOf(d, d.entry.value['directions'] !== undefined && d.entry.value['directions'] !== null ? 'directions' : 'file');
     const anchor = this.anchor(f.raw('anchor'), f.at('anchor')) ?? DEFAULT_ANCHOR;
@@ -561,12 +561,14 @@ class Loader {
       images: [{ file, anchor }],
       ways: 1,
       byFacing: FACINGS.map(() => ({ image: 0, mirrored: false })),
+      walk: null,
     });
     if (!f.has('directions')) {
       if (!f.has('file')) {
         this.sink.add(f.src, `missing required field 'file' (or 'directions')`);
         return single('');
       }
+      if (f.has('animations')) this.sink.add(f.at('animations'), `only a directional asset can have animations ('${d.id}' is a 'file' asset)`);
       return single(this.assetFile(f.string('file') ?? '', f.at('file'), pack));
     }
     if (f.has('file')) {
@@ -614,7 +616,103 @@ class Loader {
       );
     }
     if (images.length === 0) return single('');
-    return { id: d.id, index: d.index, pack: pack.namespace, images, ways, byFacing };
+    const walk = f.has('animations') ? this.animations(d, f, images, listed) : null;
+    return { id: d.id, index: d.index, pack: pack.namespace, images, ways, byFacing, walk };
+  }
+
+  /**
+   * An asset's `animations` (only `walk` so far): per listed facing a list of
+   * frame files, appended to `images` (deduplicated by file and anchor like
+   * the standing images; a frame takes its facing's anchor). Returns the
+   * per-facing frame table (see `AssetDef.walk`), or null after an error.
+   */
+  private animations(
+    d: Defined,
+    f: Fields,
+    images: AssetImage[],
+    listed: ReadonlyMap<Facing, number>,
+  ): (readonly number[] | null)[] | null {
+    const anims = f.mapping('animations');
+    if (!anims) return null;
+    const keys = Object.keys(anims);
+    if (keys.length === 0) {
+      this.sink.add(f.at('animations'), `'animations' must list at least one animation`);
+      return null;
+    }
+    let ok = true;
+    for (const key of keys) {
+      if (key === 'walk') continue;
+      this.sink.add(f.at('animations', key), `unknown animation '${key}': 'walk' is the only animation known`);
+      ok = false;
+    }
+    const walkSrc = f.at('animations', 'walk');
+    const walk = anims['walk'];
+    if (walk === undefined) return null;
+    if (!isObject(walk)) {
+      this.sink.add(walkSrc, `'walk' must map each facing to a list of frame files`);
+      return null;
+    }
+    // The frame paths are relative to the files of the pack that wrote `animations`.
+    const pack = this.packOf(d, 'animations');
+    /** Frame image indices per walk facing. */
+    const frames = new Map<Facing, number[]>();
+    for (const [key, value] of Object.entries(walk)) {
+      const src = f.at('animations', 'walk', key);
+      if (!isFacing(key)) {
+        const s = nearMiss(key, FACINGS);
+        this.sink.add(src, `unknown direction '${key}'${s ? ` (did you mean '${s}'?)` : ''}; expected one of ${FACINGS.join(', ')}`);
+        ok = false;
+        continue;
+      }
+      if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {
+        this.sink.add(src, `walk frames for '${key}' must be a list of file paths`);
+        ok = false;
+        continue;
+      }
+      if (value.length === 0) {
+        this.sink.add(src, `walk frames for '${key}' must list at least one file`);
+        ok = false;
+        continue;
+      }
+      const standing = listed.get(key);
+      if (standing === undefined) {
+        this.sink.add(src, `walk frames for '${key}' but no standing image: 'directions' does not list '${key}'`);
+        ok = false;
+        continue;
+      }
+      const own = images[standing]!.anchor;
+      const list: number[] = [];
+      value.forEach((raw, k) => {
+        const file = this.assetFile(raw as string, at(src, k), pack);
+        let i = images.findIndex((im) => im.file === file && im.anchor[0] === own[0] && im.anchor[1] === own[1]);
+        if (i < 0) i = images.push({ file, anchor: own }) - 1;
+        list.push(i);
+      });
+      frames.set(key, list);
+    }
+    for (const facing of listed.keys()) {
+      if (!frames.has(facing) && !(facing in walk)) {
+        this.sink.add(walkSrc, `no walk frames for '${facing}': every facing listed in 'directions' needs a frame list`);
+        ok = false;
+      }
+    }
+    const counts = [...frames].map(([facing, list]) => ({ facing, n: list.length }));
+    const first = counts[0];
+    if (first) {
+      const differs = counts.find((c) => c.n !== first.n);
+      if (differs) {
+        this.sink.add(walkSrc, `walk frame counts differ: '${first.facing}' has ${first.n}, '${differs.facing}' has ${differs.n}; every facing needs the same number of frames`);
+        ok = false;
+      } else if (first.n % 2 !== 0) {
+        this.sink.add(walkSrc, `walk frame count must be even (a cycle spans two steps), got ${first.n}`);
+        ok = false;
+      }
+    }
+    if (!ok) return null;
+    // Index the frame lists like the standing images: a mirrored facing takes its partner's list.
+    const lists = [...frames.values()];
+    const byList = new Map<Facing, number>([...frames.keys()].map((facing, i) => [facing, i]));
+    return facingTable(byList).byFacing.map((e) => (e ? lists[e.image]! : null));
   }
 
   /** Validates an asset file path (exists in the pack, `.svg`/`.png`); returns it normalized. */

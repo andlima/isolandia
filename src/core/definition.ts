@@ -120,6 +120,14 @@ export interface AssetDef {
    * `file` asset uses image 0 unmirrored for every facing.
    */
   readonly byFacing: readonly (FacingImage | null)[];
+  /**
+   * Walk cycle (`animations.walk`): per facing, indexed like `FACINGS`, the
+   * `images` indices of its frames (every facing has the same even count), or
+   * null where `byFacing` is null. A facing that is mirrored in `byFacing`
+   * lists its partner's frames (shown with the same `mirrored` flag). Null
+   * for an asset without a walk animation.
+   */
+  readonly walk: readonly (readonly number[] | null)[] | null;
 }
 
 export interface TileDef {

@@ -29,9 +29,12 @@
  * Ground and objects are multiplied by the pack's day/night tint (if any);
  * markers are not.
  *
- * Entities show their simulation facing (`facingOf`); a sprite's
- * texture, anchor and mirroring are swapped only when the direction it shows
- * changes. Tiles face their cell's legend `facing`.
+ * Entities show their simulation facing (`facingOf`) and, mid-step, a frame
+ * of their asset's walk cycle chosen from the step progress (`walkFrame`; a
+ * cycle spans two steps, the stride parity flipping each time `stepTick`
+ * changes). A sprite's texture, anchor and mirroring are swapped only when
+ * its pose (shown facing, frame) changes. Tiles face their cell's legend
+ * `facing`.
  *
  * Map edits (`world.tileVersion`) rebuild the built chunks whose cells or
  * edges changed; an unbuilt chunk picks its edits up when it is first built.
@@ -42,7 +45,19 @@
  */
 
 import { Container, Sprite } from 'pixi.js';
-import { EDGE_SIDES, edgeKey, facingOf, renderPosition, type Container as Pile, type EdgeSide, type Entity, type Facing, type World } from '../core/index.ts';
+import {
+  EDGE_SIDES,
+  edgeKey,
+  facingOf,
+  renderPosition,
+  stepProgress,
+  walkFrame,
+  type Container as Pile,
+  type EdgeSide,
+  type Entity,
+  type Facing,
+  type World,
+} from '../core/index.ts';
 import { CHUNK, chunkBounds, chunkCount, chunkLayout, chunkOf, chunksInView, ChunkLru, inShownChunk, MAX_BUILT_CHUNKS, spriteDiff, type ChunkLayout } from './chunks.ts';
 import { FADE_ALPHA, fadeCells, floorVisible, viewFloor } from './cutaway.ts';
 import { depthKey, diagonalOf, Layer } from './depth.ts';
@@ -111,6 +126,14 @@ interface EntityView {
   facing: Facing;
   /** Facing the sprite shows (after snapping to a 4-way asset). */
   shown: Facing;
+  /** Walk frame the sprite shows, or -1 for the standing image. */
+  frame: number;
+  /** Frames in the archetype's walk cycle (0: no walk animation, always standing). */
+  frames: number;
+  /** The entity's `stepTick` last seen; a change means a new step began. */
+  stepTick: number;
+  /** Which step of a two-step cycle the current step is (renderer-only state, flips every step). */
+  stride: 0 | 1;
 }
 
 export interface SceneStats {
@@ -545,7 +568,9 @@ export class IsoScene {
       this.floors[floor]!.buckets[bucket]!.addChild(s);
       const target: PickTarget = { kind: 'entity', x: entity.x, y: entity.y, z: entity.z, entity };
       const pick = pickOf(s, this.textures.mask(t.texture), floor, drawOrder(floor, r.x, r.y, Layer.Entity), target);
-      this.entities.set(id, { entity, sprite: s, pick, floor, bucket, facing, shown: t.facing });
+      const frames = this.textures.walkFrames(entity.archetype);
+      // The pose loop below picks the walk frame on this same update (frame -1 ≠ any frame mid-step).
+      this.entities.set(id, { entity, sprite: s, pick, floor, bucket, facing, shown: t.facing, frame: -1, frames, stepTick: entity.stepTick, stride: 0 });
     }
 
     let visibleEntities = 0;
@@ -565,11 +590,24 @@ export class IsoScene {
         moved = true;
       }
       const facing = facingOf(v.entity);
-      if (facing !== v.facing) {
+      // The pose: the shown facing plus, mid-step, a walk frame. A cycle spans
+      // two steps, so the stride parity flips whenever a new step begins.
+      let frame = -1;
+      if (v.frames > 0) {
+        const e = v.entity;
+        if (e.stepTick !== v.stepTick) {
+          v.stepTick = e.stepTick;
+          v.stride = v.stride === 0 ? 1 : 0;
+        }
+        // An entity that never stepped (`from` is its cell, `stepTick` 0) stands, whatever the clock says.
+        if (e.fromX !== e.x || e.fromY !== e.y || e.fromZ !== e.z) frame = walkFrame(stepProgress(e, tick, alpha), v.stride, v.frames) ?? -1;
+      }
+      if (facing !== v.facing || frame !== v.frame) {
         v.facing = facing;
-        const t = this.textures.archetype(v.entity.archetype, facing, v.shown);
-        if (t.facing !== v.shown) {
+        const t = this.textures.archetype(v.entity.archetype, facing, v.shown, frame);
+        if (t.facing !== v.shown || frame !== v.frame) {
           v.shown = t.facing;
+          v.frame = frame;
           apply(s, t);
           moved = true;
         }

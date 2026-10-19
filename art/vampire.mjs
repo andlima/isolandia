@@ -1,6 +1,6 @@
 // vampire: a gothic mansion, its crypt, the vampire and the bats.
 
-import { bat, humanoid, item, FACINGS } from './characters.mjs';
+import { bat, humanoidImages, item, FACINGS } from './characters.mjs';
 import { blockTile, edgeTile, flatTile, hash, px, slab } from './lib.mjs';
 
 export const palette = {
@@ -296,7 +296,9 @@ export function images() {
     ...furn('chest', chest),
     ...furn('wine_rack', wineRack),
     ...['s', 'w'].map((f) => ({ file: `ladder_${f}.svg`, canvas: ladder(f), note: `block, climbing toward ${f}` })),
-    ...FACINGS.map((f) => ({ file: `vampire_${f}.svg`, canvas: humanoid(f, vampire), note: `facing ${f}` })),
+    // From behind the cape hides the legs, so the vampire's w and nw frames match the standing drawing.
+    ...humanoidImages('vampire', vampire),
+    // The bat flies: a single drawing per facing, no walk frames.
     ...FACINGS.map((f) => ({ file: `bat_${f}.svg`, canvas: bat(f, batLook), note: `facing ${f}` })),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),
   ];

@@ -59,7 +59,7 @@ export { SAVE_VERSION, SUPPORTED_SAVE_VERSIONS, saveMeta, wrapSave, unwrapSave, 
 export { type Activity, type ActivitySource, type ActivityStage, type CompletionStep } from './sim/activity.ts';
 export { add, remove, fits, load, countOf, createContainer, type Container, type ContainerKind, type Stack } from './sim/containers.ts';
 export { Pathfinder, octile } from './sim/astar.ts';
-export { renderPosition, facingOf } from './sim/motion.ts';
+export { renderPosition, stepProgress, walkFrame, facingOf } from './sim/motion.ts';
 export {
   hudModel,
   formatClock,

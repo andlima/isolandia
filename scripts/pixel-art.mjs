@@ -5,7 +5,8 @@
 // shaded iso boxes, on top of art/lib.mjs); this writes them as SVGs on the
 // 2 px art-pixel grid to packs/<pack>/assets/. `--preview out.png` also
 // writes an enlarged contact sheet of every image
-// (`--only <regex>` limits it to matching file names, drawn larger). See docs/art.md.
+// (`--only <regex>` limits it to matching file names, drawn larger, five per
+// row: a character's standing drawing beside its four walk frames). See docs/art.md.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +36,6 @@ for (const pack of packs) {
   console.log(`packs/${pack}/assets: ${images().length} images`);
 }
 if (preview) {
-  writeFileSync(preview, contactSheet(sheet, only ? 8 : 4, only ? 6 : 8));
+  writeFileSync(preview, contactSheet(sheet, only ? 8 : 4, only ? 5 : 8));
   console.log(`preview: ${preview}`);
 }
