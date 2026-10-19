@@ -4,7 +4,7 @@
 // black; the bartender wears an apron and the kid a cap. The items (coin,
 // bullet, whiskey, revolver) are small ground piles.
 
-import { humanoid, item, FACINGS } from './characters.mjs';
+import { bodyRows, humanoidImages, item, FACINGS, WALK_FRAMES } from './characters.mjs';
 import { palette as town } from './town.mjs';
 
 export const palette = {
@@ -101,17 +101,19 @@ const bartender = {
   over: layers(APRON, { se: { 10: '......mSSm......', 11: '.......rr.......' }, s: { 10: '.....mmS........', 11: '......rr........' }, ne: { 10: '.......Sm.......' } }),
 };
 
+/**
+ * Bare shins below short trousers: rows 19–20 of a pose's legs in skin
+ * (shoes stay shoes), per facing, for the standing drawing (`frame` null)
+ * or a walk frame, so the shins follow the legs in every pose.
+ */
+const shins = (frame) =>
+  Object.fromEntries(FACINGS.map((f) => [f, Object.fromEntries([19, 20].map((y) => [y, bodyRows(f, frame)[y].replace(/p/g, 's').replace(/P/g, 'S')]))]));
+
 // The kid: a rust cap, a blue shirt, short khaki trousers over bare shins.
 const kid = {
   outline: 'outline',
   key: { ...base, H: 'wood_hi', t: 'cloth', T: 'cloth_lo', p: 'khaki', P: 'khaki_lo', x: 'rust', X: 'rust_lo' },
-  over: layers(CAP, {
-    se: { 19: '.....ss..SS.....', 20: '.....ss..SS.....' },
-    s: { 19: '....ss...SS.....', 20: '....ss...SS.....' },
-    ne: { 19: '.....ss...SS....', 20: '....ss.....SS...' },
-    w: { 19: '.....ss..SS.....', 20: '.....ss..SS.....' },
-    nw: { 19: '.....ss..SS.....', 20: '.....ss..SS.....' },
-  }),
+  over: { ...layers(CAP, shins(null)), frames: Array.from({ length: WALK_FRAMES }, (_, k) => shins(k)) },
 };
 
 // A gang rider: brown duster and hat, red bandana.
@@ -143,7 +145,7 @@ const ITEMS = {
 
 export function images() {
   return [
-    ...Object.entries(PEOPLE).flatMap(([id, look]) => FACINGS.map((f) => ({ file: `${id}_${f}.svg`, canvas: humanoid(f, look), note: `facing ${f}` }))),
+    ...Object.entries(PEOPLE).flatMap(([id, look]) => humanoidImages(id, look)),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),
   ];
 }

@@ -8,6 +8,8 @@
 # [0.5, 0.92] on the tile's ground centre; ground piles are 32×32, centred.
 # Directional assets list one image per drawn facing; the rest are mirrored
 # (see docs/packs.md).
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - { id: carpet_img, file: assets/carpet.svg }
   - { id: creaky_img, file: assets/creaky.svg }
@@ -34,6 +36,13 @@ assets:
       ne: assets/vampire_ne.svg
       w: assets/vampire_w.svg
       nw: assets/vampire_nw.svg
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/vampire_s_walk1.svg, assets/vampire_s_walk2.svg, assets/vampire_s_walk3.svg, assets/vampire_s_walk4.svg]
+        se: [assets/vampire_se_walk1.svg, assets/vampire_se_walk2.svg, assets/vampire_se_walk3.svg, assets/vampire_se_walk4.svg]
+        ne: [assets/vampire_ne_walk1.svg, assets/vampire_ne_walk2.svg, assets/vampire_ne_walk3.svg, assets/vampire_ne_walk4.svg]
+        w:  [assets/vampire_w_walk1.svg, assets/vampire_w_walk2.svg, assets/vampire_w_walk3.svg, assets/vampire_w_walk4.svg]
+        nw: [assets/vampire_nw_walk1.svg, assets/vampire_nw_walk2.svg, assets/vampire_nw_walk3.svg, assets/vampire_nw_walk4.svg]
   - id: bat_img           # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
     directions:

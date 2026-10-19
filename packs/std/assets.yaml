@@ -8,6 +8,8 @@
 # [0.5, 0.92] on the tile's ground centre; ground piles are 32×32, centred.
 # Directional assets list one image per drawn facing; the rest are mirrored
 # (see docs/packs.md).
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - { id: floor_img, file: assets/floor.svg }   # flat
   - { id: wall_img, file: assets/wall.svg, anchor: [0.1, 0.65625] }   # edge
@@ -23,3 +25,10 @@ assets:
       ne: assets/humanoid_ne.svg
       w: assets/humanoid_w.svg
       nw: assets/humanoid_nw.svg
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/humanoid_s_walk1.svg, assets/humanoid_s_walk2.svg, assets/humanoid_s_walk3.svg, assets/humanoid_s_walk4.svg]
+        se: [assets/humanoid_se_walk1.svg, assets/humanoid_se_walk2.svg, assets/humanoid_se_walk3.svg, assets/humanoid_se_walk4.svg]
+        ne: [assets/humanoid_ne_walk1.svg, assets/humanoid_ne_walk2.svg, assets/humanoid_ne_walk3.svg, assets/humanoid_ne_walk4.svg]
+        w:  [assets/humanoid_w_walk1.svg, assets/humanoid_w_walk2.svg, assets/humanoid_w_walk3.svg, assets/humanoid_w_walk4.svg]
+        nw: [assets/humanoid_nw_walk1.svg, assets/humanoid_nw_walk2.svg, assets/humanoid_nw_walk3.svg, assets/humanoid_nw_walk4.svg]

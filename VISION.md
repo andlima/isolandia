@@ -805,7 +805,13 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     Speeds are whole ticks per tile at 10 ticks/s (10, 5, 3.3, 2.5
     tiles/s): run 1, walk 2, sneak 4; a finer tick rate is out of scope.
     Smooth turns (the intermediate facing shown for a beat) ride on the
-    same pose function.
+    same pose function. **Walk frames landed** as task `walk-cycle`: the
+    asset schema `animations.walk` (frame lists per drawn facing, mirrored
+    like `directions`), the pose `(facing, frame)` chosen from the step
+    progress with a cycle over two steps, and a 4-frame cycle on the shared
+    humanoid body so every human character walks. Gaits (`run`/`sneak`,
+    archetype `gaits`, the held key), idle and activity poses and
+    spritesheets remain for `m10-anim-gaits`.
   - **Local lights** (spec `m10-local-lights`). A `light` on tiles and
     archetypes (`radius`, `color`, optional `flicker`) that lifts the night
     tint around lamps, windows, fires and flashlights. Today `lighting.tint`

@@ -4,25 +4,69 @@
 # feet at [0.5, 0.92] on the tile's ground centre, five drawn facings each
 # (the rest are mirrored); items are small ground piles centred on the
 # ground centre.
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - id: sheriff_img
     anchor: [0.5, 0.92]
     directions: { s: assets/sheriff_s.svg, se: assets/sheriff_se.svg, ne: assets/sheriff_ne.svg, w: assets/sheriff_w.svg, nw: assets/sheriff_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/sheriff_s_walk1.svg, assets/sheriff_s_walk2.svg, assets/sheriff_s_walk3.svg, assets/sheriff_s_walk4.svg]
+        se: [assets/sheriff_se_walk1.svg, assets/sheriff_se_walk2.svg, assets/sheriff_se_walk3.svg, assets/sheriff_se_walk4.svg]
+        ne: [assets/sheriff_ne_walk1.svg, assets/sheriff_ne_walk2.svg, assets/sheriff_ne_walk3.svg, assets/sheriff_ne_walk4.svg]
+        w:  [assets/sheriff_w_walk1.svg, assets/sheriff_w_walk2.svg, assets/sheriff_w_walk3.svg, assets/sheriff_w_walk4.svg]
+        nw: [assets/sheriff_nw_walk1.svg, assets/sheriff_nw_walk2.svg, assets/sheriff_nw_walk3.svg, assets/sheriff_nw_walk4.svg]
   - id: doc_img
     anchor: [0.5, 0.92]
     directions: { s: assets/doc_s.svg, se: assets/doc_se.svg, ne: assets/doc_ne.svg, w: assets/doc_w.svg, nw: assets/doc_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/doc_s_walk1.svg, assets/doc_s_walk2.svg, assets/doc_s_walk3.svg, assets/doc_s_walk4.svg]
+        se: [assets/doc_se_walk1.svg, assets/doc_se_walk2.svg, assets/doc_se_walk3.svg, assets/doc_se_walk4.svg]
+        ne: [assets/doc_ne_walk1.svg, assets/doc_ne_walk2.svg, assets/doc_ne_walk3.svg, assets/doc_ne_walk4.svg]
+        w:  [assets/doc_w_walk1.svg, assets/doc_w_walk2.svg, assets/doc_w_walk3.svg, assets/doc_w_walk4.svg]
+        nw: [assets/doc_nw_walk1.svg, assets/doc_nw_walk2.svg, assets/doc_nw_walk3.svg, assets/doc_nw_walk4.svg]
   - id: bartender_img
     anchor: [0.5, 0.92]
     directions: { s: assets/bartender_s.svg, se: assets/bartender_se.svg, ne: assets/bartender_ne.svg, w: assets/bartender_w.svg, nw: assets/bartender_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/bartender_s_walk1.svg, assets/bartender_s_walk2.svg, assets/bartender_s_walk3.svg, assets/bartender_s_walk4.svg]
+        se: [assets/bartender_se_walk1.svg, assets/bartender_se_walk2.svg, assets/bartender_se_walk3.svg, assets/bartender_se_walk4.svg]
+        ne: [assets/bartender_ne_walk1.svg, assets/bartender_ne_walk2.svg, assets/bartender_ne_walk3.svg, assets/bartender_ne_walk4.svg]
+        w:  [assets/bartender_w_walk1.svg, assets/bartender_w_walk2.svg, assets/bartender_w_walk3.svg, assets/bartender_w_walk4.svg]
+        nw: [assets/bartender_nw_walk1.svg, assets/bartender_nw_walk2.svg, assets/bartender_nw_walk3.svg, assets/bartender_nw_walk4.svg]
   - id: kid_img
     anchor: [0.5, 0.92]
     directions: { s: assets/kid_s.svg, se: assets/kid_se.svg, ne: assets/kid_ne.svg, w: assets/kid_w.svg, nw: assets/kid_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/kid_s_walk1.svg, assets/kid_s_walk2.svg, assets/kid_s_walk3.svg, assets/kid_s_walk4.svg]
+        se: [assets/kid_se_walk1.svg, assets/kid_se_walk2.svg, assets/kid_se_walk3.svg, assets/kid_se_walk4.svg]
+        ne: [assets/kid_ne_walk1.svg, assets/kid_ne_walk2.svg, assets/kid_ne_walk3.svg, assets/kid_ne_walk4.svg]
+        w:  [assets/kid_w_walk1.svg, assets/kid_w_walk2.svg, assets/kid_w_walk3.svg, assets/kid_w_walk4.svg]
+        nw: [assets/kid_nw_walk1.svg, assets/kid_nw_walk2.svg, assets/kid_nw_walk3.svg, assets/kid_nw_walk4.svg]
   - id: rider_img
     anchor: [0.5, 0.92]
     directions: { s: assets/rider_s.svg, se: assets/rider_se.svg, ne: assets/rider_ne.svg, w: assets/rider_w.svg, nw: assets/rider_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/rider_s_walk1.svg, assets/rider_s_walk2.svg, assets/rider_s_walk3.svg, assets/rider_s_walk4.svg]
+        se: [assets/rider_se_walk1.svg, assets/rider_se_walk2.svg, assets/rider_se_walk3.svg, assets/rider_se_walk4.svg]
+        ne: [assets/rider_ne_walk1.svg, assets/rider_ne_walk2.svg, assets/rider_ne_walk3.svg, assets/rider_ne_walk4.svg]
+        w:  [assets/rider_w_walk1.svg, assets/rider_w_walk2.svg, assets/rider_w_walk3.svg, assets/rider_w_walk4.svg]
+        nw: [assets/rider_nw_walk1.svg, assets/rider_nw_walk2.svg, assets/rider_nw_walk3.svg, assets/rider_nw_walk4.svg]
   - id: black_jack_img
     anchor: [0.5, 0.92]
     directions: { s: assets/black_jack_s.svg, se: assets/black_jack_se.svg, ne: assets/black_jack_ne.svg, w: assets/black_jack_w.svg, nw: assets/black_jack_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/black_jack_s_walk1.svg, assets/black_jack_s_walk2.svg, assets/black_jack_s_walk3.svg, assets/black_jack_s_walk4.svg]
+        se: [assets/black_jack_se_walk1.svg, assets/black_jack_se_walk2.svg, assets/black_jack_se_walk3.svg, assets/black_jack_se_walk4.svg]
+        ne: [assets/black_jack_ne_walk1.svg, assets/black_jack_ne_walk2.svg, assets/black_jack_ne_walk3.svg, assets/black_jack_ne_walk4.svg]
+        w:  [assets/black_jack_w_walk1.svg, assets/black_jack_w_walk2.svg, assets/black_jack_w_walk3.svg, assets/black_jack_w_walk4.svg]
+        nw: [assets/black_jack_nw_walk1.svg, assets/black_jack_nw_walk2.svg, assets/black_jack_nw_walk3.svg, assets/black_jack_nw_walk4.svg]
   - { id: coin_img, file: assets/coin.svg, anchor: [0.5, 0.5] }
   - { id: bullet_img, file: assets/bullet.svg, anchor: [0.5, 0.5] }
   - { id: whiskey_img, file: assets/whiskey.svg, anchor: [0.5, 0.5] }

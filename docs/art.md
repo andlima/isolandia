@@ -33,6 +33,7 @@ gives the conventions. Asset fields, anchors and the facing table are documented
 | Raised tile (furniture, car, coffin, crate, stairs) | 64×64 | `[0.5, 1]` (default) | A block whose top face sits 32 px above the ground diamond. Taller art is fine if its bottom still lines up with the diamond |
 | Edge tile (wall, door, window, fence) | 40×64 | `[0.1, 0.65625]` | A thin slab on the cell's `n` side, see below |
 | Character | 32×48 | `[0.5, 0.92]` | Feet on a pixel drop shadow at the tile's ground centre |
+| Character walk frame | 32×48 | its facing's | Four per drawn facing for the humanoids, see [Walk frames](#walk-frames); the critters, crawler and bat have none |
 | Item ground pile | ≤ 32×32 | `[0.5, 0.5]` | Small, centred on the ground centre, with a small shadow |
 
 A raised tile replaces the ground under it, so a block's art covers its
@@ -101,6 +102,55 @@ the horizontal mirrors of their partners. See the facing table in
   screen-left face, so its stepped profile shows on the right. Their block
   is a full wall height, the height of one floor.
 
+### Walk frames
+
+Every human character (the shared humanoid body in `art/characters.mjs`)
+has a **4-frame walk cycle** per drawn facing, listed under
+`animations.walk` in the pack's `assets.yaml`
+([packs.md](packs.md#animations)) and shown mid-step by the renderer
+([iso.md](iso.md#facing)). The mirrored facings reuse the frames flipped,
+like the standing drawings. **(tested:** each frame is 32×48 with its
+facing's anchor; the humanoids have a `walk` table, the bunny, cat, fox,
+butterfly, crawler and bat do not**)**
+
+- **The four frames**: *contact* (one leg forward, the other back, the arms
+  swung opposite), *passing* (legs together, the swinging foot lifted),
+  contact with the other leg, passing. Frames 0 and 2 are the contacts. A
+  cycle spans two steps, so the first contact lands on one tile and the
+  second on the next: one footfall per tile.
+- **Per facing**: the front (`se`) and back (`nw`) views show the stride as
+  the back foot one art pixel higher and the forward leg one pixel out;
+  the profile (`ne`) shows the clearest forward/back split (the near leg
+  light, the far leg dark, so the two contacts tell apart); the
+  three-quarter views (`s`, `w`) sit in between.
+- **Row budget**: a frame differs from the standing drawing only in the
+  **leg rows 18–21** (the hips, rows 16–17, never move) and the **arm
+  columns** of torso rows 13–15 (a swinging hand rides one row higher, so
+  the arm reads foreshortened). The head, hair and torso are the standing
+  rows, pixel for pixel. Shoes stay on row 21 (their outline on row 22, the
+  ground); the body is not lifted on the passing frames. The drop shadow
+  is unchanged.
+- **Naming**: `<name>_<facing>_walk1.svg` … `_walk4.svg` beside
+  `<name>_<facing>.svg`; `humanoidImages(name, look)` in
+  `art/characters.mjs` emits all 25 files of a character.
+- **Generator**: `humanoid(facing, look, frame = null)`; `frame` is `null`
+  for the standing drawing or `0..3`. `bodyRows(facing, frame)` gives the
+  24 body rows of a pose before overlays. `armsForward` (the shambler)
+  still replaces the arms in every frame; the legs animate the same.
+- **Overlays**: a look's `under` and `over` rows apply to every frame as to
+  the standing drawing. Where an overlay covers leg rows, the frame's legs
+  show through only where it is transparent: the noir dresses hide the
+  lifted foot, so the widow and Dot read as feet alternating under the
+  hem; the coats and dusters cover the hips only; from behind the
+  vampire's cape hides the legs, so its `w` and `nw` frames equal the
+  standing drawing. An overlay that must follow the legs is given **per
+  frame** with `over.frames[k][facing]`, rows that add to or replace
+  `over[facing]` for frame `k`: the western kid's bare shins are derived
+  from each pose's leg rows this way (`shins()` in `art/western.mjs`).
+- Preview a character's frames beside its standing pose with
+  `node scripts/pixel-art.mjs std --only 'humanoid_' --preview out.png`
+  (five images per row: standing, then frames 1–4).
+
 ## The generator
 
 The SVGs are generated. Do not edit them by hand. Instead:
@@ -119,7 +169,8 @@ node scripts/pixel-art.mjs vampire --only 'bat_' --preview /tmp/bats.png  # just
   `art/png.mjs`). Each SVG row is written as runs
   of one colour, and identical runs on following rows are merged.
 - `art/characters.mjs` holds the shared humanoid body (one text grid per
-  drawn facing), the crawler, the bat and the item-pile helper.
+  drawn facing, plus its four walk frames), the crawler, the bat and the
+  item-pile helper.
 - `art/<pack>.mjs` holds a pack's palette and its drawings. Its `images()`
   returns the files to write to `packs/<pack>/assets/`. A mod may draw
   with its base's palette: `art/zombie.mjs` imports the town's and adds

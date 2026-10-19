@@ -3,22 +3,66 @@
 # regenerate rather than editing the SVGs. Characters are 32×48 with their
 # feet at [0.5, 0.92] on the tile's ground centre; each lists five drawn
 # facings and the rest are mirrored (docs/packs.md#assets).
+# Characters also list four walk frames per drawn facing under
+# animations.walk; a cycle spans two steps (docs/packs.md#assets).
 assets:
   - id: hale_img
     anchor: [0.5, 0.92]
     directions: { s: assets/hale_s.svg, se: assets/hale_se.svg, ne: assets/hale_ne.svg, w: assets/hale_w.svg, nw: assets/hale_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/hale_s_walk1.svg, assets/hale_s_walk2.svg, assets/hale_s_walk3.svg, assets/hale_s_walk4.svg]
+        se: [assets/hale_se_walk1.svg, assets/hale_se_walk2.svg, assets/hale_se_walk3.svg, assets/hale_se_walk4.svg]
+        ne: [assets/hale_ne_walk1.svg, assets/hale_ne_walk2.svg, assets/hale_ne_walk3.svg, assets/hale_ne_walk4.svg]
+        w:  [assets/hale_w_walk1.svg, assets/hale_w_walk2.svg, assets/hale_w_walk3.svg, assets/hale_w_walk4.svg]
+        nw: [assets/hale_nw_walk1.svg, assets/hale_nw_walk2.svg, assets/hale_nw_walk3.svg, assets/hale_nw_walk4.svg]
   - id: officer_img
     anchor: [0.5, 0.92]
     directions: { s: assets/officer_s.svg, se: assets/officer_se.svg, ne: assets/officer_ne.svg, w: assets/officer_w.svg, nw: assets/officer_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/officer_s_walk1.svg, assets/officer_s_walk2.svg, assets/officer_s_walk3.svg, assets/officer_s_walk4.svg]
+        se: [assets/officer_se_walk1.svg, assets/officer_se_walk2.svg, assets/officer_se_walk3.svg, assets/officer_se_walk4.svg]
+        ne: [assets/officer_ne_walk1.svg, assets/officer_ne_walk2.svg, assets/officer_ne_walk3.svg, assets/officer_ne_walk4.svg]
+        w:  [assets/officer_w_walk1.svg, assets/officer_w_walk2.svg, assets/officer_w_walk3.svg, assets/officer_w_walk4.svg]
+        nw: [assets/officer_nw_walk1.svg, assets/officer_nw_walk2.svg, assets/officer_nw_walk3.svg, assets/officer_nw_walk4.svg]
   - id: widow_img
     anchor: [0.5, 0.92]
     directions: { s: assets/widow_s.svg, se: assets/widow_se.svg, ne: assets/widow_ne.svg, w: assets/widow_w.svg, nw: assets/widow_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/widow_s_walk1.svg, assets/widow_s_walk2.svg, assets/widow_s_walk3.svg, assets/widow_s_walk4.svg]
+        se: [assets/widow_se_walk1.svg, assets/widow_se_walk2.svg, assets/widow_se_walk3.svg, assets/widow_se_walk4.svg]
+        ne: [assets/widow_ne_walk1.svg, assets/widow_ne_walk2.svg, assets/widow_ne_walk3.svg, assets/widow_ne_walk4.svg]
+        w:  [assets/widow_w_walk1.svg, assets/widow_w_walk2.svg, assets/widow_w_walk3.svg, assets/widow_w_walk4.svg]
+        nw: [assets/widow_nw_walk1.svg, assets/widow_nw_walk2.svg, assets/widow_nw_walk3.svg, assets/widow_nw_walk4.svg]
   - id: pike_img
     anchor: [0.5, 0.92]
     directions: { s: assets/pike_s.svg, se: assets/pike_se.svg, ne: assets/pike_ne.svg, w: assets/pike_w.svg, nw: assets/pike_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/pike_s_walk1.svg, assets/pike_s_walk2.svg, assets/pike_s_walk3.svg, assets/pike_s_walk4.svg]
+        se: [assets/pike_se_walk1.svg, assets/pike_se_walk2.svg, assets/pike_se_walk3.svg, assets/pike_se_walk4.svg]
+        ne: [assets/pike_ne_walk1.svg, assets/pike_ne_walk2.svg, assets/pike_ne_walk3.svg, assets/pike_ne_walk4.svg]
+        w:  [assets/pike_w_walk1.svg, assets/pike_w_walk2.svg, assets/pike_w_walk3.svg, assets/pike_w_walk4.svg]
+        nw: [assets/pike_nw_walk1.svg, assets/pike_nw_walk2.svg, assets/pike_nw_walk3.svg, assets/pike_nw_walk4.svg]
   - id: dot_img
     anchor: [0.5, 0.92]
     directions: { s: assets/dot_s.svg, se: assets/dot_se.svg, ne: assets/dot_ne.svg, w: assets/dot_w.svg, nw: assets/dot_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/dot_s_walk1.svg, assets/dot_s_walk2.svg, assets/dot_s_walk3.svg, assets/dot_s_walk4.svg]
+        se: [assets/dot_se_walk1.svg, assets/dot_se_walk2.svg, assets/dot_se_walk3.svg, assets/dot_se_walk4.svg]
+        ne: [assets/dot_ne_walk1.svg, assets/dot_ne_walk2.svg, assets/dot_ne_walk3.svg, assets/dot_ne_walk4.svg]
+        w:  [assets/dot_w_walk1.svg, assets/dot_w_walk2.svg, assets/dot_w_walk3.svg, assets/dot_w_walk4.svg]
+        nw: [assets/dot_nw_walk1.svg, assets/dot_nw_walk2.svg, assets/dot_nw_walk3.svg, assets/dot_nw_walk4.svg]
   - id: mickey_img
     anchor: [0.5, 0.92]
     directions: { s: assets/mickey_s.svg, se: assets/mickey_se.svg, ne: assets/mickey_ne.svg, w: assets/mickey_w.svg, nw: assets/mickey_nw.svg }
+    animations:
+      walk:               # 4 frames per drawn facing; a cycle spans two steps
+        s:  [assets/mickey_s_walk1.svg, assets/mickey_s_walk2.svg, assets/mickey_s_walk3.svg, assets/mickey_s_walk4.svg]
+        se: [assets/mickey_se_walk1.svg, assets/mickey_se_walk2.svg, assets/mickey_se_walk3.svg, assets/mickey_se_walk4.svg]
+        ne: [assets/mickey_ne_walk1.svg, assets/mickey_ne_walk2.svg, assets/mickey_ne_walk3.svg, assets/mickey_ne_walk4.svg]
+        w:  [assets/mickey_w_walk1.svg, assets/mickey_w_walk2.svg, assets/mickey_w_walk3.svg, assets/mickey_w_walk4.svg]
+        nw: [assets/mickey_nw_walk1.svg, assets/mickey_nw_walk2.svg, assets/mickey_nw_walk3.svg, assets/mickey_nw_walk4.svg]
