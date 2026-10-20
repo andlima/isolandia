@@ -149,7 +149,10 @@ types; the terminal prints `hudLines` of the same model):
   `neutral` (see [statuses](packs.md#statuses)). Hovering a chip with a
   mouse or pen, or tapping it, shows a tooltip with the label, the
   status's `hud.description` and its rates on your measurements now
-  (`Health −0.2/s`).
+  (`Health −0.2/s`). While your [gait](packs.md#gaits) is not `walk`, its
+  label (`Running`, `Sneaking`; `hudModel(world).gait`) shows as a grey
+  chip first in the row, without a tooltip; the terminal prints it as its
+  own line after the measurements.
 - **Carrying bar** (when you have an inventory): `Carrying w/cap`, amber
   from 80 % of capacity and red when full.
 - **Nearby**: the `Nearby: …` text as one muted line, cut with `…`.
@@ -480,6 +483,8 @@ terminal too narrow for the full line it shows only `q: quit  ?: help`.
 | Key | Action |
 |---|---|
 | Arrows, WASD, numpad | Move (screen-relative) |
+| `Shift` (hold) | Run: the [gait](packs.md#gaits) `run` while held (nothing on an archetype without it, like the vampire) |
+| `Z` | Toggle sneak (gait `sneak`); Shift wins while held, releasing it returns to sneaking |
 | Click / tap | Talk to an NPC, the safe default (open, climb, walk), or the menu |
 | Shift + click | Walk there |
 | Right-click / long-press | Menu (with *Walk here*) |
@@ -511,11 +516,24 @@ the keyboard layout; with no link at your cell they do nothing. On a map
 with more than one floor the HUD shows `Floor N` (your floor `z`, the
 ground floor being `Floor 0`).
 
+Shift and `Z` are tracked like held movement keys (`GaitKeys` in
+`src/web/keys.ts`): right before every tick `Input.beforeTick` asks the
+world for the wanted gait (`run` while Shift is held, else `sneak` if
+toggled, else `walk`) with `world.setGait`, only when it differs from your
+current one. The gait is read per step, so a goto path runs while Shift
+stays held and walks once released; Shift + click still just walks there.
+A window blur or the pause forgets a held Shift (the sneak toggle stays).
+Touch has no run or sneak control.
+
 In the terminal (`npm run play`), `S` saves to the `--save-file` and `L`
 loads it, `p` pauses and `+` / `=` / `-` change the speed, `J` shows the
 journal, `M` the [message log](#message-log) and `?` the
 [key list](#controls-and-pause-menu) (the help line lists `M: log` and ends
-with `?: help`); lowercase `s`, `l` and `j` still move. `<` / `>` climb (with no link
+with `?: help`); lowercase `s`, `l` and `j` still move. `r` toggles running
+and `z` sneaking (`world.setGait` at once; pressing the active one goes back
+to walking, the other replaces it); on an archetype without the gait the
+message line says `You can't run.` / `You can't sneak.`, and the HUD lines
+show `Running` / `Sneaking` after the measurements. `<` / `>` climb (with no link
 the message line says `No way up here.` / `No way down here.`), the `x`
 list starts with *Go up* / *Go down* when you stand on a link, the map
 shows your floor only (empty cells are spaces), and the status lines add

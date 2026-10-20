@@ -96,6 +96,11 @@ Entity members (the same on `self`, `player` and `npc`, e.g. `npc.hp`,
   through its archetype's [senses](packs.md#senses), and that target (or
   `none`); see [Senses](#senses) below. These names take precedence over
   measurements too.
+- `self.gait` — the **name** of the entity's current [gait](packs.md#gaits)
+  as a string (`"walk"` for every entity until a shell changes the
+  player's), so `self.gait == "run"` and `self.gait != "walk"` compare it.
+  It takes precedence over a measurement of the same short name, like the
+  other fields.
 
 `tile.id` is the qualified tile id, e.g. `tile.id == "std:floor"`; on an
 [empty cell](packs.md#floors) it is `""` and `tile.has_tag(...)` is false.

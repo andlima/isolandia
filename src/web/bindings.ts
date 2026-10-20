@@ -9,7 +9,7 @@
  * `MOVE_KEYS` for the step logic: the table lists it as one row.
  */
 
-import { CLIMB_KEYS, MOVE_KEYS, PAUSE_KEYS } from './keys.ts';
+import { CLIMB_KEYS, MOVE_KEYS, PAUSE_KEYS, RUN_KEYS } from './keys.ts';
 
 /** The overlay's sections, in order. */
 export const SECTIONS = ['Moving', 'Interacting', 'Windows', 'Time', 'Game', 'View'] as const;
@@ -46,6 +46,8 @@ const climb = (dz: 1 | -1) => Object.keys(CLIMB_KEYS).filter((k) => CLIMB_KEYS[k
 export const BINDINGS: readonly Binding[] = [
   // ── Moving ──
   { id: 'move', keys: ['Arrows', 'WASD', 'numpad'], label: 'Move (screen-relative)', section: 'Moving', codes: Object.keys(MOVE_KEYS) },
+  { id: 'run', keys: ['Shift'], label: 'Run (hold)', section: 'Moving', codes: [...RUN_KEYS] },
+  { id: 'sneak', keys: ['Z'], label: 'Sneak (toggle)', section: 'Moving', codes: ['KeyZ'] },
   { id: 'walk', keys: [], gesture: { mouse: 'Shift + click' }, label: 'Walk there', section: 'Moving' },
   { id: 'climb_up', keys: ['PageUp', '<'], label: 'Go up the stairs you stand on', section: 'Moving', chars: climb(1) },
   { id: 'climb_down', keys: ['PageDown', '>'], label: 'Go down', section: 'Moving', chars: climb(-1) },

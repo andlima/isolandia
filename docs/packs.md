@@ -471,6 +471,7 @@ Templates for entities (the player and everything else).
 | `dialogue`       | dialogue id           | none    | The [dialogue](#dialogues) of every non-player entity of the archetype: the player can talk to it. Allowed on the player's archetype, where it has no effect |
 | `faction`        | faction id            | none    | The [faction](#factions) every entity of the archetype belongs to. Allowed on the player's archetype: `in_faction(player, "f")` reads it, but [`attitude`](expressions.md#factions) ignores it |
 | `senses`         | `{ sight: { notice, lose, targets } }` | none | What entities of the archetype notice by sight; see [Senses](#senses) below |
+| `gaits`          | map gait name → `{ ticks_per_step?, noise?, label? }` | none | Ways of moving besides `walk` (`run`, `sneak`), each with its own ticks per tile and footstep noise; see [Gaits](#gaits) below |
 
 ```yaml
 archetypes:
@@ -549,6 +550,73 @@ behaviors:
       chase: { do: pursue, target: self.seen, on: [{ when: 'not self.sees', to: home }] }
       # …
 ```
+
+#### Gaits
+
+`gaits` gives an archetype named **ways of moving**: a gait is a step
+duration and a footstep noise, and the entity's current gait is simulation
+state that a step reads. The engine knows gaits only as that vocabulary;
+which gaits exist, their names and their numbers are pack data. The one
+name the engine reserves is **`walk`**, the gait every entity starts in.
+
+| Field            | Type             | Default | Notes |
+|------------------|------------------|---------|-------|
+| `ticks_per_step` | positive integer | —       | Ticks per tile while in this gait. **Required** for every gait except `walk` |
+| `noise`          | number ≥ 0       | `0`     | Radius of the footstep [noise](#systems) emitted at every landing; `0` emits nothing |
+| `label`          | string           | the name with its first letter in upper case (`Run`) | What the HUD shows while the gait is active |
+
+- A gait name is `[a-z][a-z0-9_]*`; anything else is a load error at the
+  key (`archetypes[3].gaits.Run`), and an unknown key inside a gait is a
+  load error with a *did you mean*.
+- **`walk` is implicit.** Every archetype has gait `walk` at index 0 with
+  the archetype's `ticks_per_step`, `noise: 0` and label `Walking`. A pack
+  may restate it under `gaits` to change `noise` or `label`;
+  `walk.ticks_per_step` is a load error (set the archetype's
+  `ticks_per_step`), so one number never appears in two places. The
+  declared gaits follow in mapping order.
+- **A step uses the current gait.** `move` and `climb` set the entity's
+  cooldown and the duration of the step in flight (`stepTicks`) to the
+  gait's `ticks_per_step`; keyboard steps, goto paths, link steps and the
+  pursue / wander / home activities all pick it up. `ticks_per_turn` is not
+  a gait property. Changing gait mid-step never moves the sprite: the step
+  in flight keeps its duration and the next step takes the new one.
+- **Footstep noise.** Right after a landing, a gait with `noise > 0` emits
+  a noise of that radius from the entity's new cell, through the same
+  machinery as a `noise` effect: it is heard in the same tick's hear
+  phase, listed in `world.noises`, triggers `on: noise` systems and event
+  interrupts, and never reaches its own source. It is emitted in phase 1
+  of the [tick](#tick-order), before the step systems, so a runner on
+  broken glass makes two noises that tick (the gait's and the tile's
+  `crunch`); the hear phase keeps the nearest per listener as usual. It is
+  not a system: it has no pack definition and never counts as fired.
+- The player picks a gait in either shell (`world.setGait(name)`, see
+  [ui.md](ui.md#keys)); expressions read it as
+  [`self.gait`](expressions.md#entities), the gait **name**. NPCs keep
+  walking: no behavior field sets a gait yet.
+- The current gait is simulation state: `gait` (the name, omitted when
+  `walk`) and `stepTicks` are in `snapshot()` and `hash()` (save version
+  9, see [saves](saves.md)).
+- `gaits` is an ordinary top-level field for [overrides](#mods-and-overrides):
+  replaced whole with `override: true`, `gaits: null` leaves only `walk`;
+  `check --overrides` lists it like any other field.
+- The renderer needs nothing new: the walk cycle's frame comes from the
+  step progress, so it plays faster while running and slower while
+  sneaking ([iso.md](iso.md#facing)).
+
+```yaml
+archetypes:
+  - id: resident
+    ticks_per_step: 2
+    gaits:
+      run:   { ticks_per_step: 1, noise: 6, label: Running }
+      sneak: { ticks_per_step: 4, label: Sneaking }
+```
+
+The shipped `std:humanoid` and `town:resident` run at 1 tick per tile
+(heard 6 tiles away) and sneak at 4; the `garden:bunny` the same with a
+softer patter (noise 3); the `vamp:vampire` already walks at 1 tick, so it
+only sneaks (at 2). `std-needs` adds a `running` system that applies
+`fatigue` while `self.gait == "run"`.
 
 ### `maps`
 
@@ -1942,7 +2010,9 @@ are driven by their archetype's [behavior](#behaviors).
 1. three steps:
    1. apply **each entity's** movement intent, in ascending id order (the
       player is id 0; dormant NPCs are skipped); applying one cancels that entity's
-      [activity](#actions);
+      [activity](#actions). A step takes the entity's current
+      [gait](#gaits) and, when the gait has a `noise`, emits its footstep
+      noise at the landing cell here, before the step systems;
    2. the queued (player) actions, in FIFO order; each cancels the
       player's activity first, and may start a new one (a 0-second action
       completes here);
@@ -1955,8 +2025,8 @@ are driven by their archetype's [behavior](#behaviors).
    for every entity that landed on a cell this tick), in definition order;
 4. **hear**: skipped when no noise was emitted this tick; otherwise each
    entity records the nearest noise it heard (see [noise](#systems)).
-   Noises are emitted in order: player actions and completed activities
-   (phase 1), then systems
+   Noises are emitted in order: [gait](#gaits) footsteps, player actions
+   and completed activities (phase 1), then systems
    (definition order, entity order). `world.noises` lists this tick's
    noises until the next tick starts;
    - 4b. **event interrupts, then `on: noise` systems**, for the entities

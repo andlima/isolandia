@@ -116,6 +116,9 @@ archetypes:
     tags: [humanoid, undead]
     measurements: [hp, blood]
     ticks_per_step: 1
+    # Already walks at 1 tick per tile, so there is no `run` (Shift does nothing); sneaking halves the pace.
+    gaits:
+      sneak: { ticks_per_step: 2, label: Sneaking }
     inventory:
       capacity: 8
       items: { blood_vial: 1 }

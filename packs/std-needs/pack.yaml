@@ -1,5 +1,6 @@
 # Standard needs: hunger, thirst and fatigue, and the generic statuses they
-# drive (hungry, thirsty, exhausted, burdened).
+# drive (hungry, thirsty, exhausted, burdened), plus a `running` system that
+# tires a runner (`self.gait == "run"`).
 #
 # Opt-in: an entity takes part by listing the measurements in its archetype
 # (`measurements: [hp, hunger, thirst, fatigue]`) and carrying the `living`

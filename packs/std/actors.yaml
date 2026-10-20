@@ -14,3 +14,7 @@ archetypes:
     sprite: humanoid_img
     tags: [humanoid]
     measurements: [hp]
+    # Gaits (ticks per tile at 10 ticks/s): walk 2 (the default), run 1 and loud, sneak 4 and silent.
+    gaits:
+      run: { ticks_per_step: 1, noise: 6, label: Running }
+      sneak: { ticks_per_step: 4, label: Sneaking }

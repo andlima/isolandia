@@ -22,7 +22,7 @@ import {
 } from './world.ts';
 
 /** Current save file format version: bump it on any breaking change to `state` (see `docs/saves.md`). */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /**
  * Every save `version` that `World.restore` reads. Versions 1 and 2 predate
@@ -33,9 +33,10 @@ export const SAVE_VERSION = 8;
  * Versions 3 to 5 predate factions: every faction takes its starting
  * `reputation`. Versions 3 to 6 predate `once` systems: no system counts as
  * fired for any entity. Versions 3 to 7 predate senses: no entity sees
- * anything, and the first tick notices again.
+ * anything, and the first tick notices again. Versions 3 to 8 predate
+ * gaits: every entity walks and its step in flight lasts the walk ticks.
  */
-export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, 6, 7, SAVE_VERSION];
+export const SUPPORTED_SAVE_VERSIONS: readonly number[] = [3, 4, 5, 6, 7, 8, SAVE_VERSION];
 
 /** Shell metadata stored next to a save (never inside `state`). */
 export interface SaveMeta {
@@ -345,6 +346,9 @@ interface EntityPlan {
   fromZ: number;
   stepTick: number;
   moveCooldown: number;
+  /** Gait index into the archetype's `gaits`. */
+  gait: number;
+  stepTicks: number;
   path: Int32Array | null;
   /** [measurement index, value] for each saved measurement the archetype has. */
   measurements: [number, number][];
@@ -494,7 +498,9 @@ function restore(def: Definition, raw: unknown): RestoreResult {
   const hasFired = (root['version'] as number) >= 7;
   // `seen` (version 8): older saves see nothing until the first tick.
   const hasSeen = (root['version'] as number) >= 8;
-  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player, hasFired, hasSeen ? rawEntities.length : -1)));
+  // `gait` and `stepTicks` (version 9): older saves walk, their step in flight lasting the walk ticks.
+  const hasGait = (root['version'] as number) >= 9;
+  rawEntities.forEach((v, i) => plans.push(checkEntity(c, v, i, i === player, hasFired, hasSeen ? rawEntities.length : -1, hasGait)));
   if (player !== null && rawEntities.length > 0 && player >= rawEntities.length) c.err('state.player', `player ${player} is not one of the ${rawEntities.length} entities`);
   if (rawEntities.length === 0 && Array.isArray(s['entities'])) c.err('state.entities', 'no entities (the player must be one of them)');
 
@@ -597,6 +603,8 @@ function restore(def: Definition, raw: unknown): RestoreResult {
       e.fromZ = p.fromZ;
       e.stepTick = p.stepTick;
       e.moveCooldown = p.moveCooldown;
+      e.gait = p.gait;
+      e.stepTicks = p.stepTicks;
       e.path = p.path;
       e.pathPos = 0;
       for (const [idx, v] of p.measurements) e.m[idx] = v;
@@ -786,8 +794,9 @@ function checkTalk(c: Checker, s: Record<string, unknown>, entityCount: number, 
  * Check one saved entity; null when it has errors. `hasFired`: the save
  * version carries `fired` (7+). `entityCount`: the save carries `seen` (8+)
  * and this is the number of entities it may name; -1 for older saves.
+ * `hasGait`: the save carries `gait` and `stepTicks` (9+).
  */
-function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFired: boolean, entityCount: number): EntityPlan | null {
+function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFired: boolean, entityCount: number, hasGait: boolean): EntityPlan | null {
   const path = `state.entities[${i}]`;
   const o = c.obj(v, path);
   if (!o) return null;
@@ -951,7 +960,23 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFi
     }
   }
 
-  if (c.errors.length !== n || !archetype || !pos || !facing || !from || !home || stepTick === null || moveCooldown === null || intent === undefined) return null;
+  // Gait (version 9): by name against the archetype's gaits; `stepTicks` is the step in flight's duration.
+  let gait = 0;
+  let stepTicks: number | null = archetype?.ticksPerStep ?? null;
+  if (hasGait) {
+    if (o['gait'] !== undefined) {
+      const gp = `${path}.gait`;
+      const name = c.str(o['gait'], gp);
+      if (name !== null && archetype) {
+        const k = archetype.gaits.findIndex((g) => g.name === name);
+        if (k >= 0) gait = k;
+        else c.err(gp, `archetype '${archetype.id}' has no gait '${name}' (its gaits: ${archetype.gaits.map((g) => g.name).join(', ')})`);
+      }
+    }
+    stepTicks = c.int(o['stepTicks'], `${path}.stepTicks`, 1);
+  }
+
+  if (c.errors.length !== n || !archetype || !pos || !facing || !from || !home || stepTick === null || moveCooldown === null || stepTicks === null || intent === undefined) return null;
   return {
     archetype,
     x: pos[0],
@@ -963,6 +988,8 @@ function checkEntity(c: Checker, v: unknown, i: number, isPlayer: boolean, hasFi
     fromZ: from[2],
     stepTick,
     moveCooldown,
+    gait,
+    stepTicks,
     path: path_,
     measurements,
     statuses,

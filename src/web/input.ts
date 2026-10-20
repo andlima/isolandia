@@ -4,16 +4,17 @@
  * queues a turn-in-place step: a tap in a new direction only turns the player,
  * a tap in the faced direction steps. Once the latest press is `HOLD_MS` old,
  * `beforeTick` re-queues the held direction as plain steps so the player
- * walks at a constant pace.
+ * walks at a constant pace. Shift is tracked while held (run) and `Z` toggles
+ * sneak; `beforeTick` sets the player's gait when the wanted one differs.
  */
 
 import type { World } from '../core/index.ts';
 import { bindingFor } from './bindings.ts';
 import { Gestures, type GestureHandlers } from './gestures.ts';
-import { MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
+import { GaitKeys, MoveKeys, suppressesDefault, type MoveStep } from './keys.ts';
 
-/** Binding ids `Input` handles itself (held movement, climbing); every other key binding reaches `key(id)`. */
-export const INPUT_BINDINGS: ReadonlySet<string> = new Set(['move', 'climb_up', 'climb_down']);
+/** Binding ids `Input` handles itself (held movement, climbing, the run and sneak keys); every other key binding reaches `key(id)`. */
+export const INPUT_BINDINGS: ReadonlySet<string> = new Set(['move', 'climb_up', 'climb_down', 'run', 'sneak']);
 
 export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
   /** A click or tap; `shift` when Shift was held on release. */
@@ -34,6 +35,7 @@ export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
 
 export class Input {
   private readonly moves = new MoveKeys();
+  private readonly gaits = new GaitKeys();
   private readonly gestures: Gestures;
 
   constructor(
@@ -99,17 +101,30 @@ export class Input {
         ev.preventDefault();
         if (on.paused?.()) return;
         this.queue(this.moves.down(ev.code, ev.repeat, this.now()));
+      } else if (id === 'run') {
+        if (!ev.repeat && !on.paused?.()) this.gaits.down();
+      } else if (id === 'sneak') {
+        if (!ev.repeat) this.gaits.toggleSneak();
       } else if (!ev.repeat) {
         on.key(id);
       }
     });
-    window.addEventListener('keyup', (ev) => this.moves.up(ev.code));
-    window.addEventListener('blur', () => this.moves.clear());
+    window.addEventListener('keyup', (ev) => {
+      this.moves.up(ev.code);
+      if (bindingFor(ev.code, ev.key) === 'run') this.gaits.up();
+    });
+    window.addEventListener('blur', () => this.clearMoves());
   }
 
-  /** Forget held movement keys (the shell paused): a key held through the pause must be pressed again. */
+  /** Forget held movement keys and a held Shift (the shell paused): a key held through the pause must be pressed again. The sneak toggle stays. */
   clearMoves(): void {
     this.moves.clear();
+    this.gaits.clear();
+  }
+
+  /** The gait the shell wants now (`run` while Shift is held, else `sneak` if toggled, else `walk`). */
+  get wantedGait(): string {
+    return this.gaits.want();
   }
 
   /** Call once per frame: fires a pending long-press. */
@@ -118,13 +133,20 @@ export class Input {
   }
 
   /**
-   * Call right before each sim tick. Once the key has been held for
-   * `HOLD_MS`, re-queues the held direction as a plain step, only on the tick
-   * where the player can step again, so releasing a key between ticks never
-   * leaves a stale step queued. Before that, the pending turn is left alone.
+   * Call right before each sim tick. Sets the player's gait to the wanted one
+   * when it differs from the current one (a no-op otherwise; an archetype
+   * without the gait keeps walking, and the shell keeps wanting it). Then,
+   * once the key has been held for `HOLD_MS`, re-queues the held direction
+   * as a plain step, only on the tick where the player can step again, so
+   * releasing a key between ticks never leaves a stale step queued. Before
+   * that, the pending turn is left alone.
    */
   beforeTick(): void {
-    this.queue(this.moves.repeat(this.now(), this.world().player.moveCooldown));
+    const world = this.world();
+    const p = world.player;
+    const want = this.gaits.want();
+    if (p.archetype.gaits[p.gait]!.name !== want) world.setGait(want);
+    this.queue(this.moves.repeat(this.now(), p.moveCooldown));
   }
 
   private queue(step: MoveStep | null): void {

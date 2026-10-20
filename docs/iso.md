@@ -373,7 +373,11 @@ down-right, `se` = toward the camera…; the full table is in
   pair this is) flips whenever the entity's `stepTick` changes; it is
   renderer-only state like the snapping `prev`, never saved. When the
   entity stands (progress 1, or it has never stepped) or its asset has no
-  `walk`, the standing `directions` image shows, as before.
+  `walk`, the standing `directions` image shows, as before. The step
+  progress divides by the step's own duration (`stepTicks`, the
+  [gait](packs.md#gaits)'s `ticks_per_step` when it was taken), so the same
+  cycle plays a frame every 50 ms while running (1 tick per tile) and
+  every 200 ms while sneaking (4), with no run or sneak frames.
 - The scene checks each visible entity's facing and frame every frame but
   swaps the texture, anchor and mirroring only when its pose changes,
   refreshing the pick candidate so hover and click use the drawn frame's

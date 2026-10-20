@@ -65,6 +65,8 @@ import {
   type RoomsDef,
   type SpawnDef,
   type SenseDef,
+  type GaitDef,
+  WALK_GAIT,
   type StatusDef,
   type StatusHud,
   type StatusRate,
@@ -837,7 +839,7 @@ class Loader {
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
     const f = this.fields(
       d,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction', 'senses'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction', 'senses', 'gaits'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -882,7 +884,59 @@ class Loader {
     const dialogue = f.has('dialogue') ? (this.symbols.ref('dialogue', f.raw('dialogue'), d.scopeOf('dialogue'), f.at('dialogue'), this.sink)?.index ?? null) : null;
     const faction = f.has('faction') ? (this.symbols.ref('faction', f.raw('faction'), d.scopeOf('faction'), f.at('faction'), this.sink)?.index ?? null) : null;
     const senses = this.senses(f);
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction, senses };
+    const gaits = this.gaits(f, ticksPerStep);
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction, senses, gaits };
+  }
+
+  /**
+   * An archetype's `gaits`: a mapping from gait name (`[a-z][a-z0-9_]*`) to
+   * `{ ticks_per_step?, noise?, label? }`. `walk` is implicit at index 0
+   * with the archetype's `ticks_per_step` (restating it may set `noise` or
+   * `label` but not `ticks_per_step`); every other gait needs
+   * `ticks_per_step`. The declared gaits follow in mapping order.
+   */
+  private gaits(f: Fields, ticksPerStep: number): GaitDef[] {
+    const raw = f.mapping('gaits');
+    let walk: GaitDef = { name: WALK_GAIT, ticksPerStep, noise: 0, label: 'Walking' };
+    const out: GaitDef[] = [];
+    for (const [name, value] of Object.entries(raw ?? {})) {
+      const src = f.at('gaits', name);
+      if (!ID_RE.test(name)) {
+        this.sink.add(src, `invalid gait name '${name}': gait names must match [a-z][a-z0-9_]*`);
+        continue;
+      }
+      if (!isObject(value)) {
+        this.sink.add(src, `gait '${name}' must be a mapping, got ${value === null ? 'null' : Array.isArray(value) ? 'list' : typeof value}`);
+        continue;
+      }
+      const isWalk = name === WALK_GAIT;
+      const gf = new Fields(this.sink, src, value, ['ticks_per_step', 'noise', 'label'], 'gait');
+      let ticks = ticksPerStep;
+      if (isWalk) {
+        if (gf.has('ticks_per_step')) this.sink.add(gf.at('ticks_per_step'), `gait 'walk' takes its speed from the archetype: set the archetype's 'ticks_per_step' instead`);
+      } else {
+        const t = gf.number('ticks_per_step');
+        if (t === undefined) continue;
+        if (!Number.isInteger(t) || t < 1) {
+          this.sink.add(gf.at('ticks_per_step'), `field 'ticks_per_step' must be a positive integer, got ${t}`);
+          continue;
+        }
+        ticks = t;
+      }
+      let noise = 0;
+      const n = gf.number('noise', false);
+      if (n !== undefined) {
+        if (n < 0) {
+          this.sink.add(gf.at('noise'), `field 'noise' must be a number ≥ 0, got ${n}`);
+          continue;
+        }
+        noise = n;
+      }
+      const label = gf.string('label', false) ?? (isWalk ? 'Walking' : name.charAt(0).toUpperCase() + name.slice(1));
+      if (isWalk) walk = { name, ticksPerStep, noise, label };
+      else out.push({ name, ticksPerStep: ticks, noise, label });
+    }
+    return [walk, ...out];
   }
 
   /** Every tag any merged archetype entry carries (for the `targets` did-you-mean). */

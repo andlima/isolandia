@@ -6,14 +6,15 @@ import type { Entity } from './world.ts';
  * ∈ [0, 1) of the way from world tick `tick` to the next.
  *
  * A step taken while processing tick T sets `stepTick = T + 1` and lasts
- * `ticksPerStep` ticks, so its progress is
- * `clamp((tick - stepTick + alpha) / ticksPerStep, 0, 1)`. The next step can
- * only be taken `ticksPerStep` ticks later, when progress has just reached 1,
- * so an entity walking a path or holding a key moves at constant speed and
- * never dwells at 1 between two steps. A standing entity is at 1.
+ * `stepTicks` ticks (the gait's `ticksPerStep` at the time of the step), so
+ * its progress is `clamp((tick - stepTick + alpha) / stepTicks, 0, 1)`. The
+ * next step can only be taken `stepTicks` ticks later, when progress has just
+ * reached 1, so an entity walking a path or holding a key moves at constant
+ * speed and never dwells at 1 between two steps. A standing entity is at 1.
+ * A gait change mid-step leaves `stepTicks` alone, so the sprite never jumps.
  */
-export function stepProgress(e: Pick<Entity, 'stepTick' | 'archetype'>, tick: number, alpha: number): number {
-  const t = (tick - e.stepTick + alpha) / e.archetype.ticksPerStep;
+export function stepProgress(e: Pick<Entity, 'stepTick' | 'stepTicks'>, tick: number, alpha: number): number {
+  const t = (tick - e.stepTick + alpha) / e.stepTicks;
   return t <= 0 ? 0 : t >= 1 ? 1 : t;
 }
 
@@ -23,7 +24,7 @@ export function stepProgress(e: Pick<Entity, 'stepTick' | 'archetype'>, tick: nu
  * world tick `tick` to the next: `from` to the cell at `stepProgress`.
  */
 export function renderPosition(
-  e: Pick<Entity, 'x' | 'y' | 'z' | 'fromX' | 'fromY' | 'fromZ' | 'stepTick' | 'archetype'>,
+  e: Pick<Entity, 'x' | 'y' | 'z' | 'fromX' | 'fromY' | 'fromZ' | 'stepTick' | 'stepTicks'>,
   tick: number,
   alpha: number,
 ): { x: number; y: number; z: number } {

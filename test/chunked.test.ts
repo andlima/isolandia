@@ -474,16 +474,18 @@ test('populate density: the same seed gives the same cells; count entries, the w
     assert.deepEqual(cells(rocksOf(World.create(dense, seed))), cells(rocksOf(World.create(dense, seed))));
     assert.equal(World.create(dense, seed).rng.state, World.create(plain, seed).rng.state, 'the world RNG never sees populate');
   }
-  // Worlds whose populate uses `count` hash as they did before densities existed (recorded at 192e453).
+  // Worlds whose populate uses `count` hash as they did before densities existed (recorded at 192e453;
+  // re-recorded at gaits, when every entity snapshot gained `stepTicks`: the placed cells are unchanged).
   const field = loadPacksOrThrow([fixture(FIELD('      - { archetype: rock, count: 3, room: den }\n      - { archetype: rock, count: 12 }\n'))]);
   assert.deepEqual(
     [1, 7, 42].map((seed) => World.create(field, seed).hash()),
-    ['ae90ca61', '3385aa6e', '1b6da8fe'],
+    ['a2236e29', 'd1a87f36', 'b74b2b86'],
   );
-  // Re-recorded at npc-perception: the estate's bats carry `seen` (save version 8) from the creation-time senses step.
+  // Re-recorded at npc-perception (the estate's bats carry `seen`, save version 8, from the creation-time senses step)
+  // and at gaits (`stepTicks` on every entity, version 9).
   assert.deepEqual(
     [1, 7].map((seed) => World.create(ESTATE, seed).hash()),
-    ['073ae211', '5399f763'],
+    ['1ed37252', 'b90f43de'],
   );
 });
 

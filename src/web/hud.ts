@@ -36,9 +36,12 @@ export interface HudChipView {
   readonly id: string;
   readonly label: string;
   readonly tone: StatusTone;
-  /** Tooltip lines: the label, then the description and the rates when present. */
+  /** Tooltip lines: the label, then the description and the rates when present; empty for the gait chip (no tooltip). */
   readonly tooltip: readonly string[];
 }
+
+/** Chip id of the player's gait (`hudModel.gait`), shown first among the chips, neutral and without a tooltip. */
+export const GAIT_CHIP_ID = 'gait';
 
 export interface HudCarryView {
   /** `Carrying w/cap`. */
@@ -97,12 +100,15 @@ export function hudView(m: HudModel): HudView {
       color: x.level ?? 'neutral',
       pulse: x.level === 'danger',
     })),
-    chips: m.statusChips.map((c) => ({
-      id: c.id,
-      label: c.label,
-      tone: c.tone,
-      tooltip: [c.label, ...(c.description ? [c.description] : []), ...(c.rates ? [c.rates] : [])],
-    })),
+    chips: [
+      ...(m.gait ? [{ id: GAIT_CHIP_ID, label: m.gait, tone: 'neutral' as StatusTone, tooltip: [] }] : []),
+      ...m.statusChips.map((c) => ({
+        id: c.id,
+        label: c.label,
+        tone: c.tone,
+        tooltip: [c.label, ...(c.description ? [c.description] : []), ...(c.rates ? [c.rates] : [])],
+      })),
+    ],
     carrying: m.inventory
       ? { text: `Carrying ${m.inventory.weight}/${m.inventory.capacity}`, percent: pct(m.inventory.fraction), color: m.inventory.level }
       : null,
@@ -249,7 +255,7 @@ export class Hud {
   private showTip(id: string | null): void {
     const chip = id === null || this.el.hidden ? undefined : this.view?.chips.find((c) => c.id === id);
     const el = chip ? this.el.querySelector<HTMLElement>(`.hud-chip[data-id="${CSS.escape(chip.id)}"]`) : null;
-    if (!chip || !el) {
+    if (!chip || !el || chip.tooltip.length === 0) {
       this.tipChip = null;
       this.tip.hidden = true;
       return;

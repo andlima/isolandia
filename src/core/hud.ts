@@ -57,6 +57,8 @@ export interface HudModel {
   readonly statusLine: string | null;
   /** The player's active statuses, in definition order. */
   readonly statusChips: readonly HudStatusChip[];
+  /** Label of the player's gait (`Running`, `Sneaking`) when it is not `walk`, else null. */
+  readonly gait: string | null;
   /** Whether it is day now (`world.is_day`). */
   readonly isDay: boolean;
   /** Day number of the clock. */
@@ -157,10 +159,11 @@ export function progressText(label: string, fraction: number): string {
 
 /**
  * HUD text lines shared by the shells: time, floor (multi-floor maps), measurements, then — only when
- * present — carrying/inventory, status, nearby, latest action and defeat/victory.
+ * present — the gait, carrying/inventory, status, nearby, latest action and defeat/victory.
  */
 export function hudLines(m: HudModel): string[] {
   const lines = [m.time, ...(m.floor ? [m.floor] : []), ...m.measurements.map((x) => x.text)];
+  if (m.gait) lines.push(m.gait);
   if (m.inventory) lines.push(m.inventory.carrying, m.inventory.line);
   if (m.statusLine) lines.push(m.statusLine);
   if (m.nearbyLine) lines.push(m.nearbyLine);
@@ -174,6 +177,7 @@ export function hudLines(m: HudModel): string[] {
 /** Whether each `hudLines` line should stand out: `warn` (yellow) or `danger` (red) in the terminal, else null. */
 export function hudLineLevels(m: HudModel): ('warn' | 'danger' | null)[] {
   const levels: ('warn' | 'danger' | null)[] = [null, ...(m.floor ? [null] : []), ...m.measurements.map((x) => (x.level === 'ok' ? null : x.level))];
+  if (m.gait) levels.push(null);
   if (m.inventory) levels.push(null, null);
   if (m.statusLine) levels.push(m.statusChips.some((c) => c.tone === 'bad') ? 'danger' : null);
   return [...levels, ...Array<null>(hudLines(m).length - levels.length).fill(null)];
@@ -508,6 +512,7 @@ export function hudModel(world: World): HudModel {
     statuses,
     statusLine: statuses.length ? `Status: ${statuses.join(', ')}` : null,
     statusChips,
+    gait: player.gait > 0 ? player.archetype.gaits[player.gait]!.label : null,
     defeat: outcome(world.defeat),
     victory: outcome(world.victory),
     inventory,

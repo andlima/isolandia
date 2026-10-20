@@ -32,7 +32,9 @@ test('bindings: unique ids, sections in order, lookup by key then by code, time 
   assert.equal(bindingFor('Equal', '+'), 'faster');
   assert.equal(bindingFor('NumpadSubtract', '-'), 'slower');
   assert.equal(bindingFor('KeyE', 'e'), 'menu');
-  assert.equal(bindingFor('KeyZ', 'z'), null);
+  assert.equal(bindingFor('KeyZ', 'z'), 'sneak');
+  assert.equal(bindingFor('ShiftLeft', 'Shift'), 'run');
+  assert.equal(bindingFor('ShiftRight', 'Shift'), 'run');
   const by = (id: string) => BINDINGS.find((b) => b.id === id)!;
   assert.deepEqual(new Set(by('pause').codes), PAUSE_KEYS);
   for (const c of by('faster').codes!) assert.equal(speedKey(c), 1);

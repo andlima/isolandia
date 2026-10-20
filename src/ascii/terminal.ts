@@ -137,6 +137,26 @@ export interface ActEntry {
 /** Climb keys: `<` goes up a floor, `>` down. */
 export const CLIMB_KEYS: Readonly<Record<string, 1 | -1>> = { '<': 1, '>': -1 };
 
+/** Gait keys: `r` toggles `run`, `z` toggles `sneak` (the gait names are pack data; `walk` is every archetype's default). */
+export const GAIT_KEYS: Readonly<Record<string, string>> = { r: 'run', z: 'sneak' };
+
+/**
+ * Toggle the player's gait `name` (`r` / `z`): back to `walk` when it is the
+ * active one, else to it (replacing the other). Returns the message for the
+ * help line when the player's archetype lacks it (`You can't run.`, the
+ * gait's label in lower case), else null.
+ */
+export function toggleGait(world: World, name: string): string | null {
+  const p = world.player;
+  const current = p.archetype.gaits[p.gait]!.name;
+  if (current === name) {
+    world.setGait('walk');
+    return null;
+  }
+  if (world.setGait(name)) return null;
+  return `You can't ${name}.`;
+}
+
 /** The `c` list: recipes that can be made now, or (when there are none) a few that cannot, with hints. */
 export interface CraftMenu {
   /** `ok` recipes, in definition order (at most 9); `1`–`9` craft one. */
@@ -295,7 +315,9 @@ export function journalMessage(world: World): string | null {
  * digits and `d` stop moving; arrows, `hjklyubn`, `wsa` and the numpad with
  * NumLock off still do, and cancel what the player is doing). `<` / `>`
  * climb through the link at the player's cell (`climbIntent`), or set
- * `state.message` to `No way up here.` / `No way down here.`. Returns
+ * `state.message` to `No way up here.` / `No way down here.`. `r` and `z`
+ * toggle the run and sneak gaits (`toggleGait`; `You can't run.` when the
+ * archetype lacks it). Returns
  * `'quit'` for `q`/Ctrl-C, and `'save'` / `'load'` for `S` / `L` (the
  * caller does the file work; lowercase `s`/`l` still move). With `state.pace`,
  * `p` toggles pause and `+` / `=` / `-` change speed (returning `'pace'`, so
@@ -363,6 +385,9 @@ export function handleKey(world: World, key: string, state: KeyState): KeyResult
     return;
   } else if (key === 'x' && !state.dropPending) {
     state.actions = actionMenu(world);
+    return;
+  } else if (GAIT_KEYS[key] && !state.dropPending) {
+    state.message = toggleGait(world, GAIT_KEYS[key]!);
     return;
   } else if (key === 'c' && !state.dropPending) {
     state.crafting = craftMenu(world);
@@ -438,8 +463,8 @@ export function runTerminal(initial: World, io: TerminalIO, saves?: TerminalSave
 
   return new Promise((resolve) => {
     const draw = () => {
-      // Clock, floor, measurements, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
-      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + hudModel(world).measurements.length + 7 + 2;
+      // Clock, floor, measurements, gait, carrying/inventory, status, nearby, activity, action and defeat/victory lines, blank line, help line.
+      const hudRows = 2 + (world.grid.floors > 1 ? 1 : 0) + hudModel(world).measurements.length + 8 + 2;
       const screen = keys.journal ?? (keys.history ? historyLines(log.entries, stdout.rows ?? 24) : keys.help ? helpLines() : null);
       if (screen) {
         stdout.write('\x1b[H' + [...screen, '', '\x1b[2m(any key)\x1b[0m'].join('\x1b[K\n') + '\x1b[K\n\x1b[J');
