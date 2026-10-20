@@ -31,6 +31,8 @@ export interface ExprEntity {
   readonly faction?: number;
   /** Id (index into `ExprContext.entities`) of the entity this one currently sees; -1 or absent for none. */
   readonly seen?: number;
+  /** Name of the entity's current gait (`self.gait`); absent reads `walk`. */
+  readonly gaitName?: () => string;
 }
 
 /** A tile reference: position, qualified tile id and the tile's tags. */
@@ -396,7 +398,7 @@ export const BUILTIN_NAMES: readonly string[] = [...Object.keys(BUILTINS), ...SP
 
 const TILE_FIELDS = ['x', 'y', 'z', 'id', 'exposed'];
 /** Entity members other than measurements (`self.<field>`); they take precedence over measurement ids. */
-const ENTITY_FIELDS = ['x', 'y', 'z', 'carry_weight', 'carry_capacity', 'busy', 'sees', 'seen'];
+const ENTITY_FIELDS = ['x', 'y', 'z', 'carry_weight', 'carry_capacity', 'busy', 'sees', 'seen', 'gait'];
 
 /** Cell `tile` refers to: the context's target override, else `self`'s cell (on `self`'s floor). */
 const tileX = (c: ExprContext): number => (c.target ? c.target.x : c.self.x);
@@ -522,6 +524,7 @@ export function compile(ast: Ast, symbols: CompileSymbols): { expr: CompiledExpr
     if (prop === 'busy') return { fn: guarded(t, false, (e) => (e.activity ?? null) !== null), type: 'boolean' };
     if (prop === 'sees') return { fn: guarded(t, false, sees), type: 'boolean' };
     if (prop === 'seen') return { fn: guarded(t, null, seenOf), type: 'entity', nullable: true };
+    if (prop === 'gait') return { fn: guarded(t, 'walk', (e) => (e.gaitName ? e.gaitName() : 'walk')), type: 'string' };
     const r = symbols.resolveMeasurement(prop);
     if ('error' in r) return err(`${what}.${prop}: ${r.error}`, pos);
     const idx = r.index;

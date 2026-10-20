@@ -398,7 +398,25 @@ export interface ArchetypeDef {
   readonly faction: number | null;
   /** The archetype's sight sense (`senses.sight`), or null: entities without one never see anything. */
   readonly senses: SenseDef | null;
+  /** The archetype's gaits: `[0]` is always `walk` (with `ticksPerStep`), then the declared ones in mapping order. */
+  readonly gaits: readonly GaitDef[];
 }
+
+/**
+ * A way of moving (`gaits` on an archetype): a step takes `ticksPerStep`
+ * ticks and, when `noise` > 0, emits a footstep noise of that radius at
+ * every landing. `walk` is implicit on every archetype (index 0, noise 0).
+ */
+export interface GaitDef {
+  readonly name: string;
+  readonly ticksPerStep: number;
+  readonly noise: number;
+  /** Shown by the HUD (`Running`); defaults to the name capitalised. */
+  readonly label: string;
+}
+
+/** Name of the gait every archetype has. */
+export const WALK_GAIT = 'walk';
 
 /**
  * A sight sense: a target within `notice` (euclidean, inclusive, tile line

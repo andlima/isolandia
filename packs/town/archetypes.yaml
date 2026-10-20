@@ -7,6 +7,10 @@ archetypes:
     tags: [humanoid, living]
     measurements: [hp, hunger, thirst, fatigue]
     initial: { hunger: 20 }
+    # Run 1 tick per tile (heard 6 tiles away), sneak 4; walk stays at the default 2.
+    gaits:
+      run: { ticks_per_step: 1, noise: 6, label: Running }
+      sneak: { ticks_per_step: 4, label: Sneaking }
     inventory:
       capacity: 15
       items: { water_bottle: 1, crackers: 1 }

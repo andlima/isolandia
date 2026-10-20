@@ -52,6 +52,10 @@ export interface Entity extends ExprEntity {
   readonly hasM: Uint8Array;
   /** Ticks until the entity may step again. */
   moveCooldown: number;
+  /** Current gait: index into `archetype.gaits` (0 = `walk`). Read when a step is taken. */
+  gait: number;
+  /** Duration in ticks of the step in flight (the gait's `ticksPerStep` when it was taken); the walk ticks before any step. */
+  stepTicks: number;
   /** Direction the entity faces; it turns toward a new direction before stepping. */
   facing: Facing;
   /** Tile the current (or last) step started from; equals (x, y, z) before any step. */
@@ -600,6 +604,10 @@ export interface EntitySnapshot {
   fromZ: number;
   stepTick: number;
   moveCooldown: number;
+  /** Name of the current gait (version 9); omitted when `walk`. */
+  gait?: string;
+  /** Duration in ticks of the step in flight (version 9). */
+  stepTicks: number;
   /** Remaining path cells as [x, y, z]. */
   path: [number, number, number][] | null;
   measurements: Record<string, number>;
@@ -1129,6 +1137,9 @@ export class World {
       hasM: this.hasM[archetype.index]!,
       tags: this.tagSets[archetype.index]!,
       moveCooldown: 0,
+      gait: 0,
+      stepTicks: archetype.ticksPerStep,
+      gaitName: () => e.archetype.gaits[e.gait]!.name,
       facing: DEFAULT_FACING,
       fromX: x,
       fromY: y,
@@ -2408,7 +2419,12 @@ export class World {
     return ok ? { ...base, ok: true } : { ...base, ok: false, reason: 'cannot_act', ...(d.unavailable ? { unavailable: d.unavailable } : {}) };
   }
 
-  /** Take one step on the entity's floor if allowed (the caller has already turned to face it); records the step for rendering. */
+  /**
+   * Take one step on the entity's floor if allowed (the caller has already
+   * turned to face it); records the step for rendering. The step lasts the
+   * current gait's `ticksPerStep` and emits the gait's footstep noise at the
+   * landing cell.
+   */
   private move(e: Entity, dx: number, dy: number): boolean {
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || !this.grid.canStep(e.x, e.y, dx, dy, e.z)) return false;
     e.fromX = e.x;
@@ -2417,8 +2433,7 @@ export class World {
     e.stepTick = this.tick + 1;
     e.x += dx;
     e.y += dy;
-    e.moveCooldown = e.archetype.ticksPerStep;
-    this.reindex(e);
+    this.land(e);
     return true;
   }
 
@@ -2430,8 +2445,31 @@ export class World {
     e.fromZ = e.z;
     e.stepTick = this.tick + 1;
     e.z += dz;
-    e.moveCooldown = e.archetype.ticksPerStep;
+    this.land(e);
+    return true;
+  }
+
+  /** After a step's landing: the gait sets the step's pace and cooldown and makes its footstep noise (phase 1, before the step systems). */
+  private land(e: Entity): void {
+    const gait = e.archetype.gaits[e.gait]!;
+    e.moveCooldown = gait.ticksPerStep;
+    e.stepTicks = gait.ticksPerStep;
     this.reindex(e);
+    if (gait.noise > 0) this.emitNoise(e, gait.noise);
+  }
+
+  /**
+   * Set the player's gait by name (a synchronous shell input, between ticks,
+   * like `queueIntent`); false, changing nothing, when the player's
+   * archetype has no gait of that name. It takes effect from the next step:
+   * the step in flight keeps its `stepTicks`. Not an intent: a pending step
+   * or goto, a path and an activity are untouched.
+   */
+  setGait(name: string): boolean {
+    const p = this.player;
+    const k = p.archetype.gaits.findIndex((g) => g.name === name);
+    if (k < 0) return false;
+    p.gait = k;
     return true;
   }
 
@@ -2512,6 +2550,8 @@ export class World {
         fromZ: e.fromZ,
         stepTick: e.stepTick,
         moveCooldown: e.moveCooldown,
+        ...(e.gait > 0 ? { gait: e.archetype.gaits[e.gait]!.name } : {}),
+        stepTicks: e.stepTicks,
         path: e.path ? [...e.path.subarray(e.pathPos)].map((i) => this.cellTriple(i)) : null,
         measurements: Object.fromEntries(e.archetype.measurements.map((idx) => [ms[idx]!.id, e.m[idx]!])),
         statuses: this.def.statuses.filter((s) => e.st[s.index] === 1).map((s) => s.id),

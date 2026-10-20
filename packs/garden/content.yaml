@@ -107,7 +107,11 @@ archetypes:
     sprite: bunny_img
     tags: [bunny, critter]
     measurements: [energy]
-    ticks_per_step: 1
+    ticks_per_step: 2
+    # Dash at 1 tick per tile (a soft patter heard 3 tiles away), creep at 4.
+    gaits:
+      run: { ticks_per_step: 1, noise: 3, label: Running }
+      sneak: { ticks_per_step: 4, label: Sneaking }
     inventory:
       capacity: 5
       items: { clover: 2 }
@@ -136,7 +140,7 @@ archetypes:
     tags: [fox]
     senses: { sight: { notice: 6, lose: 9, targets: [bunny] } }
     behavior: fox
-    ticks_per_step: 2               # no faster than the cat: the bunny gets away
+    ticks_per_step: 2               # no faster than the cat: a running bunny gets away
 
 # The day begins with the morning dew.
 clock:

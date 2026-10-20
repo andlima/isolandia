@@ -49,7 +49,10 @@ standing with every [faction](packs.md#factions)). Each entity lists the
 `once` [systems](packs.md#systems) that have fired for it as `fired`
 (qualified ids, sorted; omitted when none), and the id of the entity it
 currently sees through its [senses](packs.md#senses) as `seen` (omitted
-when none or without senses). A save made
+when none or without senses), its current [gait](packs.md#gaits) as
+`gait` (the name; omitted when `walk`) and the duration in ticks of its
+step in flight as `stepTicks` (always written: after a gait change mid-step
+it cannot be derived). A save made
 mid-conversation restores into the same open conversation. An activity on an edge (barricading a
 window) records its `side` next to its target cell. Every cell carries its floor `z`: entity `z` and
 `fromZ`, `home` and path cells as `[x, y, z]`, the behavior plan as
@@ -94,7 +97,8 @@ keep the round-trip invariant.
 | 5 | dialogues (`m8-dialogues`): `state.conversation`, `state.dialogueOnce`, the `talk` action | upgraded (see below) |
 | 6 | factions (`m8-factions`): `state.reputation` | upgraded (see below) |
 | 7 | `once` systems (`pack-event-triggers`): `fired` on every entity | upgraded (see below) |
-| 8 | senses (`npc-perception`): `seen` on every entity with senses | current |
+| 8 | senses (`npc-perception`): `seen` on every entity with senses | upgraded (see below) |
+| 9 | gaits (`gaits`): `gait` and `stepTicks` on every entity | current |
 
 Versions 1 and 2 are refused with an error that says why: their maps had
 walls in cells, and the edge-wall conversion turned those cells into
@@ -119,11 +123,19 @@ fire again after the upgrade.
 Version 3 to 7 saves load with no entity seeing anything (no warnings; a
 `seen` field in such a save is ignored): the first tick's senses step
 notices again whatever is in sight, so a chase resumes one tick late.
-Saving an upgraded world writes version 8.
 
-A version 8 `seen` that is not an existing entity id, is the entity
-itself, or is set on an entity whose archetype has no senses is a restore
-error with the JSON path (`state.entities[12].seen`).
+Version 3 to 8 saves load with every entity walking and its `stepTicks`
+equal to its archetype's walk `ticks_per_step` (no warnings; `gait` and
+`stepTicks` fields in such a save are ignored). Saving an upgraded world
+writes version 9.
+
+A `seen` that is not an existing entity id, is the entity itself, or is
+set on an entity whose archetype has no senses is a restore error with the
+JSON path (`state.entities[12].seen`). A version 9 `gait` naming a gait the
+entity's archetype lacks is a restore error with the path and the
+archetype's gait names (`state.entities[0].gait: archetype 'vamp:vampire'
+has no gait 'run' (its gaits: walk, sneak)`); a `stepTicks` that is not an
+integer ≥ 1 is an error too.
 
 ## Validation
 

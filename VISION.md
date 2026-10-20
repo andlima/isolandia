@@ -809,8 +809,14 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     asset schema `animations.walk` (frame lists per drawn facing, mirrored
     like `directions`), the pose `(facing, frame)` chosen from the step
     progress with a cycle over two steps, and a 4-frame cycle on the shared
-    humanoid body so every human character walks. Gaits (`run`/`sneak`,
-    archetype `gaits`, the held key), idle and activity poses and
+    humanoid body so every human character walks. **Gaits landed** as
+    task `gaits`: archetype `gaits` (`run` / `sneak` with their own
+    `ticks_per_step` and footstep `noise`, `walk` implicit), the gait as
+    entity state (save version 9), `self.gait` in expressions, the
+    footstep noise through the existing noise events, Shift (hold) / `Z`
+    in the browser and `r` / `z` in the terminal, a HUD chip, and a
+    `std-needs` system that tires a runner; the walk cycle simply plays at
+    the step's pace. Idle and activity poses, per-gait frames and
     spritesheets remain for `m10-anim-gaits`.
   - **Local lights** (spec `m10-local-lights`). A `light` on tiles and
     archetypes (`radius`, `color`, optional `flicker`) that lifts the night

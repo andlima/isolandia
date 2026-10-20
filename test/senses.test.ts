@@ -877,7 +877,7 @@ test('any-state: a transition clears the path, intent and plan like a state tran
 
 // ── Saves ───────────────────────────────────────────────────────────────────
 
-test('saves: version 8 writes seen only when set; a world where some entities see and others do not round-trips', () => {
+test('saves: seen is written only when set; a world where some entities see and others do not round-trips', () => {
   const w = world({ rows: rowsWith([4, row({ 1: '@', 4: 'w', 14: 'w' })]) });
   const [near, far] = w.entities.filter((e) => e.archetype.id === 't:watcher');
   assert.ok(near && far);
@@ -885,8 +885,8 @@ test('saves: version 8 writes seen only when set; a world where some entities se
   assert.equal(near.seen, w.player.id);
   assert.equal(far.seen, -1);
   const s = w.save();
-  assert.equal(s.version, 8);
-  assert.equal(SAVE_VERSION, 8);
+  assert.equal(s.version, 9);
+  assert.equal(SAVE_VERSION, 9);
   assert.equal(s.state.entities[near.id]!.seen, w.player.id);
   assert.equal('seen' in s.state.entities[far.id]!, false, 'omitted when none');
   assert.equal('seen' in s.state.entities[w.player.id]!, false, 'omitted without senses');
@@ -913,7 +913,7 @@ test('saves: a version 7 save loads with nothing seen, and the first tick notice
   if (!r.ok) assert.fail(r.errors.join('\n'));
   assert.deepEqual(r.warnings, []);
   assert.equal(r.world.entities[v.id]!.seen, -1);
-  assert.equal(r.world.save().version, 8);
+  assert.equal(r.world.save().version, 9);
   r.world.step();
   assert.equal(r.world.entities[v.id]!.seen, w.player.id, 'noticed again on the first tick');
   // A version 7 save that (wrongly) carries `seen` ignores it.

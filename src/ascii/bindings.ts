@@ -8,6 +8,8 @@ import type { Binding } from '../web/bindings.ts';
 export const TERMINAL_BINDINGS: readonly Binding[] = [
   // ── Moving ──
   { id: 'move', keys: ['arrows', 'wasd', 'hjklyubn', 'numpad'], label: 'Move (grid-aligned, 8 directions)', section: 'Moving' },
+  { id: 'run', keys: ['r'], label: 'Run (toggle)', section: 'Moving' },
+  { id: 'sneak', keys: ['z'], label: 'Sneak (toggle)', section: 'Moving' },
   { id: 'climb_up', keys: ['<'], label: 'Go up the stairs you stand on', section: 'Moving' },
   { id: 'climb_down', keys: ['>'], label: 'Go down', section: 'Moving' },
   // ── Interacting ──

@@ -31,3 +31,12 @@ statuses:
       hp: -0.1
       thirst: 0.05                 # everything is harder when exhausted
     hud: { tone: bad, description: Too tired; losing health and getting thirsty faster, enter: You are exhausted., exit: You feel rested. }
+
+# Running costs something: about three times the day-time fatigue drift
+# while the gait is `run` (`self.gait`; the player's Shift / `r`). The file's
+# `defaults` gives it the `living` filter like the statuses above.
+systems:
+  - id: running
+    every: 1
+    when: 'self.gait == "run"'
+    effects: [{ apply: { fatigue: 0.25 } }]

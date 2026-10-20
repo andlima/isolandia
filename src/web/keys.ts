@@ -61,6 +61,55 @@ export function climbKey(key: string): 1 | -1 | 0 {
   return CLIMB_KEYS[key] ?? 0;
 }
 
+/** The run key (`KeyboardEvent.code`): either Shift, held. */
+export const RUN_KEYS: ReadonlySet<string> = new Set(['ShiftLeft', 'ShiftRight']);
+
+/** Gait names the shell asks for (`world.setGait`); which ones exist is pack data. */
+export const RUN_GAIT = 'run';
+export const SNEAK_GAIT = 'sneak';
+export const WALK_GAIT = 'walk';
+
+/**
+ * The gait the browser wants (pure): `run` while Shift is held, else
+ * `sneak` while the `Z` toggle is on, else `walk`. Shift wins while held;
+ * releasing it returns to sneak if toggled, else walk. `clear` (window blur,
+ * the pause) forgets the held Shift like held movement keys, not the toggle.
+ */
+export class GaitKeys {
+  private shift = false;
+  private sneak = false;
+
+  /** A keydown of a run key (`RUN_KEYS`). */
+  down(): void {
+    this.shift = true;
+  }
+
+  /** A keyup of a run key. */
+  up(): void {
+    this.shift = false;
+  }
+
+  /** A tap of the sneak key: toggles sneak. */
+  toggleSneak(): void {
+    this.sneak = !this.sneak;
+  }
+
+  /** Forget the held Shift (blur, pause); the sneak toggle survives. */
+  clear(): void {
+    this.shift = false;
+  }
+
+  /** True while sneak is toggled on (whether or not Shift overrides it). */
+  get sneaking(): boolean {
+    return this.sneak;
+  }
+
+  /** The wanted gait name. */
+  want(): string {
+    return this.shift ? RUN_GAIT : this.sneak ? SNEAK_GAIT : WALK_GAIT;
+  }
+}
+
 /** Pause toggles (`KeyboardEvent.code`): `P` and the `Pause` key. */
 export const PAUSE_KEYS: ReadonlySet<string> = new Set(['KeyP', 'Pause']);
 
