@@ -35,6 +35,9 @@ export const palette = {
   dark: '#3a3a40',
   red: '#c42a2a',
   purple: '#8e6fb5',
+  // The street lamp's warm glass and its halo (the same colour at 40 %: one palette colour).
+  glow: '#ffe6b8',
+  halo: ['#ffe6b8', 0.4],
 };
 
 const frac = (x) => x - Math.floor(x);
@@ -78,6 +81,42 @@ function glass() {
 }
 
 // ── Blocks ────────────────────────────────────────────────────────────────
+
+/** The asphalt of a road cell, as the flat road tile draws it, on a block canvas. */
+function asphalt(I) {
+  I.top(0, 0, 1, 1, 0, (u, v, x, y) => {
+    const n = hash(x, y, 11);
+    return n < 0.1 ? 'asphalt_lo' : n > 0.93 ? 'asphalt_hi' : 'asphalt';
+  });
+}
+
+/**
+ * A street lamp on a road cell (the `light` is in the tile data, the glow
+ * in the art): an iron post on a small plinth, a lantern with warm glass at
+ * the top and a translucent halo around it.
+ */
+function streetLamp() {
+  const { c, I } = blockTile();
+  asphalt(I);
+  // The plinth, then the post up the middle of the cell (x = 15..16 on screen).
+  I.box(0.36, 0.36, 0.64, 0.64, 0, 0.16, { left: 'asphalt_lo', right: 'outline', top: 'asphalt_hi' });
+  c.rect(15, 9, 1, 14, 'dark');
+  c.rect(16, 9, 1, 14, 'outline');
+  // The lantern: a cap, four panes of glass with a bright bulb, and the halo.
+  const K = { d: 'dark', o: 'outline', g: 'glow', W: 'white_hi', h: 'halo' };
+  c.grid(10, 0, [
+    '.....dd.....',
+    '...dddddd...',
+    '..hdggggoh..',
+    '.hhdgWWgohh.',
+    '.hhdgWggohh.',
+    '..hdggggoh..',
+    '...dddddo...',
+    '....hdoh....',
+    '.....do.....',
+  ], K);
+  return c;
+}
 
 function crate() {
   const { c, I } = blockTile();
@@ -367,6 +406,7 @@ export function images() {
     { file: 'grass.svg', canvas: grass(), note: 'flat tile' },
     { file: 'glass.svg', canvas: glass(), note: 'flat tile' },
     { file: 'crate.svg', canvas: crate(), note: 'block' },
+    { file: 'street_lamp.svg', canvas: streetLamp(), note: 'block, a light source' },
     { file: 'window.svg', canvas: windowWall(false), note: 'edge' },
     { file: 'barricaded_window.svg', canvas: windowWall(true), note: 'edge' },
     { file: 'stove.svg', canvas: stove(), note: 'block' },

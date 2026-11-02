@@ -66,6 +66,9 @@ import {
   type SpawnDef,
   type SenseDef,
   type GaitDef,
+  type LightDef,
+  MIN_LIGHT_RADIUS,
+  MAX_LIGHT_RADIUS,
   WALK_GAIT,
   type StatusDef,
   type StatusHud,
@@ -749,7 +752,7 @@ class Loader {
   }
 
   private tile(d: Defined): TileDef {
-    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb', 'edge', 'encloses', 'exposed'], 'tile');
+    const f = this.fields(d, ['id', 'label', 'glyph', 'color', 'walkable', 'raised', 'opaque', 'sprite', 'tags', 'container', 'climb', 'edge', 'encloses', 'exposed', 'light'], 'tile');
     const walkable = f.boolean('walkable') ?? false;
     const edge = f.boolean('edge', false) ?? false;
     if (edge) {
@@ -793,7 +796,44 @@ class Loader {
       edge,
       encloses: edge ? encloses : true,
       exposed: edge ? null : exposed,
+      light: this.light(f),
     };
+  }
+
+  /**
+   * A tile's or archetype's `light`: `{ radius, color?, flicker? }`. `radius`
+   * in tiles within `[MIN_LIGHT_RADIUS, MAX_LIGHT_RADIUS]`, `color` a
+   * `#rrggbb` string (default white), `flicker` in [0, 1] (default 0). Null
+   * when absent or after an error.
+   */
+  private light(f: Fields): LightDef | null {
+    const raw = f.mapping('light');
+    if (!raw) return null;
+    const lf = new Fields(this.sink, f.at('light'), raw, ['radius', 'color', 'flicker'], 'light');
+    const radius = lf.number('radius');
+    let ok = radius !== undefined;
+    if (radius !== undefined && (radius < MIN_LIGHT_RADIUS || radius > MAX_LIGHT_RADIUS)) {
+      this.sink.add(lf.at('radius'), `field 'radius' must be a number of tiles in [${MIN_LIGHT_RADIUS}, ${MAX_LIGHT_RADIUS}] (MAX_LIGHT_RADIUS), got ${radius}`);
+      ok = false;
+    }
+    let color = 0xffffff;
+    const colorStr = lf.string('color', false);
+    if (colorStr !== undefined) {
+      if (!HEX_COLOR_RE.test(colorStr)) {
+        this.sink.add(lf.at('color'), `field 'color' must be a '#rrggbb' colour, got ${JSON.stringify(colorStr)}`);
+        ok = false;
+      } else color = parseInt(colorStr.slice(1), 16);
+    }
+    let flicker = 0;
+    const fl = lf.number('flicker', false);
+    if (fl !== undefined) {
+      if (fl < 0 || fl > 1) {
+        this.sink.add(lf.at('flicker'), `field 'flicker' must be a number in [0, 1], got ${fl}`);
+        ok = false;
+      } else flicker = fl;
+    }
+    if (!ok) return null;
+    return { radius: radius!, color, flicker };
   }
 
   /** A required weight or capacity (number ≥ 0), rounded to integer hundredths. */
@@ -839,7 +879,7 @@ class Loader {
   private archetype(d: Defined, measurements: readonly MeasurementDef[], items: readonly ItemDef[]): ArchetypeDef {
     const f = this.fields(
       d,
-      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction', 'senses', 'gaits'],
+      ['id', 'label', 'glyph', 'color', 'tags', 'measurements', 'initial', 'ticks_per_step', 'ticks_per_turn', 'sprite', 'inventory', 'behavior', 'dialogue', 'faction', 'senses', 'gaits', 'light'],
       'archetype',
     );
     const label = f.string('label') ?? d.id;
@@ -885,7 +925,8 @@ class Loader {
     const faction = f.has('faction') ? (this.symbols.ref('faction', f.raw('faction'), d.scopeOf('faction'), f.at('faction'), this.sink)?.index ?? null) : null;
     const senses = this.senses(f);
     const gaits = this.gaits(f, ticksPerStep);
-    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction, senses, gaits };
+    const light = this.light(f);
+    return { id: d.id, index: d.index, label, glyph, color, tags, measurements: indices, initial, ticksPerStep, ticksPerTurn, sprite, inventory, behavior, dialogue, faction, senses, gaits, light };
   }
 
   /**

@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "mansion",
   "spacing": 0,
-  "tilecount": 19,
+  "tilecount": 20,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -263,6 +263,17 @@
           "name": "tile",
           "type": "string",
           "value": "wine_rack"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "image": "../assets/candelabra.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "candelabra"
         }
       ]
     }

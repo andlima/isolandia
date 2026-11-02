@@ -99,6 +99,14 @@ tiles:
     sprite: wine_rack_img
     walkable: false
     container: { capacity: 8 }
+  - id: candelabra
+    label: Candelabra
+    glyph: "Y"
+    color: "#ffc890"
+    sprite: candelabra_img
+    walkable: false
+    opaque: false
+    light: { radius: 3, color: "#ffc890", flicker: 0.25 }
 
 archetypes:
   - id: vampire

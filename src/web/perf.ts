@@ -1,6 +1,7 @@
 /**
  * The browser's perf line (toggled with F3): tick time over the last 100
- * ticks, frame rate, active and dormant entities, and render chunks. The
+ * ticks, frame rate, active and dormant entities, render chunks, and the
+ * local lights reaching built chunks and the chunks they light. The
  * meter and the formatting are pure, so they are tested headless.
  */
 
@@ -48,10 +49,14 @@ export interface PerfFigures {
   dormant: number;
   builtChunks: number;
   visibleChunks: number;
+  /** Light sources that reached a built chunk this frame. */
+  lights: number;
+  /** Built chunks with a non-empty lightmap. */
+  litChunks: number;
 }
 
 export function perfLine(f: PerfFigures): string {
-  return `tick ${f.tickAvg.toFixed(2)}/${f.tickP95.toFixed(2)} ms (avg/p95)  ${Math.round(f.fps)} fps  entities ${f.active} active, ${f.dormant} dormant  chunks ${f.builtChunks} built, ${f.visibleChunks} visible`;
+  return `tick ${f.tickAvg.toFixed(2)}/${f.tickP95.toFixed(2)} ms (avg/p95)  ${Math.round(f.fps)} fps  entities ${f.active} active, ${f.dormant} dormant  chunks ${f.builtChunks} built, ${f.visibleChunks} visible  lights ${f.lights}  lit ${f.litChunks}`;
 }
 
 /** Tick durations (last 100) and frame intervals (last 100) for the perf line. */

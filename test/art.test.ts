@@ -21,7 +21,7 @@ const STACKS = [
 ];
 const FURNITURE = ['car', 'bed', 'fridge', 'cupboard', 'cabinet', 'dresser', 'coffin', 'bookshelf', 'chest', 'wine_rack', 'wheelbarrow', 'stairs', 'ladder'];
 /** Archetypes drawn as a single image per facing: no walk cycle (every other archetype is a humanoid and walks). */
-const STILL = ['crawler', 'bat', 'bunny', 'cat', 'fox', 'butterfly'];
+const STILL = ['crawler', 'bat', 'bunny', 'cat', 'fox', 'butterfly', 'firefly'];
 const WALK_FRAMES = 4;
 const MAX_COLOURS = 32;
 

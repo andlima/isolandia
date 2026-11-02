@@ -18,6 +18,7 @@ assets:
   - { id: font_img, file: assets/font.svg }
   - { id: window_img, file: assets/window.svg, anchor: [0.1, 0.65625] }   # edge
   - { id: shuttered_window_img, file: assets/shuttered_window.svg, anchor: [0.1, 0.65625] }   # edge
+  - { id: candelabra_img, file: assets/candelabra.svg }   # block, a light source
   - id: coffin_img        # 4-way: n and e are the mirrors of w and s
     directions: { s: assets/coffin_s.svg, w: assets/coffin_w.svg }
   - id: bookshelf_img     # 4-way: n and e are the mirrors of w and s

@@ -55,6 +55,24 @@ behaviors:
         do: home
         done: flutter
 
+  # Fireflies rest in their flower bed by day; at night they drift about it,
+  # and dawn sends them home to rest again.
+  - id: firefly
+    initial: rest
+    on:
+      - { when: 'world.is_day', to: return, except: [rest] }
+    states:
+      rest:
+        do: idle
+        on:
+          - { when: 'not world.is_day', to: drift }
+      drift:
+        do: wander
+        radius: 3
+      return:
+        do: home
+        done: rest
+
   # A fox sleeps in its den all day. At dusk it slinks out to prowl, chases
   # a bunny it spots in the open, sniffs out a crunch on the gravel, and
   # trots home to sleep by morning. Asleep, walking home or bored, it is not

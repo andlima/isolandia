@@ -179,6 +179,40 @@ function coffin(facing) {
   return c;
 }
 
+/**
+ * A three-branched candelabra on a stone slab (the `light` is in the tile
+ * data; the flames are drawn with the candle item's `wax` and `sun` tones,
+ * within the pack's palette).
+ */
+function candelabra() {
+  const { c, I } = blockTile();
+  // A flagstone slab for the cell, like the crypt floor in the stone ramp.
+  I.top(0, 0, 1, 1, 0, (u, v, x, y) => {
+    const [U, V] = [px(u), px(v)];
+    if (U % 8 === 0 || (V + (Math.floor(U / 8) % 2) * 4) % 8 === 0) return 'stone_lo';
+    return hash(x, y, 42) < 0.08 ? 'stone_hi' : 'stone';
+  });
+  // A round gilded foot, then the stem up the middle of the cell (x = 15..16 on screen).
+  I.box(0.34, 0.34, 0.66, 0.66, 0, 0.14, { left: 'oak_lo', right: 'ebony_lo', top: 'gold' });
+  c.rect(15, 10, 1, 13, 'gold');
+  c.rect(16, 10, 1, 13, 'oak_lo');
+  // Three arms, three candles, three flames.
+  const K = { G: 'gold', O: 'oak_lo', e: 'ebony_lo', w: 'wax', W: 'pale', y: 'sun', Y: 'sun_hi', c: 'crimson' };
+  c.grid(9, 0, [
+    '..Y....Y....Y.',
+    '..y....y....y.',
+    '..c....c....c.',
+    '.Ww...Ww...Ww.',
+    '.Ww...Ww...Ww.',
+    '.Ww...Ww...Ww.',
+    '.GO...GO...GO.',
+    '.GO...GO...GO.',
+    '..GGGGGOGGGGO.',
+    '......GO......',
+  ], K);
+  return c;
+}
+
 const BOOKS = ['crimson', 'tome', 'bottle', 'oak_hi', 'crimson_lo', 'gold'];
 
 const bookshelf = (f) =>
@@ -291,6 +325,7 @@ export function images() {
     { file: 'font.svg', canvas: font(), note: 'flat tile' },
     { file: 'window.svg', canvas: windowBlock(), note: 'edge' },
     { file: 'shuttered_window.svg', canvas: shutteredWindow(), note: 'edge' },
+    { file: 'candelabra.svg', canvas: candelabra(), note: 'block, a light source' },
     ...furn('coffin', coffin),
     ...furn('bookshelf', bookshelf),
     ...furn('chest', chest),

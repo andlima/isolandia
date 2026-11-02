@@ -41,6 +41,11 @@ maps:
       # The fields around the town: 0.4 per 100 of ~12 000 grass cells.
       - { archetype: shambler, density: 0.4, where: 'not tile.in_room("town")' }
 
+tiles:
+  - id: town:street_lamp
+    override: true
+    light: { radius: 5, color: "#ffe6b8", flicker: 0.6 }
+
 archetypes:
   - id: town:resident
     override: true

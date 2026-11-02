@@ -436,6 +436,7 @@ import script.
 | `edge`     | boolean          | `false`      | An **edge tile** (wall, door, window, fence): it goes on the edge between two cells, never in a cell; `walkable` then means it can be crossed and `opaque` that it blocks sight across it. Cannot take `container` or `climb`. See [Edge walls](#edge-walls) |
 | `encloses` | boolean          | `true`       | Edge tiles only (an error elsewhere): whether the edge counts as a wall for [exposure](#exposure). Walls, doors, windows and shutters keep the default; a low fence sets `encloses: false` |
 | `exposed`  | boolean          | derived      | Cell tiles only (an error on an edge tile): when set, every cell with this tile is **exposed** (`true`) or not (`false`) regardless of the [exposure](#exposure) rule — a sunbeam under a window, an awning over a yard. Unset means derived; an override's `exposed: null` goes back to derived |
+| `light`    | `{ radius, color?, flicker? }` | none | A **local light** every cell (or edge) with this tile casts in the iso view: a street lamp, a candelabra, a lit window. Visual only; see [Local lights](#local-lights) |
 
 Tile tags and archetype tags are separate: `self.has_tag("water")` never
 sees the tags of the tile the entity stands on, and `tile.has_tag(...)`
@@ -472,6 +473,7 @@ Templates for entities (the player and everything else).
 | `faction`        | faction id            | none    | The [faction](#factions) every entity of the archetype belongs to. Allowed on the player's archetype: `in_faction(player, "f")` reads it, but [`attitude`](expressions.md#factions) ignores it |
 | `senses`         | `{ sight: { notice, lose, targets } }` | none | What entities of the archetype notice by sight; see [Senses](#senses) below |
 | `gaits`          | map gait name → `{ ticks_per_step?, noise?, label? }` | none | Ways of moving besides `walk` (`run`, `sneak`), each with its own ticks per tile and footstep noise; see [Gaits](#gaits) below |
+| `light`          | `{ radius, color?, flicker? }` | none | A **local light** every entity of the archetype carries in the iso view (a flashlight, a firefly), moving with it. Visual only; see [Local lights](#local-lights) |
 
 ```yaml
 archetypes:
@@ -2179,6 +2181,84 @@ multiplied by it (`#ffffff` = unchanged). Without `lighting` nothing is
 tinted. Like `clock`, **one** loaded pack defines it; later packs may
 patch it with `override: true`.
 
+#### Local lights
+
+A tile or an archetype may carry a `light`: the iso view then **lifts the
+tint** around every cell with that tile (or every entity of that
+archetype) toward the light's colour, so lamps push back against the night.
+Like `lighting`, it is **visual only**: the simulation and expressions never
+see it, nothing about it is saved or hashed, and the ASCII shell ignores it.
+
+```yaml
+tiles:
+  - id: street_lamp
+    label: Street lamp
+    glyph: "i"
+    color: "#d8d070"
+    walkable: false
+    opaque: false
+    sprite: street_lamp_img
+    light: { radius: 5, color: "#ffe6b8" }
+archetypes:
+  - id: firefly
+    # …
+    light: { radius: 1.5, color: "#c8ff80", flicker: 0.5 }
+```
+
+| Field     | Type     | Default   | Notes |
+|-----------|----------|-----------|-------|
+| `radius`  | number   | required  | Reach in tiles, in `[0.5, 12]` (`MAX_LIGHT_RADIUS`); outside it is a load error naming the bound. The cap bounds the work per render chunk |
+| `color`   | `#rrggbb`| `#ffffff` | The light's colour |
+| `flicker` | number   | `0`       | In `[0, 1]`: how much of the light's intensity the flicker takes away at its dimmest (`0` is steady) |
+
+Unknown keys inside `light` are errors with a *did you mean*; a `light`
+that is not a mapping is an error at the key (`tiles[3].light`). `light` is
+allowed on cell tiles and edge tiles alike (a lit window is an edge light);
+items cannot carry one.
+
+- **Per cell, through the line of sight.** Lighting is per cell, as in
+  Project Zomboid: a source lights a cell on **its own floor** when the
+  cell's centre is within `radius` of the source's cell centre and the grid
+  line of sight between the two cells is clear, the same
+  [`can_see`](expressions.md) rule entities use: opaque cells and opaque
+  edges block, the source's own cell is always lit, and floors never see
+  each other (an upstairs lamp never lights the floor below). So a wall
+  throws a hard shadow, an open door or a `window` (`opaque: false`) lets a
+  lamp shine out of a room, and a `barricaded_window` or a
+  `shuttered_window` (`opaque: true`) keeps it in. [Exposure](#exposure) is
+  not consulted: the walls, doors and windows themselves decide where light
+  goes, so an indoor lamp stays indoors yet shines out of its window.
+  Entities never block light. The intensity falls off linearly, `1 − d /
+  radius`.
+- **Edge lights spill both ways.** A lit edge tile casts from each of the
+  two cells it separates, with the same radius; a cell takes the stronger
+  of the two casts, not their sum, so the window itself is not twice as
+  bright.
+- **Combination.** Where several sources reach a cell the intensity is `1 −
+  Π(1 − Iₖ)` (two lamps never exceed full) and the colour is the
+  intensity-weighted mean of their colours.
+- **Flicker.** A flickering source's intensity is multiplied by a factor in
+  `[1 − flicker, 1]` that changes ten times a second (every 100 ms of wall
+  clock), the same on every machine for the same source and moment.
+- **Lifting, never past the colour.** A lit cell's sprites are tinted, per
+  channel, `ambient + (max(ambient, color) − ambient) × I`, where `ambient`
+  is the current `lighting` tint: a light only lifts the ambient toward its
+  colour and never past it. A white lamp restores a sprite's own colours at
+  night and is invisible at noon; a warm lamp never tints a sunny street.
+  **Without a `lighting` domain the ambient is white and lights show
+  nothing**: a pack that wants a visible glow in daylight draws it in the
+  art.
+- `light` is an ordinary top-level field for [overrides](#mods-and-overrides):
+  replaced whole with `override: true` (restate `radius` to change only the
+  colour), `light: null` removes it, and `check --overrides` lists it like
+  any other field.
+
+The shipped packs: `town` puts `street_lamp`s on its roads; `noir` turns
+them green (gaslight) and gives the detective a flashlight (an entity
+light); `zombie` makes them flicker; `vampire` has candelabras in the
+mansion; `garden` has fireflies. How the scene draws it (per-sprite tints,
+what triggers a refresh, the cost) is in [iso.md](iso.md#lighting).
+
 ### `vars`
 
 Named **world-level** numbers: one value per world, not per entity (use a
@@ -2618,14 +2698,14 @@ appear as quick-play cards on the browser's title screen.
 |---|---|---|---|---|
 | `std` | `std` | library | — | see [Standard packs](#standard-packs) |
 | `std-needs` | `std_needs` | library | `std` | see [Standard packs](#standard-packs) |
-| `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`; food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
-| `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`; `senses` that notice the living at 8 tiles); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, and set the outbreak's defeat and victory (a car battery in a garage) |
+| `town` | `town` | game | `std`, `std_needs` | the 343×343 composite `city` with its part maps and rooms; tiles `road`, `grass`, `car`, `glass`, `window`, `barricaded_window`, `bed`, `stove`, `fridge`, `cupboard`, `cabinet`, `dresser`, `crate`, `street_lamp` (a [local light](#local-lights) on the roads' outer rows); food, drinks, `bandage`, tools, materials and junk; loot tables and distributions; recipes `cook_beans`, `tear_bandage`; action `barricade`; status `stocked`; systems `sleep`, `bleed`, `collapse`, `crunch`; `clock`, `lighting`; the player `resident`; a `start` with a generic defeat and no victory. No NPCs: a quiet sandbox |
+| `zombie` | `zmb` | mod | `std`, `std_needs`, `town` | `shambler` and `crawler` (behavior `shambler`; `senses` that notice the living at 8 tiles); overrides that fill the town (`spawns` on `town_center`, `populate` on `house_c` and `city`), label the resident *Survivor*, make the street lamps flicker (the power is failing), and set the outbreak's defeat and victory (a car battery in a garage) |
 | `zombie-kenney` | `zkn` | mod | `std`, `town`, `zmb` | the zombie game with Kenney's CC0 art outdoors: a skin that overrides only the `sprite` of `std:floor`, `std:landing`, `town:road`, `town:grass` and `town:car` with imported `@2x` PNGs (see [Imported art](art.md#imported-art) and its `CREDITS.md`) |
-| `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
-| `noir` | `noir` | mod | `std`, `town` | *Death on Elm Street*: a night-time murder on the old town block; factions `police`, `mob` and the hidden `neighbours`; Sgt. Hale, an `officer` on a `beat` (`wander`), the widow, the lodger, Dot and Mickey the Fixer, each with a dialogue; seven clues as `Clues` journal entries, from dialogue and from `search`/`force_drawer` actions on the crime scene's own furniture (a witnessed `reputation` effect with `spread`); quest `elm_street` ending in `solved`, `wrong_man` or `cold_case` (dawn); overrides `town_center` (`rooms` adds `crime_scene`, `spawns`), `city` (`player`, `populate`), the resident's label (*Detective*), `start`, `clock` (starts at 21:00) and `lighting` (cold blue-grey nights). See the [worked example](#worked-example-a-story-from-vars-quests-dialogues-and-factions) |
+| `vampire` | `vamp` | mod | `std`, `town` | blood, sunlight, shade, coffins and bats; the `estate` with the `mansion`, `graveyard` and `cottage` maps; `shutter` turns `town:window` into its `shuttered_window`; flickering `candelabra`s against the mansion's walls (a [local light](#local-lights)); overrides `start` (estate, vampire, defeat), `clock` (starts at 20:00), `lighting` and the window's colour and art |
+| `noir` | `noir` | mod | `std`, `town` | *Death on Elm Street*: a night-time murder on the old town block; factions `police`, `mob` and the hidden `neighbours`; Sgt. Hale, an `officer` on a `beat` (`wander`), the widow, the lodger, Dot and Mickey the Fixer, each with a dialogue; seven clues as `Clues` journal entries, from dialogue and from `search`/`force_drawer` actions on the crime scene's own furniture (a witnessed `reputation` effect with `spread`); quest `elm_street` ending in `solved`, `wrong_man` or `cold_case` (dawn); overrides `town_center` (`rooms` adds `crime_scene`, `spawns`), `city` (`player`, `populate`), the resident (*Detective*, with a flashlight: an entity [light](#local-lights)), the street lamps (green gaslight), `start`, `clock` (starts at 21:00) and `lighting` (cold blue-grey nights). See the [worked example](#worked-example-a-story-from-vars-quests-dialogues-and-factions) |
 | `western` | `wst` | mod | `std`, `std_needs`, `town` | *High Noon*: measurements `aim`, `nerve` and `liquor`; items `coin`, `bullet`, `revolver` and `whiskey` (status `tipsy`); factions `townsfolk`, `law` and the `gang` (Hostile from the start); Sheriff Cobb, Doc, the bartender in the `saloon`, the kid, two `rider`s (behavior `rider`: idle until ten, then `pursue` the Stranger their `senses` see; systems drain `nerve` while they crowd the player) and Black Jack (waits at the end of Main Street, walks to the noon bell); action `shoot_bottles` on the yards' crates; loot `garage_ammo` with a `distributions` entry for the garages; quest `high_noon` ending in `won`, `talked_down`, `paid_off`, `shot` or `coward`, the duel being a dialogue with a seeded `roll`; overrides `town_center` (`spawns`), `city` (`rooms` adds `saloon`, `populate`), the resident (*Stranger*, measurements, inventory), `start`, `clock` (starts at 06:00) and `lighting` (a bleached noon) |
 | `hardship` | `hardship` | mod | `std_needs`, `town` | faster hunger and thirst, sparser `town:kitchen_food`, and no `town:tear_bandage`: overrides and a removal only, so it stacks on the town alone or with either genre |
-| `garden` | `gdn` | game | `std` | a bunny gathers carrots in a garden; shares nothing with the town |
+| `garden` | `gdn` | game | `std` | a bunny gathers carrots in a garden, with a cat, butterflies, a night fox and six `firefly`s that rest in the flower beds by day and drift about them at night, each a blinking [local light](#local-lights); shares nothing with the town |
 
 Stacking both genres (`zombie vampire`) loads too: each mod writes its own
 fields, and the one field both write, `start.defeat`, warns and goes to the
@@ -2701,7 +2781,7 @@ list or tree):
   id (with a *did you mean*).
 - **Shallow merge:** every top-level field the override lists replaces the
   current one; omitted fields are kept. Nested values are replaced
-  **whole**: a mapping (`inventory`, `use`, `directions`, `animations`, `target`…) or a
+  **whole**: a mapping (`inventory`, `use`, `directions`, `animations`, `senses`, `gaits`, `light`, `target`…) or a
   list (`tags`, `parts`, `populate`, `effects`, `rows`…). There are no list
   operators and no deep merge (the one exception is `start`'s `defeat`,
   `victory` and `simulation`, see [Singletons](#singletons)).

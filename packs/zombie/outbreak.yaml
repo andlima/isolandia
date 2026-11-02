@@ -41,6 +41,13 @@ maps:
       # The fields around the town: 0.4 per 100 of ~12 000 grass cells.
       - { archetype: shambler, density: 0.4, where: 'not tile.in_room("town")' }
 
+tiles:
+  # The power is failing: the street lamps flicker (`light` is replaced
+  # whole, so the radius and colour are restated; docs/packs.md#local-lights).
+  - id: town:street_lamp
+    override: true
+    light: { radius: 5, color: "#ffe6b8", flicker: 0.6 }
+
 archetypes:
   - id: town:resident
     override: true

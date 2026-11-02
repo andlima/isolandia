@@ -106,6 +106,16 @@ tiles:
     sprite: wine_rack_img
     walkable: false
     container: { capacity: 8 }
+  # Candelabras against the mansion's walls (maps/README.md): a warm,
+  # gently flickering local light (docs/packs.md#local-lights).
+  - id: candelabra
+    label: Candelabra
+    glyph: "Y"
+    color: "#ffc890"
+    sprite: candelabra_img
+    walkable: false
+    opaque: false                   # a slender stand: blocks the way, not the view
+    light: { radius: 3, color: "#ffc890", flicker: 0.25 }
 
 archetypes:
   - id: vampire

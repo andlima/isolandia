@@ -31,10 +31,20 @@ maps:
     populate:
       - { archetype: mickey, count: 1, rect: [221, 220, 1, 1] }
 
+tiles:
+  # The town's street lamps burn gas: a green-white light (`light` is
+  # replaced whole, so the radius is restated; docs/packs.md#local-lights).
+  - id: town:street_lamp
+    override: true
+    light: { radius: 5, color: "#c8e6a0" }
+
 archetypes:
   - id: town:resident
     override: true
     label: Detective
+    # The detective's flashlight: a local light that moves with the player
+    # and stops at walls, like any other.
+    light: { radius: 3, color: "#fff2c8" }
 
 start:
   override: true

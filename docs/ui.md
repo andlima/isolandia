@@ -505,7 +505,7 @@ terminal too narrow for the full line it shows only `q: quit  ?: help`.
 | `F5` / `F9` | Quicksave / quickload |
 | `?` | [Controls overlay](#controls-and-pause-menu) (also the **Help [?]** button) |
 | `H` | Toggle the HUD, the message log strip and hover tooltips |
-| `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks |
+| `F3` | Toggle the perf line: tick ms (avg/p95 over the last 100 ticks), fps, active and dormant entities, built and visible chunks, `lights N` ([local light](packs.md#local-lights) sources reaching a built chunk) and `lit M` (built chunks with light) |
 | `Space` | Recenter the camera |
 | `P` / `Pause` | Pause or resume ([Time](#time)) |
 | `+` / `=` / numpad `+` | Faster (2×, 4×, 8×) |

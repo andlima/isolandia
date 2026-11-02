@@ -82,8 +82,10 @@ test('maps: the town roads are 5 wide everywhere (a wreck on the road does not n
   const map = startMap(def);
   const road = def.ids.tiles['town:road']!;
   const car = def.ids.tiles['town:car']!;
+  const lamp = def.ids.tiles['town:street_lamp']!;
   const at = (x: number, y: number) => (x < 0 || y < 0 || x >= map.width || y >= map.height ? -1 : map.cells[y * map.width + x]!);
-  const paved = (x: number, y: number) => at(x, y) === road || at(x, y) === car;
+  // A wreck or a street lamp stands on the road without narrowing it (lamps keep to the outer rows).
+  const paved = (x: number, y: number) => at(x, y) === road || at(x, y) === car || at(x, y) === lamp;
   const run = (x: number, y: number, dx: number, dy: number) => {
     let n = 1;
     for (let k = 1; paved(x + k * dx, y + k * dy); k++) n++;

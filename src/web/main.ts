@@ -522,6 +522,8 @@ async function main(): Promise<void> {
           dormant: world.entities.length - active,
           builtChunks: stats.builtChunks,
           visibleChunks: stats.visibleChunks,
+          lights: stats.lights,
+          litChunks: stats.litChunks,
         },
         now,
       );

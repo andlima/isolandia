@@ -99,3 +99,14 @@ tiles:
     walkable: true                  # a floor crate you can stand on
     raised: true                    # iso: drawn as a block, depth-sorted
     container: { capacity: 40 }
+  # A street lamp on the roads' outer rows (maps/README.md): a local light
+  # (docs/packs.md#local-lights) that lifts the night tint around it. Mods
+  # recolour or flicker it by overriding `light`.
+  - id: street_lamp
+    label: Street lamp
+    glyph: "i"
+    color: "#d8d070"
+    sprite: street_lamp_img
+    walkable: false
+    opaque: false                   # a thin post: you see past it
+    light: { radius: 5, color: "#ffe6b8" }
