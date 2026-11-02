@@ -167,7 +167,28 @@ export interface TileDef {
    * derived. Cell tiles only.
    */
   readonly exposed: boolean | null;
+  /** A local light every cell (or edge) with this tile casts; null for none. Visual only. */
+  readonly light: LightDef | null;
 }
+
+/**
+ * A local light (`light` on a tile or an archetype): the iso scene lifts the
+ * day/night tint toward `color` on the cells within `radius` tiles that the
+ * grid line of sight reaches from the light's cell. Visual only: the
+ * simulation, saves and hashes never see it.
+ */
+export interface LightDef {
+  /** Reach in tiles, in `[MIN_LIGHT_RADIUS, MAX_LIGHT_RADIUS]`. */
+  readonly radius: number;
+  /** 0xRRGGBB (default white). */
+  readonly color: number;
+  /** How much of the intensity the flicker takes away at its dimmest, in [0, 1] (0 = steady). */
+  readonly flicker: number;
+}
+
+/** Smallest and largest `light.radius`; the cap bounds the work per render chunk. */
+export const MIN_LIGHT_RADIUS = 0.5;
+export const MAX_LIGHT_RADIUS = 12;
 
 /** Tile index of an empty map cell: no tile, not walkable, not opaque, not drawn. */
 export const EMPTY_TILE = 0xffff;
@@ -400,6 +421,8 @@ export interface ArchetypeDef {
   readonly senses: SenseDef | null;
   /** The archetype's gaits: `[0]` is always `walk` (with `ticksPerStep`), then the declared ones in mapping order. */
   readonly gaits: readonly GaitDef[];
+  /** A local light every entity of the archetype carries (a flashlight, a firefly); null for none. Visual only. */
+  readonly light: LightDef | null;
 }
 
 /**

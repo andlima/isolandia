@@ -209,6 +209,7 @@ const patches = (...tokens: string[]) => {
 
 test('check --overrides: the zombie and vampire mods patch the town by overrides only', () => {
   assert.deepEqual(patches('zombie'), [
+    'zmb override tile town:street_lamp [light]',
     'zmb override archetype town:resident [label]',
     'zmb override map town:town_center [spawns]',
     'zmb override map town:house_c [populate]',

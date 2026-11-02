@@ -75,8 +75,17 @@ palette (`*_hi`, base, `*_lo`) for this. Characters and items get a 1 art
 pixel dark `outline`, and a few shaded pixels on their right side.
 
 The day/night tint multiplies sprite colours (see
-[iso.md](iso.md#daynight-tint)), so keep palettes mid-to-light where a
+[iso.md](iso.md#lighting)), so keep palettes mid-to-light where a
 pack has dark nights.
+
+**Light sources** (a tile or archetype with a [`light`](packs.md#local-lights)):
+the glow is in the art, the light is in the data. Draw the lamp head, the
+flames or the firefly in the palette's brightest tones and, for a halo
+around them, reuse the glow colour at a `fill-opacity` (a palette entry
+`['#rrggbb', 0.4]`; the same hex counts once toward the 32-colour cap). The
+light itself, the lifted tint on the cells around, comes from the `light`
+field, so the drawing should read as a lamp by day too, when the tint shows
+nothing.
 
 ## Facings and mirroring
 
@@ -246,10 +255,11 @@ floor and cars with Kenney's CC0 isometric packs (the
 | `wood_hi` | `#c08a4e` | `pants_lo` | `#3e404e` |
 | `wood` | `#9c6a38` | `shoes` | `#4a3a2e` |
 
-### `town` (30 colours), and `zombie` (the town's plus `zskin`, `zskin_lo`: 32)
+### `town` (31 colours), and `zombie` (the town's plus `zskin`, `zskin_lo`; its own drawings use no `glow`, so its assets stay at 32)
 
 | Name | Colour | Name | Colour |
 |------|--------|------|--------|
+| `glow` | `#ffe6b8` (the street lamp's glass; `halo` is the same at 0.4 opacity) | | |
 | `outline` | `#1e1c20` | `white_lo` | `#a6a8b4` |
 | `shadow` | `#000000` at 0.3 opacity | `wood_hi` | `#c89a5a` |
 | `asphalt_hi` | `#76767a` | `wood` | `#a07242` |
@@ -288,6 +298,10 @@ floor and cars with Kenney's CC0 isometric packs (the
 | `crypt` | `#3e3650` | `bat_lo` | `#563e66` |
 | `blood` | `#c0182c` | `wax` | `#f0e8c0` |
 
+The pack is at the cap: the `candelabra` (a light source) is drawn from the
+candle item's `wax`, `sun` and `sun_hi` with a `gold` stand on a `stone`
+slab, no new colour.
+
 ### `garden` (32 colours)
 
 A bright pastel palette for a cute look: round shapes, big eyes, a soft
@@ -317,6 +331,9 @@ The bunny, the cat, the fox and the butterfly are drawn in `art/garden.mjs`
 as their own 16×24 text grids (not the shared humanoid body). The fox's
 `rust` coat, pointed snout, big ears and white-tipped tail keep it apart
 from the `orange` cat. The butterfly
-hovers above its shadow, like the vampire pack's bat. The fence is a single
+hovers above its shadow, like the vampire pack's bat. The firefly (a light
+source, also at the cap: `yellow`, `grass_hi` and `white`) is a few glowing
+pixels above a one-pixel shadow, no outline, at a slightly different spot
+per facing so that turning bobs it about. The fence is a single
 image whose rails run along both map axes, so neighbouring fence tiles join
 up whichever way the fence line runs.

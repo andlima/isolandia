@@ -1,5 +1,6 @@
 // garden: a sunny, fenced garden, the bunny, the sleepy cat, the
-// butterflies and the night fox. Round shapes, big eyes and a bright pastel palette.
+// butterflies, the night fox and the fireflies. Round shapes, big eyes and a
+// bright pastel palette.
 
 import { finish, item, FACINGS } from './characters.mjs';
 import { blockTile, Canvas, edgeTile, ET, flatTile, hash, px } from './lib.mjs';
@@ -638,6 +639,27 @@ function butterfly(facing) {
   return finish(body, 'outline', 8, 21.5, 3, 1);
 }
 
+// Firefly: a few glowing pixels (y yellow body, g pale green glow, w the
+// brightest spark) floating above a one-pixel shadow; no outline, so it is
+// barely there by day. Each facing floats at a slightly different spot, so
+// turning bobs it about.
+const FIREFLY = {
+  s: { x: 6, y: 13, rows: ['.g..', 'gywg', '.gg.'] },
+  se: { x: 7, y: 12, rows: ['.gg.', 'gwyg', '.g..'] },
+  ne: { x: 8, y: 14, rows: ['..g.', '.gyw', '..g.'] },
+  w: { x: 5, y: 12, rows: ['.g..', 'gwy.', '.gg.'] },
+  nw: { x: 6, y: 11, rows: ['.gg.', '.ywg', '..g.'] },
+};
+const fireflyKey = { y: 'yellow', g: 'grass_hi', w: 'white' };
+
+function firefly(facing) {
+  const c = new Canvas(16, 24);
+  const f = FIREFLY[facing];
+  c.set(8, 21, 'shadow');
+  c.grid(f.x, f.y, f.rows, fireflyKey);
+  return c;
+}
+
 // ── Items ─────────────────────────────────────────────────────────────────
 
 const K = { o: 'orange', O: 'orange_lo', g: 'leaf_hi', G: 'leaf', r: 'red', R: 'pink_lo', y: 'yellow', s: 'soil_hi', S: 'soil', w: 'white', W: 'white_lo', p: 'pink', l: 'leaf_lo' };
@@ -670,6 +692,7 @@ export function images() {
     ...FACINGS.map((f) => ({ file: `cat_${f}.svg`, canvas: critter(CAT[f], catKey, { rx: 6 }), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `fox_${f}.svg`, canvas: critter(FOX[f], foxKey, { rx: 6 }), note: `facing ${f}` })),
     ...FACINGS.map((f) => ({ file: `butterfly_${f}.svg`, canvas: butterfly(f), note: `facing ${f}` })),
+    ...FACINGS.map((f) => ({ file: `firefly_${f}.svg`, canvas: firefly(f), note: `facing ${f}, a light source` })),
     ...Object.entries(ITEMS).map(([id, rows]) => ({ file: `${id}.svg`, canvas: item(rows, K, 'outline'), note: 'ground pile' })),
   ];
 }

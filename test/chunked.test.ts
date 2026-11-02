@@ -930,8 +930,8 @@ test('perf HUD: samples over the last 100, fps and the F3 line', () => {
   for (let t = 0; t <= 1000; t += 20) m.frame(t);
   assert.equal(Math.round(m.fps), 50);
   assert.equal(
-    perfLine({ tickAvg: 0.234, tickP95: 0.5, fps: 59.6, active: 300, dormant: 661, builtChunks: 40, visibleChunks: 18 }),
-    'tick 0.23/0.50 ms (avg/p95)  60 fps  entities 300 active, 661 dormant  chunks 40 built, 18 visible',
+    perfLine({ tickAvg: 0.234, tickP95: 0.5, fps: 59.6, active: 300, dormant: 661, builtChunks: 40, visibleChunks: 18, lights: 7, litChunks: 5 }),
+    'tick 0.23/0.50 ms (avg/p95)  60 fps  entities 300 active, 661 dormant  chunks 40 built, 18 visible  lights 7  lit 5',
   );
 });
 

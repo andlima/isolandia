@@ -119,15 +119,66 @@ Clicking a non-walkable container tile (a fridge) walks to the closest
 tile next to it (`goto` with `adjacent: true`). After defeat or
 victory the panels stay visible but read-only.
 
-## Day/night tint
+## Lighting
 
-If a pack defines [`lighting`](packs.md#lighting), the ground and object
-layers are multiplied by `tintAt(lighting, timeOfDay)` (Pixi `tint` on the
-two containers, updated only when the colour changes). The time of day is
-computed from `tick + alpha`, so the tint changes smoothly between ticks.
-Path/target markers and the DOM HUD are not tinted. Without `lighting` the
-scene is untinted. The colour logic lives in pure functions
-(`src/core/lighting.ts`, `src/iso/tint.ts`).
+**The ambient tint.** If a pack defines [`lighting`](packs.md#lighting),
+the scene's **ambient** is `tintAt(lighting, timeOfDay)`, computed from
+`tick + alpha` so it changes smoothly between ticks (`src/core/lighting.ts`,
+`sceneTint` in `src/iso/tint.ts`). Without `lighting` the ambient is white.
+Path/target markers and the DOM HUD are never tinted.
+
+**Local lights.** Tiles and archetypes may carry a
+[`light`](packs.md#local-lights) (`radius`, `color`, `flicker`). Lighting
+is **per cell**: a source lights the cells of its own floor within its
+radius that the grid line of sight reaches (`lineOfSight`: opaque cells and
+edges block, floors never see each other), with intensity `1 − d / radius`
+times its flicker factor; an edge light casts from both cells it separates
+(the stronger cast wins); distinct sources combine as `1 − Π(1 − Iₖ)` with
+the intensity-weighted colour. The maths is the Pixi-free
+`src/iso/lights.ts`, tested headless.
+
+- **Lightmap per built chunk.** Each built chunk keeps a lightmap
+  (intensity and colour per cell, `computeChunkLight`), computed from the
+  tile sources within `MAX_LIGHT_RADIUS` of the chunk (gathered by scanning
+  at most (16 + 24)² cells, cached per chunk against the `tileVersion` it
+  was gathered at, `syncTileSources`, so a chunk built on any later frame
+  gathers them too) plus the frame's entity
+  sources in reach (collected in the entity loop `update` already runs,
+  wherever the entity stands: a flashlight carrier just outside a built
+  chunk still lights it). It is recomputed when the chunk is built; when
+  `world.tileVersion` changes (every built chunk: a barricade or a shutter
+  changes where light goes); when an entity light's cell or floor changed
+  since last frame (the chunks within its radius of its old and new cells,
+  `chunksInReach`); and when the flicker slot (100 ms of wall clock)
+  changes, for the chunks a flickering source reached. A chunk with a
+  handful of sources costs well under a millisecond.
+- **Per-sprite tints.** The ground and object containers stay white; every
+  tile, block, edge, pile and entity sprite in a **visible** built chunk
+  carries `litTint(ambient, color, I)`: per channel `ambient +
+  (max(ambient, color) − ambient) × I`, the ambient itself where the cell is
+  unlit. A light only lifts the ambient toward its colour and never past
+  it, which is the strongest lift Pixi's multiply tint allows (a channel
+  ratio above 1 is not a tint), and why the lifted tint cannot be a child
+  tint under a tinted container. An edge slab takes the brighter of the
+  two cells it separates (so a wall between two lit rooms is not dark).
+  Markers stay untinted and the cutaway's `FADE_ALPHA` is unchanged.
+- **Refresh rule.** A chunk's sprite tints are rewritten only when the
+  ambient changed since its last refresh, its lightmap (or a bordering
+  chunk's, for its edge slabs) changed, or it just became visible; a hidden
+  built chunk is left alone and marked stale, so showing it refreshes its
+  tints. Entities and piles compare-and-set their tint every frame from the
+  cell they are rendered in (a few ops per visible sprite, no allocation).
+  A still scene at noon with no lights costs nothing; during dawn and dusk
+  the ambient changes most frames, so every visible chunk is rewritten: a
+  few thousand tint writes at zoom 1, tens of thousands fully zoomed out,
+  which is why hidden chunks are never refreshed eagerly.
+- **Stats.** `scene.update()` reports `lights` (sources, tile and entity,
+  that reached at least one built chunk this frame) and `litChunks` (built
+  chunks with a non-empty lightmap); the F3 line shows them as `lights N`
+  and `lit M` (see `docs/ui.md`). The benchmark needs no new field: its
+  frame times include the lighting cost.
+- Sub-cell interpolation for moving lights, lights on items or statuses,
+  shadows and light blocked by entities are later work.
 
 ## Projection
 
@@ -288,8 +339,9 @@ is the Pixi-free `src/iso/chunks.ts`, tested headless):
   leave. A new sprite takes the entity's current facing and its depth
   bucket, so depth sorting and facing carry over.
 - `scene.update()` returns stats: built, visible and total chunks, entities
-  drawn on visible floors, and live sprites. The browser's F3 line shows
-  them (see `docs/ui.md`).
+  drawn on visible floors, live sprites, and the [local lights](#lighting)
+  reaching built chunks and the chunks they light. The browser's F3 line
+  shows them (see `docs/ui.md`).
 
 ## Sprites and placeholders
 

@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "town_center",
   "spacing": 0,
-  "tilecount": 22,
+  "tilecount": 23,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -306,6 +306,17 @@
           "name": "tile",
           "type": "string",
           "value": "window"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "image": "../../assets/street_lamp.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "street_lamp"
         }
       ]
     }

@@ -143,7 +143,8 @@ test('both mods are listed by the catalog, stack on the town, and patch it by ov
     return lines.slice(lines.indexOf('patches:') + 1).map((l) => l.trim().split(/\s+/).join(' '));
   };
   assert.deepEqual(patches(NOIR), [
-    'noir override archetype town:resident [label]',
+    'noir override tile town:street_lamp [light]',
+    'noir override archetype town:resident [label, light]',
     'noir override map town:town_center [rooms, spawns]',
     'noir override map town:city [player, populate]',
     'noir override start [defeat.when, defeat.message, victory.when, victory.message]',

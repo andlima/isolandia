@@ -26,8 +26,15 @@
  * while their cell is in a built, visible chunk: created when they enter one,
  * destroyed when they leave.
  *
- * Ground and objects are multiplied by the pack's day/night tint (if any);
- * markers are not.
+ * Lighting is per sprite (see `lights.ts`): every tile, block, edge, pile
+ * and entity sprite in a visible built chunk carries its cell's tint, the
+ * pack's day/night tint (the ambient) lifted toward the colour of the local
+ * lights that reach the cell; the ground and object containers stay white
+ * and markers are never tinted. Each built chunk keeps a lightmap, recomputed
+ * when it is built, when the map changes, when an entity light changes cell
+ * near it or when a flickering light in its reach changes slot; its sprite
+ * tints are rewritten only when the ambient changed, its lightmap changed or
+ * it just became visible, so a still noon scene costs nothing.
  *
  * Entities show their simulation facing (`facingOf`) and, mid-step, a frame
  * of their asset's walk cycle chosen from the step progress (`walkFrame`; a
@@ -56,12 +63,14 @@ import {
   type EdgeSide,
   type Entity,
   type Facing,
+  type LightDef,
   type World,
 } from '../core/index.ts';
-import { CHUNK, chunkBounds, chunkCount, chunkLayout, chunkOf, chunksInView, ChunkLru, inShownChunk, MAX_BUILT_CHUNKS, spriteDiff, type ChunkLayout } from './chunks.ts';
+import { CHUNK, chunkBounds, chunkCount, chunkKeyOf, chunkLayout, chunkOf, chunksInView, ChunkLru, inShownChunk, MAX_BUILT_CHUNKS, spriteDiff, type ChunkLayout } from './chunks.ts';
 import { FADE_ALPHA, fadeCells, floorVisible, viewFloor } from './cutaway.ts';
 import { depthKey, diagonalOf, Layer } from './depth.ts';
 import { drawOrder, spriteBounds, type HitMask } from './hit.ts';
+import { chunksInReach, computeChunkLight, entitySourceId, flickerSlot, litTint, newChunkLightmap, syncTileSources, type ChunkLightmap, type LightSource, type TileLightCache } from './lights.ts';
 import { pickTarget, type Drawn, type PickSource, type PickTarget } from './pick.ts';
 import { edgeAnchorIso, FLOOR_H, groundCentreIso, tileAnchorIso, viewIsoBounds, type Bounds, type CameraState } from './projection.ts';
 import type { AnchoredTexture, FacedTexture, TextureBank } from './textures.ts';
@@ -77,8 +86,19 @@ const MENU_COLOR = 0xffffff;
 const HOVER_COLOR = 0x8fd3ff;
 const HOVER_ALPHA = 0.55;
 
+/** A tinted sprite of a chunk: the cell it stands on and, for an edge slab, the other cell it separates (or -1). */
+interface Tinted {
+  readonly s: Sprite;
+  readonly x: number;
+  readonly y: number;
+  readonly x2: number;
+  readonly y2: number;
+  /** The tint last written. */
+  tint: number;
+}
+
 /** A built chunk. */
-interface Chunk {
+interface Chunk extends TileLightCache {
   readonly cx: number;
   readonly cy: number;
   readonly z: number;
@@ -86,6 +106,27 @@ interface Chunk {
   /** Raised block and edge sprites (in the object buckets). */
   blocks: Sprite[];
   visible: boolean;
+  /** Every tile, block and edge sprite of the chunk, for the tints. */
+  tinted: Tinted[];
+  /** The chunk's light (see `lights.ts`). */
+  readonly light: ChunkLightmap;
+  /** Tile sources within reach of the chunk, as of `lightVersion` (`syncTileSources`). */
+  tileLights: LightSource[];
+  /** The `tileVersion` the tile sources were gathered at (-1: not yet; `lights` gathers them the frame the chunk is built). */
+  lightVersion: number;
+  /** The lightmap must be recomputed. */
+  lightDirty: boolean;
+  /** The sprite tints must be rewritten (the lightmap changed, or the chunk just became visible). */
+  tintStale: boolean;
+  /** The ambient tint the sprite tints were last written with (-1: never). */
+  tintAmbient: number;
+}
+
+/** An entity light's cell as of the last frame, with its reusable source record. */
+interface EntityLight {
+  readonly source: LightSource;
+  /** Whether the entity was seen this frame. */
+  seen: boolean;
 }
 
 /** The display containers of one floor. */
@@ -111,8 +152,14 @@ interface Pick {
 interface PileView {
   readonly sprite: Sprite;
   readonly pick: Pick;
+  /** The pile's cell. */
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
   /** Item index shown (the pile's first stack). */
   item: number;
+  /** The tint last written. */
+  tint: number;
 }
 
 interface EntityView {
@@ -134,6 +181,8 @@ interface EntityView {
   stepTick: number;
   /** Which step of a two-step cycle the current step is (renderer-only state, flips every step). */
   stride: 0 | 1;
+  /** The tint last written. */
+  tint: number;
 }
 
 export interface SceneStats {
@@ -145,6 +194,10 @@ export interface SceneStats {
   visibleEntities: number;
   /** Live entity and ground-pile sprites. */
   sprites: number;
+  /** Light sources (tile and entity) that reached at least one built chunk this frame. */
+  lights: number;
+  /** Built chunks with a non-empty lightmap. */
+  litChunks: number;
 }
 
 function sprite(t: AnchoredTexture): Sprite {
@@ -198,7 +251,20 @@ export class IsoScene {
   private readonly menuMark: Sprite;
   /** Faint outline on the hovered target's cell. */
   private readonly hoverMark: Sprite;
+  /** The ambient tint (the pack's day/night tint; white without one). */
   private tint = 0xffffff;
+  /** Entity lights by entity id: their cell last frame. */
+  private readonly entityLights = new Map<number, EntityLight>();
+  /** The frame's entity sources (the `entityLights` records seen this frame). */
+  private readonly frameLights: LightSource[] = [];
+  /** Chunk keys whose lightmap an entity light's move made stale this frame. */
+  private readonly lightDirtyKeys = new Set<number>();
+  /** The flicker slot of the last update. */
+  private slot = -1;
+  /** Source ids that reached a built chunk (for the `lights` stat); recounted when a lightmap changes. */
+  private readonly reachedIds = new Set<number>();
+  private lightCount = 0;
+  private lightCountDirty = true;
   /** Tile index per cell as drawn by a built chunk (to find the cells a map edit changed). */
   private readonly drawn: Uint16Array;
   /** Edge tile per cell side as drawn by a built chunk, like `drawn`. */
@@ -261,7 +327,21 @@ export class IsoScene {
     const { cx, cy, z } = chunkOf(this.layout, key);
     const ground = new Container();
     this.floors[z]!.ground.addChild(ground);
-    const chunk: Chunk = { cx: cx * CHUNK, cy: cy * CHUNK, z, ground, blocks: [], visible: true };
+    const chunk: Chunk = {
+      cx: cx * CHUNK,
+      cy: cy * CHUNK,
+      z,
+      ground,
+      blocks: [],
+      visible: true,
+      tinted: [],
+      light: newChunkLightmap(cx * CHUNK, cy * CHUNK, z),
+      tileLights: [],
+      lightVersion: -1,
+      lightDirty: true,
+      tintStale: true,
+      tintAmbient: -1,
+    };
     this.fillChunk(chunk);
     this.chunks.set(key, chunk);
   }
@@ -271,6 +351,8 @@ export class IsoScene {
     const { grid } = this.world;
     for (const s of chunk.ground.removeChildren()) s.destroy();
     for (const s of chunk.blocks) s.destroy();
+    chunk.tinted = [];
+    chunk.tintStale = true;
     for (let y = chunk.cy; y < Math.min(chunk.cy + CHUNK, grid.height); y++) {
       for (let x = chunk.cx; x < Math.min(chunk.cx + CHUNK, grid.width); x++) {
         const i = grid.index(x, y, chunk.z);
@@ -291,6 +373,7 @@ export class IsoScene {
     this.clearChunk(chunk);
     chunk.ground.destroy();
     this.chunks.delete(key);
+    this.lightCountDirty = true;
     this.dropDestroyedFades();
   }
 
@@ -316,6 +399,7 @@ export class IsoScene {
         const s = sprite(t);
         const p = tileAnchorIso(x, y);
         s.position.set(p.x, p.y);
+        chunk.tinted.push({ s, x, y, x2: -1, y2: -1, tint: 0xffffff });
         if (tile.raised) {
           this.blockPick.set(i, pickOf(s, this.textures.mask(t.texture), z, drawOrder(z, x, y, Layer.Block), { kind: 'tile', x, y, z }));
           s.zIndex = depthKey(x, y, Layer.Block);
@@ -343,6 +427,11 @@ export class IsoScene {
     s.visible = chunk.visible;
     this.floors[z]!.buckets[diagonalOf(x, y)]!.addChild(s);
     chunk.blocks.push(s);
+    // The slab takes the brighter of the two cells it separates; the other side may lie in another chunk or off the map.
+    const x2 = side === 'w' ? x - 1 : x;
+    const y2 = side === 'n' ? y - 1 : y;
+    const inside = x2 >= 0 && y2 >= 0;
+    chunk.tinted.push({ s, x, y, x2: inside ? x2 : -1, y2: inside ? y2 : -1, tint: 0xffffff });
     const key = edgeKey(i, side);
     this.edgeAt.set(key, s);
     this.edgePick.set(key, pickOf(s, this.textures.mask(t.texture), z, drawOrder(z, x, y, Layer.Edge), { kind: 'edge', x, y, z, side }));
@@ -353,6 +442,7 @@ export class IsoScene {
     const { world } = this;
     if (world.tileVersion === this.tileVersion) return;
     this.tileVersion = world.tileVersion;
+    // A barricade or a shutter changes where light goes: `lights` sees every built chunk's `lightVersion` lag and regathers.
     const { grid } = world;
     for (const chunk of this.chunks.values()) {
       let dirty = false;
@@ -397,7 +487,7 @@ export class IsoScene {
         s.zIndex = depthKey(c.x, c.y, Layer.Pile);
         this.floors[c.z]!.buckets[diagonalOf(c.x, c.y)]!.addChild(s);
         const target: PickTarget = { kind: 'pile', x: c.x, y: c.y, z: c.z, container: c };
-        this.piles.set(c.id, { sprite: s, item, pick: pickOf(s, this.textures.mask(t.texture), c.z, drawOrder(c.z, c.x, c.y, Layer.Pile), target) });
+        this.piles.set(c.id, { sprite: s, item, pick: pickOf(s, this.textures.mask(t.texture), c.z, drawOrder(c.z, c.x, c.y, Layer.Pile), target), x: c.x, y: c.y, z: c.z, tint: 0xffffff });
       } else if (v.item !== item) {
         const t = this.textures.item(world.def.items[item]!);
         apply(v.sprite, t);
@@ -532,26 +622,35 @@ export class IsoScene {
     }
 
     const { tick } = this.world;
+    // The ambient: the pack's day/night tint. Containers stay white; every sprite carries its cell's tint (see `tints`).
     const tint = sceneTint(this.world.def, tick, alpha);
-    if (tint !== null && tint !== this.tint) {
-      this.tint = tint;
-      for (const f of this.floors) {
-        f.ground.tint = tint;
-        f.objects.tint = tint;
-      }
-    }
+    if (tint !== null) this.tint = tint;
 
     this.syncPiles();
     this.cutaway(alpha);
 
-    // Entity sprites: only for entities in built, visible chunks.
+    // Entity sprites: only for entities in built, visible chunks. Entity
+    // lights are collected here too, wherever their entity stands.
     const top = this.floors.length - 1;
     const floorOf = (r: { z: number }) => Math.min(top, Math.max(0, Math.floor(r.z + 0.5)));
     const positions = new Map<number, { x: number; y: number; z: number }>();
+    for (const el of this.entityLights.values()) el.seen = false;
+    this.frameLights.length = 0;
     for (const entity of this.world.entities) {
       const r = renderPosition(entity, tick, alpha);
-      if (inShownChunk(this.layout, this.chunks, this.visible, Math.floor(r.x), Math.floor(r.y), floorOf(r))) positions.set(entity.id, r);
+      const cx = Math.floor(r.x);
+      const cy = Math.floor(r.y);
+      const cz = floorOf(r);
+      if (inShownChunk(this.layout, this.chunks, this.visible, cx, cy, cz)) positions.set(entity.id, r);
+      if (entity.archetype.light) this.entityLight(entity.id, entity.archetype.light, cx, cy, cz);
     }
+    for (const [id, el] of this.entityLights) {
+      if (el.seen) continue;
+      this.dirtyInReach(el.source);
+      this.entityLights.delete(id);
+    }
+    this.lights(now);
+    this.tints();
     const diff = spriteDiff(this.entities.keys(), positions.keys());
     for (const id of diff.destroy) {
       this.entities.get(id)!.sprite.destroy();
@@ -570,7 +669,7 @@ export class IsoScene {
       const pick = pickOf(s, this.textures.mask(t.texture), floor, drawOrder(floor, r.x, r.y, Layer.Entity), target);
       const frames = this.textures.walkFrames(entity.archetype);
       // The pose loop below picks the walk frame on this same update (frame -1 ≠ any frame mid-step).
-      this.entities.set(id, { entity, sprite: s, pick, floor, bucket, facing, shown: t.facing, frame: -1, frames, stepTick: entity.stepTick, stride: 0 });
+      this.entities.set(id, { entity, sprite: s, pick, floor, bucket, facing, shown: t.facing, frame: -1, frames, stepTick: entity.stepTick, stride: 0, tint: 0xffffff });
     }
 
     let visibleEntities = 0;
@@ -582,6 +681,9 @@ export class IsoScene {
       const py = p.y - (r.z - floor) * FLOOR_H;
       const s = v.sprite;
       if (floorVisible(floor, this.view)) visibleEntities++;
+      // Lit by the cell it is rendered in (compare-and-set: a few ops per sprite).
+      const et = this.cellTint(Math.floor(r.x), Math.floor(r.y), floor);
+      if (et !== v.tint) s.tint = v.tint = et;
       let moved = false;
       if (s.x !== p.x || s.y !== py || floor !== v.pick.floor) {
         s.position.set(p.x, py);
@@ -628,12 +730,138 @@ export class IsoScene {
     if (goal) this.place(this.target, goal.x, goal.y, goal.z);
     if (this.invalid.visible && now > this.invalidUntil) this.invalid.visible = false;
 
+    let litChunks = 0;
+    for (const c of this.chunks.values()) if (c.light.lit > 0) litChunks++;
     return {
       builtChunks: this.chunks.size,
       visibleChunks: near.visible.length,
       totalChunks: this.bounds.length,
       visibleEntities,
       sprites: this.entities.size + this.piles.size,
+      lights: this.lightCount,
+      litChunks,
     };
+  }
+
+  // ── Local lights ─────────────────────────────────────────────────────────
+
+  /** Record an entity light at its rendered cell; a cell or floor change dirties the chunks in reach of both cells. */
+  private entityLight(id: number, light: LightDef, x: number, y: number, z: number): void {
+    let el = this.entityLights.get(id);
+    if (!el) {
+      el = { source: { id: entitySourceId(id), x, y, z, x2: -1, y2: -1, light, seed: id }, seen: true };
+      this.entityLights.set(id, el);
+      this.dirtyInReach(el.source);
+    } else {
+      el.seen = true;
+      const s = el.source;
+      if (s.x !== x || s.y !== y || s.z !== z || s.light !== light) {
+        this.dirtyInReach(s);
+        s.x = x;
+        s.y = y;
+        s.z = z;
+        s.light = light;
+        this.dirtyInReach(s);
+      }
+    }
+    this.frameLights.push(el.source);
+  }
+
+  private dirtyInReach(s: LightSource): void {
+    for (const key of chunksInReach(this.layout, s.x, s.y, s.z, s.light.radius)) this.lightDirtyKeys.add(key);
+  }
+
+  /**
+   * Recompute the lightmaps that went stale: a freshly built chunk (its tile
+   * sources are gathered now, whichever frame it was built on), every built
+   * chunk after a map edit (its tile sources are gathered again), the chunks
+   * in reach of an entity light that changed cell, and those a flickering
+   * source reaches when the flicker slot changes.
+   */
+  private lights(now: number): void {
+    const slot = flickerSlot(now);
+    const slotChanged = slot !== this.slot;
+    this.slot = slot;
+    const { grid, def } = this.world;
+    for (const [key, c] of this.chunks) {
+      if (syncTileSources(c, grid, def.tiles, c.cx, c.cy, c.z, this.tileVersion)) c.lightDirty = true;
+      else if (this.lightDirtyKeys.has(key) || (slotChanged && c.light.flickering)) c.lightDirty = true;
+      if (!c.lightDirty) continue;
+      c.lightDirty = false;
+      const sources = this.frameLights.length ? [...c.tileLights, ...this.frameLights] : c.tileLights;
+      computeChunkLight(grid, c.cx, c.cy, c.z, sources, now, c.light);
+      this.lightCountDirty = true;
+      // The chunk's own sprites, and the edge slabs of the chunks to its right and below that border its cells.
+      c.tintStale = true;
+      this.markTintStale(key + 1, c.cx + CHUNK, c.cy, c.z);
+      this.markTintStale(key + this.layout.cols, c.cx, c.cy + CHUNK, c.z);
+    }
+    this.lightDirtyKeys.clear();
+    if (this.lightCountDirty) {
+      this.lightCountDirty = false;
+      this.reachedIds.clear();
+      for (const c of this.chunks.values()) for (const id of c.light.reached) this.reachedIds.add(id);
+      this.lightCount = this.reachedIds.size;
+    }
+  }
+
+  private markTintStale(key: number, x: number, y: number, z: number): void {
+    if (!this.world.grid.inBounds(x, y, z)) return;
+    const c = this.chunks.get(key);
+    if (c) c.tintStale = true;
+  }
+
+  /** The intensity and colour of the light at a cell, from its chunk's lightmap (unlit where the chunk is not built). */
+  private lightI = 0;
+  private lightC = 0;
+  private lightAt(x: number, y: number, z: number): void {
+    this.lightI = 0;
+    const { grid } = this.world;
+    if (!grid.inBounds(x, y, z)) return;
+    const c = this.chunks.get(chunkKeyOf(this.layout, x, y, z));
+    if (!c) return;
+    const k = (y - c.cy) * CHUNK + (x - c.cx);
+    this.lightI = c.light.intensity[k]!;
+    this.lightC = c.light.color[k]!;
+  }
+
+  /** The tint of a sprite standing on a cell: the ambient lifted by the cell's light. */
+  private cellTint(x: number, y: number, z: number): number {
+    this.lightAt(x, y, z);
+    return this.lightI > 0 ? litTint(this.tint, this.lightC, this.lightI) : this.tint;
+  }
+
+  /**
+   * Rewrite the sprite tints of the visible chunks whose ambient changed
+   * since their last refresh, whose lightmap changed or that just became
+   * visible; piles compare-and-set theirs every frame. A hidden chunk is
+   * left alone (its `tintStale` stays set).
+   */
+  private tints(): void {
+    const ambient = this.tint;
+    for (const c of this.chunks.values()) {
+      if (!c.visible || (!c.tintStale && c.tintAmbient === ambient)) continue;
+      c.tintStale = false;
+      c.tintAmbient = ambient;
+      for (const t of c.tinted) {
+        this.lightAt(t.x, t.y, c.z);
+        let i = this.lightI;
+        let color = this.lightC;
+        if (t.x2 >= 0) {
+          // An edge slab takes the brighter of the two cells it separates.
+          this.lightAt(t.x2, t.y2, c.z);
+          if (this.lightI > i) {
+            i = this.lightI;
+            color = this.lightC;
+          }
+        }
+        const tint = i > 0 ? litTint(ambient, color, i) : ambient;
+        if (tint !== t.tint) t.s.tint = t.tint = tint;
+      }
+    }
+    for (const v of this.piles.values()) {
+      const tint = this.cellTint(v.x, v.y, v.z);
+      if (tint !== v.tint) v.sprite.tint = v.tint = tint;
+    }
   }
 }

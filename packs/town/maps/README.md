@@ -70,7 +70,14 @@ Every building follows the same interior rules: rooms at least 3 wide
   whose glovebox and boot hold garage loot; a double door for the car.
 - **`park`** (30×30): grass with a cross of 5-wide road paths, hedges and
   a wreck.
-- **`road_h`** (59×5), **`road_v`** (5×59), **`crossing`** (5×5).
+- **`road_h`** (59×5), **`road_v`** (5×59), **`crossing`** (5×5). The
+  roads carry **street lamps** (`street_lamp`, a
+  [local light](../../../docs/packs.md#local-lights)): on the road's
+  **outer** rows or columns, every 15 cells along the part (at 7, 22, 37
+  and 52), alternating sides, so the roads keep three clear lanes and
+  every road segment of the city shows lamps. `town_center`'s road follows
+  the same rule where it is in view of the player's start: two lamps, at
+  [22, 12] and [37, 16].
 
 Each house part has one tile of grass on three sides and a front yard of
 three or more rows on the door side; `town_center` has one tile of grass

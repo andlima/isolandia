@@ -15,6 +15,7 @@ assets:
   - { id: grass_img, file: assets/grass.svg }
   - { id: glass_img, file: assets/glass.svg }
   - { id: crate_img, file: assets/crate.svg }   # block
+  - { id: street_lamp_img, file: assets/street_lamp.svg }   # block, a light source
   - { id: window_img, file: assets/window.svg, anchor: [0.1, 0.65625] }   # edge
   - { id: barricaded_window_img, file: assets/barricaded_window.svg, anchor: [0.1, 0.65625] }   # edge
   - { id: stove_img, file: assets/stove.svg }   # block

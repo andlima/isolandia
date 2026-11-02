@@ -45,6 +45,14 @@ assets:
       ne: assets/butterfly_ne.svg
       w: assets/butterfly_w.svg
       nw: assets/butterfly_nw.svg
+  - id: firefly_img       # 8-way: n, e and sw are mirrored; a light source
+    anchor: [0.5, 0.92]   # the one-pixel shadow
+    directions:
+      s: assets/firefly_s.svg
+      se: assets/firefly_se.svg
+      ne: assets/firefly_ne.svg
+      w: assets/firefly_w.svg
+      nw: assets/firefly_nw.svg
   - id: fox_img           # 8-way: n, e and sw are mirrored
     anchor: [0.5, 0.92]   # feet at the shadow's centre
     directions:

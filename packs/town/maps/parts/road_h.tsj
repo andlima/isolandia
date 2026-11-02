@@ -8,7 +8,7 @@
   "margin": 0,
   "name": "road_h",
   "spacing": 0,
-  "tilecount": 1,
+  "tilecount": 2,
   "tiledversion": "1.10.2",
   "tileheight": 32,
   "tiles": [
@@ -20,6 +20,17 @@
           "name": "tile",
           "type": "string",
           "value": "road"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "image": "../../assets/street_lamp.svg",
+      "properties": [
+        {
+          "name": "tile",
+          "type": "string",
+          "value": "street_lamp"
         }
       ]
     }

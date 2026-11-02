@@ -25,6 +25,11 @@ were converted from wall cells with `npm run map:edges`.
   corner climbs to the attic study above it (room `study`): an oak chest
   and a bat.
 - **Door:** a door in the great hall's north wall leads out to the grounds.
+- **Candelabras** (`candelabra`, a flickering
+  [local light](../../../docs/packs.md#local-lights)), against the walls,
+  never in a doorway or a 2-wide passage: two in the great hall ([8, 4]
+  and [20, 4], by its side walls), one in the library ([0, 15], the west
+  wall) and one in the cellar ([28, 15], the east wall).
 
 # The estate
 

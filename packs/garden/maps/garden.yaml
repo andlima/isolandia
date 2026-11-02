@@ -18,15 +18,16 @@ maps:
       "@": { tile: grass, player: true }
       "C": { tile: grass, spawn: cat }
       "b": { tile: flowers, spawn: butterfly }
+      "f": { tile: flowers, spawn: firefly }
       "D": { tile: den, spawn: fox }
     edges: true
     rows:
       - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF##########  "
       - "F. . . . . . . . . . . . . . . . . .#_ _ _ _ _#. "
       - "F                                   #         #  "
-      - "F. & O . . . * b * . . . . B . . . .#_ _ _ _ _#. "
+      - "F. & O . . . f b * . . . . B . . . .#_ _ _ _ _#. "
       - "F                                   #         #  "
-      - "F. & . @ . . . * * . . . . . . . . .#_ _ W _ _#. "
+      - "F. & . @ . . . * f . . . . . . . . .#_ _ W _ _#. "
       - "F                                   #         #  "
       - "F. . . . . . & . . . . . & & . . . .#_ _ _ _ _#. "
       - "F                                   #         #  "
@@ -40,9 +41,9 @@ maps:
       - "F                                             F  "
       - "F. . : . . . . . . . . . . . . . . . . . . & .F. "
       - "F                                             F  "
-      - "F. . : v . . v . . v . M . . * b * . . ~ ~ ~ .F. "
+      - "F. . : v . . v . . v . M . . f b * . . ~ ~ ~ .F. "
       - "F                                             F  "
-      - "F. . : . . . . . . . . . . . . . * . ~ ~ ~ ~ .F. "
+      - "F. . : . . . . . . . . . . . . . f . ~ ~ ~ ~ .F. "
       - "F                                             F  "
       - "F. . : v . . v . . v . . & . . . . . ~ ~ ~ . .F. "
       - "F                                             F  "
@@ -50,7 +51,7 @@ maps:
       - "F                                             F  "
       - "F. B . . . . . . . . . & . . . . . v . . . B .F. "
       - "F                                             F  "
-      - "F. . . . * b * . . B . . . . . . . . . . & & DF. "
+      - "F. . . . f b f . . B . . . . . . . . . . & & DF. "
       - "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF  "
       - " . . . . . . . . . . . . . . . . . . . . . . . . "
       - "                                                 "

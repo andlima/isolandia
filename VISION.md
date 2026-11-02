@@ -824,7 +824,16 @@ mirroring, character facing (simulation state since spec `turn-before-move`), le
     is one multiply on whole containers; this needs a per-sprite tint or an
     additive light layer, and should respect `tile.exposed` (an indoor lamp
     does not light the street). Gaslight for `noir`, candles for
-    `vampire`, fireflies for `garden`.
+    `vampire`, fireflies for `garden`. *Landed as task `local-lights`:*
+    lighting is per cell through the grid **line of sight** rather than
+    `tile.exposed` (walls, doors, windows and barricades decide where light
+    goes, so an indoor lamp stays indoors yet shines out of its window),
+    `light` on tiles (cell and edge) and archetypes, a lightmap per render
+    chunk and per-sprite tints that lift the ambient toward the light's
+    colour; shipped as the town's street lamps, the noir gaslight and the
+    detective's flashlight, the zombie's flickering lamps, the mansion's
+    candelabras and the garden's fireflies. Sub-cell interpolation for
+    moving lights, and lights on items or statuses, are later work.
   - **Ambient tiles** (spec `m10-ambient-tiles`). Tile assets with
     `animations` too: water, neon, a flickering TV, swaying grass, chimney
     smoke, stepped from the wall clock. Chunks keep a short list of their
