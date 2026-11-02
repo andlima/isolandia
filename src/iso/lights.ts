@@ -161,6 +161,25 @@ export function tileSources(grid: Grid, tiles: readonly TileDef[], x0: number, y
   return out;
 }
 
+/** A chunk's cached tile sources and the map `tileVersion` they were gathered at (-1: never gathered). */
+export interface TileLightCache {
+  tileLights: LightSource[];
+  lightVersion: number;
+}
+
+/**
+ * Brings a chunk's cached tile sources up to the map's `version`: gathers
+ * them (`tileSources`) when the cache was never filled (a freshly built
+ * chunk, whenever it is built) or the map changed since. Returns whether
+ * they were regathered, in which case the chunk's lightmap is stale.
+ */
+export function syncTileSources(c: TileLightCache, grid: Grid, tiles: readonly TileDef[], x0: number, y0: number, z: number, version: number): boolean {
+  if (c.lightVersion === version) return false;
+  c.tileLights = tileSources(grid, tiles, x0, y0, z);
+  c.lightVersion = version;
+  return true;
+}
+
 /** The light of one render chunk: intensity and colour per chunk cell. */
 export interface ChunkLightmap {
   /** The chunk's origin cell and floor. */

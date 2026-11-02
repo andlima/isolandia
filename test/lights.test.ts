@@ -17,8 +17,10 @@ import {
   litTint,
   newChunkLightmap,
   reachCells,
+  syncTileSources,
   tileSources,
   type LightSource,
+  type TileLightCache,
 } from '../src/iso/lights.ts';
 import { readPack } from '../src/node/read-pack.ts';
 import { GAMES, fixture } from './helpers.ts';
@@ -414,6 +416,38 @@ test('flicker slot change: only the chunks a flickering source reached are stale
   let differs = false;
   for (let t = 0; t < 2000 && !differs; t += 100) differs = lightIntensity(computeChunkLight(w.grid, 0, 0, 0, tileSources(w.grid, w.def.tiles, 0, 0, 0), t), 4, 1) !== lightIntensity(a, 4, 1);
   assert.ok(differs, 'the candle flickers');
+});
+
+test('syncTileSources: a chunk built after the first frame still gathers its lamps; a map edit regathers every chunk', () => {
+  // A 20-cell-wide room (two chunks across) with a lamp at (13, 1): in chunk (0, 0) and within reach of chunk (1, 0).
+  const w = world(room(['.'.repeat(20), '.'.repeat(13) + 'i......', '.'.repeat(19) + '@']));
+  const { grid, def } = w;
+  const lamp = at(w, 13, 1);
+  const cache = (): TileLightCache => ({ tileLights: [], lightVersion: -1 });
+  // Frame 1: chunk (0, 0) is built and synced.
+  const first = cache();
+  assert.equal(syncTileSources(first, grid, def.tiles, 0, 0, 0, grid.version), true);
+  assert.deepEqual(first.tileLights.map((s) => [s.x, s.y]), [[13, 1]]);
+  assert.equal(first.lightVersion, grid.version);
+  // Frame 2 (nothing changed): the chunk keeps its list, by identity.
+  const kept = first.tileLights;
+  assert.equal(syncTileSources(first, grid, def.tiles, 0, 0, 0, grid.version), false);
+  assert.equal(first.tileLights, kept);
+  // Frame 2: the camera scrolled and the chunk to the right is built now, with the same map version: it gathers the lamp in reach too.
+  const later = cache();
+  assert.equal(syncTileSources(later, grid, def.tiles, CHUNK, 0, 0, grid.version), true);
+  assert.deepEqual(later.tileLights.map((s) => [s.x, s.y]), [[13, 1]]);
+  // A map edit (the lamp is replaced by floor) bumps the version: both chunks regather and the lamp is gone.
+  grid.setTile(lamp, def.ids.tiles['t:floor']!);
+  assert.equal(syncTileSources(first, grid, def.tiles, 0, 0, 0, grid.version), true);
+  assert.equal(syncTileSources(later, grid, def.tiles, CHUNK, 0, 0, grid.version), true);
+  assert.deepEqual(first.tileLights, []);
+  assert.deepEqual(later.tileLights, []);
+  assert.equal(first.lightVersion, grid.version);
+  // And a chunk built after the edit sees the edited map.
+  const after = cache();
+  assert.equal(syncTileSources(after, grid, def.tiles, 0, 0, 0, grid.version), true);
+  assert.deepEqual(after.tileLights, []);
 });
 
 // ── Shipped packs ───────────────────────────────────────────────────────────

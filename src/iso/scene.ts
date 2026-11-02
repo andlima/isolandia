@@ -70,7 +70,7 @@ import { CHUNK, chunkBounds, chunkCount, chunkKeyOf, chunkLayout, chunkOf, chunk
 import { FADE_ALPHA, fadeCells, floorVisible, viewFloor } from './cutaway.ts';
 import { depthKey, diagonalOf, Layer } from './depth.ts';
 import { drawOrder, spriteBounds, type HitMask } from './hit.ts';
-import { chunksInReach, computeChunkLight, entitySourceId, flickerSlot, litTint, newChunkLightmap, tileSources, type ChunkLightmap, type LightSource } from './lights.ts';
+import { chunksInReach, computeChunkLight, entitySourceId, flickerSlot, litTint, newChunkLightmap, syncTileSources, type ChunkLightmap, type LightSource, type TileLightCache } from './lights.ts';
 import { pickTarget, type Drawn, type PickSource, type PickTarget } from './pick.ts';
 import { edgeAnchorIso, FLOOR_H, groundCentreIso, tileAnchorIso, viewIsoBounds, type Bounds, type CameraState } from './projection.ts';
 import type { AnchoredTexture, FacedTexture, TextureBank } from './textures.ts';
@@ -98,7 +98,7 @@ interface Tinted {
 }
 
 /** A built chunk. */
-interface Chunk {
+interface Chunk extends TileLightCache {
   readonly cx: number;
   readonly cy: number;
   readonly z: number;
@@ -110,8 +110,10 @@ interface Chunk {
   tinted: Tinted[];
   /** The chunk's light (see `lights.ts`). */
   readonly light: ChunkLightmap;
-  /** Tile sources within reach of the chunk, as of `lightVersion`. */
+  /** Tile sources within reach of the chunk, as of `lightVersion` (`syncTileSources`). */
   tileLights: LightSource[];
+  /** The `tileVersion` the tile sources were gathered at (-1: not yet; `lights` gathers them the frame the chunk is built). */
+  lightVersion: number;
   /** The lightmap must be recomputed. */
   lightDirty: boolean;
   /** The sprite tints must be rewritten (the lightmap changed, or the chunk just became visible). */
@@ -257,8 +259,6 @@ export class IsoScene {
   private readonly frameLights: LightSource[] = [];
   /** Chunk keys whose lightmap an entity light's move made stale this frame. */
   private readonly lightDirtyKeys = new Set<number>();
-  /** Every built chunk's tile sources must be gathered again (the map changed). */
-  private lightsDirtyAll = true;
   /** The flicker slot of the last update. */
   private slot = -1;
   /** Source ids that reached a built chunk (for the `lights` stat); recounted when a lightmap changes. */
@@ -337,6 +337,7 @@ export class IsoScene {
       tinted: [],
       light: newChunkLightmap(cx * CHUNK, cy * CHUNK, z),
       tileLights: [],
+      lightVersion: -1,
       lightDirty: true,
       tintStale: true,
       tintAmbient: -1,
@@ -441,8 +442,7 @@ export class IsoScene {
     const { world } = this;
     if (world.tileVersion === this.tileVersion) return;
     this.tileVersion = world.tileVersion;
-    // A barricade or a shutter changes where light goes: every built chunk gathers its sources and casts again.
-    this.lightsDirtyAll = true;
+    // A barricade or a shutter changes where light goes: `lights` sees every built chunk's `lightVersion` lag and regathers.
     const { grid } = world;
     for (const chunk of this.chunks.values()) {
       let dirty = false;
@@ -772,10 +772,11 @@ export class IsoScene {
   }
 
   /**
-   * Recompute the lightmaps that went stale: every built chunk after a map
-   * edit (its tile sources are gathered again), a freshly built chunk, the
-   * chunks in reach of an entity light that changed cell, and those a
-   * flickering source reaches when the flicker slot changes.
+   * Recompute the lightmaps that went stale: a freshly built chunk (its tile
+   * sources are gathered now, whichever frame it was built on), every built
+   * chunk after a map edit (its tile sources are gathered again), the chunks
+   * in reach of an entity light that changed cell, and those a flickering
+   * source reaches when the flicker slot changes.
    */
   private lights(now: number): void {
     const slot = flickerSlot(now);
@@ -783,10 +784,8 @@ export class IsoScene {
     this.slot = slot;
     const { grid, def } = this.world;
     for (const [key, c] of this.chunks) {
-      if (this.lightsDirtyAll) {
-        c.tileLights = tileSources(grid, def.tiles, c.cx, c.cy, c.z);
-        c.lightDirty = true;
-      } else if (this.lightDirtyKeys.has(key) || (slotChanged && c.light.flickering)) c.lightDirty = true;
+      if (syncTileSources(c, grid, def.tiles, c.cx, c.cy, c.z, this.tileVersion)) c.lightDirty = true;
+      else if (this.lightDirtyKeys.has(key) || (slotChanged && c.light.flickering)) c.lightDirty = true;
       if (!c.lightDirty) continue;
       c.lightDirty = false;
       const sources = this.frameLights.length ? [...c.tileLights, ...this.frameLights] : c.tileLights;
@@ -797,7 +796,6 @@ export class IsoScene {
       this.markTintStale(key + 1, c.cx + CHUNK, c.cy, c.z);
       this.markTintStale(key + this.layout.cols, c.cx, c.cy + CHUNK, c.z);
     }
-    this.lightsDirtyAll = false;
     this.lightDirtyKeys.clear();
     if (this.lightCountDirty) {
       this.lightCountDirty = false;

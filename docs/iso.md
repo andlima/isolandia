@@ -140,7 +140,9 @@ the intensity-weighted colour. The maths is the Pixi-free
 - **Lightmap per built chunk.** Each built chunk keeps a lightmap
   (intensity and colour per cell, `computeChunkLight`), computed from the
   tile sources within `MAX_LIGHT_RADIUS` of the chunk (gathered by scanning
-  at most (16 + 24)² cells, cached per chunk) plus the frame's entity
+  at most (16 + 24)² cells, cached per chunk against the `tileVersion` it
+  was gathered at, `syncTileSources`, so a chunk built on any later frame
+  gathers them too) plus the frame's entity
   sources in reach (collected in the entity loop `update` already runs,
   wherever the entity stands: a flashlight carrier just outside a built
   chunk still lights it). It is recomputed when the chunk is built; when
