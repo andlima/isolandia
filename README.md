@@ -7,7 +7,9 @@ defined by **packs** of YAML and assets rather than code.
 
 The engine knows no genre. Hunger, health, coffins and shambling hordes
 are all declared by packs; switching genre means switching pack. See
-[`VISION.md`](VISION.md) for the goals, decisions and roadmap.
+[`VISION.md`](VISION.md) for the goals, principles, roadmap and open
+questions, and [`DECISIONS.md`](DECISIONS.md) for the decision log and
+milestone history.
 
 > **Status:** early development. Milestones S0–M8 are done: simulation
 > core, isometric renderer, clock and day/night, systems and statuses,
@@ -141,6 +143,7 @@ Source layout:
 | `packs/` | Game content |
 | `docs/` | Reference: [packs](docs/packs.md), [expressions](docs/expressions.md), [iso projection](docs/iso.md), [browser UI](docs/ui.md) |
 | `specs/` | Specs for each milestone and task |
+| `VISION.md`, `DECISIONS.md` | Why: goals, working rules, roadmap and open questions; the log of settled decisions |
 
 Work is spec-driven: each feature is described in a spec under `specs/`
 and implemented in its own git worktree. See [`AGENTS.md`](AGENTS.md) for
