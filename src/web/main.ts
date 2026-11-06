@@ -19,6 +19,7 @@ import { showErrors } from './errors.ts';
 import { GamePanel } from './game-panel.ts';
 import { escapeTarget, hintText, readHelpSeen, trackWindows, writeHelpSeen, type InputKind, type WindowId } from './help.ts';
 import { FirstRunHint, HelpOverlay, PauseMenu } from './help-dom.ts';
+import { KeyHints } from './hints-dom.ts';
 import { Hud, hudTimeView, type HudTimeHandlers } from './hud.ts';
 import { Hover } from './hover-dom.ts';
 import { Input, type InputHandlers } from './input.ts';
@@ -296,6 +297,8 @@ async function main(): Promise<void> {
     },
     titleScreen: () => location.assign(location.pathname),
   });
+  // Key hints (`F`) live for the page: they look the window roots up by id, so a loaded world needs no re-wiring.
+  const hints = new KeyHints(document.body);
   // The first game start in this browser: the hint shows once (again when storage is blocked) and lands in the log.
   if (!bench && !readHelpSeen(store)) {
     const text = hintText(inputKind);
@@ -377,12 +380,14 @@ async function main(): Promise<void> {
     hover: (p) => hover.move(p),
     longPress: openMenu,
     menu: openMenu,
-    // The overlay and the pause menu take every key while open; `?` always reaches the shell, even over a menu or a conversation.
-    captureKey: (code, key) => help.key(code, key) || pauseMenu.key(code, key) || (bindingFor(code, key) !== 'help' && (session.menu.key(code) || session.dialogue.key(code))),
+    // The overlay and the pause menu take every key while open; `?` always reaches the shell, even over a menu, a conversation
+    // or the key hints; the hints capture everything else while they show.
+    captureKey: (code, key, shift, repeat) =>
+      help.key(code, key) || pauseMenu.key(code, key) || (bindingFor(code, key) !== 'help' && (session.menu.key(code) || session.dialogue.key(code) || hints.key(code, key, shift, repeat))),
     paused: () => pace.paused,
     // One case per binding id of `BINDINGS` (a test checks the table against these cases).
     key: (id) => {
-      const { hud, panels, menu, world } = session;
+      const { hud, panels, menu, dialogue, world } = session;
       switch (id) {
         case 'pause':
           pace.togglePause();
@@ -415,6 +420,10 @@ async function main(): Promise<void> {
         case 'log':
           logView.toggle();
           break;
+        case 'hints':
+          // The context menu and the dialogue box have their own keys: `F` does nothing over them.
+          if (!menu.isOpen && !dialogue.isOpen) hints.show();
+          break;
         case 'game':
           game.toggle();
           refreshGame();
@@ -426,6 +435,8 @@ async function main(): Promise<void> {
           game.command('load', 'quick');
           break;
         case 'help':
+          // `?` skips the hints in the capture chain: drop them here, so the overlay never opens over labels.
+          hints.hide();
           help.toggle();
           break;
         case 'escape':

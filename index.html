@@ -322,6 +322,16 @@
       }
       #tooltip[hidden] { display: none; }
       #tooltip .tooltip-hint { color: #8fd3ff; }
+      /* Key hints (F): above every .panel (4–10), below the pause menu and the controls overlay (20, 21). */
+      #hints { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
+      #hints[hidden] { display: none; }
+      #hints .hint-chip {
+        position: absolute; padding: 0 3px; font: bold 11px/14px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.04em;
+        color: #1b1d22; background: #ffe9a8; border: 1px solid #a88a3a; border-radius: 3px; white-space: nowrap;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+      }
+      #hints .hint-chip[hidden] { display: none; }
+      #hints .hint-chip .typed { color: #1b1d22; opacity: 0.45; }
       #errors {
         margin: 0; padding: 16px; height: 100%; box-sizing: border-box; overflow: auto;
         font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #ff8a8a; white-space: pre-wrap;

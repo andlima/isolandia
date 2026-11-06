@@ -6,6 +6,12 @@
  * `beforeTick` re-queues the held direction as plain steps so the player
  * walks at a constant pace. Shift is tracked while held (run) and `Z` toggles
  * sneak; `beforeTick` sets the player's gait when the wanted one differs.
+ *
+ * Every key press is offered to `captureKey` first (the controls overlay, the
+ * pause menu, the context menu, the dialogue box and the key hints, in
+ * `main.ts`); a consumed key is `preventDefault`ed and goes no further, so
+ * while hints show a letter never moves the player and `Tab` never moves
+ * focus.
  */
 
 import type { World } from '../core/index.ts';
@@ -27,8 +33,8 @@ export interface InputHandlers extends Omit<GestureHandlers, 'click'> {
   climb?(dz: 1 | -1): void;
   /** Right-click on the canvas (the browser's own menu is suppressed there only). */
   menu(sx: number, sy: number): void;
-  /** Offered every key press first (auto-repeat included) with its `code` and `key`; true consumes it (e.g. an open menu). */
-  captureKey?(code: string, key: string): boolean;
+  /** Offered every key press first (auto-repeat included) with its `code`, `key`, Shift state and `repeat` flag; true consumes it (e.g. an open menu, the key hints). */
+  captureKey?(code: string, key: string, shift: boolean, repeat: boolean): boolean;
   /** True while the shell is paused: movement keys are ignored (no steps or turns). */
   paused?(): boolean;
 }
@@ -88,7 +94,7 @@ export class Input {
       // F5/F9 are quicksave/quickload: never reload the page, even with a modifier or on auto-repeat.
       if (suppressesDefault(ev.code)) ev.preventDefault();
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-      if (on.captureKey?.(ev.code, ev.key)) {
+      if (on.captureKey?.(ev.code, ev.key, ev.shiftKey, ev.repeat)) {
         ev.preventDefault();
         return;
       }
