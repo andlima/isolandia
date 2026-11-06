@@ -117,8 +117,11 @@ test('helpView: sections in order, key chips, the gesture for the input, context
   assert.ok(!interacting.rows.some((r) => r.id.startsWith('menu_') || r.id.startsWith('dialogue_')), 'context rows are only in their group');
   assert.deepEqual(
     mouse.sections[2]!.groups.map((g) => g.title),
-    ['In the transfer window'],
+    ['In the transfer window', 'While key hints show'],
   );
+  assert.ok(mouse.sections[2]!.groups[1]!.rows.some((r) => r.id === 'hints_choose'));
+  assert.deepEqual(rowOf(mouse, 'hints')!.keys, ['F']);
+  assert.equal(bindingFor('KeyF', 'f'), 'hints');
   for (const b of keyBindings()) {
     assert.ok(rowOf(mouse, b.id), `${b.id} shown for mouse`);
     assert.ok(rowOf(touch, b.id), `${b.id} shown for touch`);

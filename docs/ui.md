@@ -248,6 +248,13 @@ icon (the item's `sprite` image, drawn pixel-crisp, or a swatch of its
   container leaves reach (you walked away, the pile emptied), the next
   tab is selected; with none left the window goes back to inventory-only
   if `I` opened it, and closes otherwise.
+- **Keyboard.** `F` shows [key hints](#key-hints): every tab, stack row,
+  **Take all** / **Put all**, **Use** / **Drop** and the **×** get a short
+  letter label; typing the label presses it, and **Shift on the last
+  letter** moves **one unit** instead of the whole stack. `Tab` is the
+  inventory toggle, so browser focus traversal is not the way in; a row
+  that does have focus (after a click) still takes `Enter` / `Shift +
+  Enter`.
 - **Closing.** `Escape`, the **×** button, or opening the crafting or
   Game panel closes it.
 - **Layout.** The window sits at the bottom right and stays below the
@@ -275,7 +282,8 @@ to walk there and craft). The view is the pure function
 `craftingView(world, readOnly)` in `src/web/panels.ts` over
 `world.availableRecipes()`; it re-renders when `tick`, `containerVersion`
 or `tileVersion` changes. Recipes without a station live only here, not in
-the context menu.
+the context menu. `F` labels the enabled **Craft** buttons with
+[key hints](#key-hints), so a recipe can be crafted without the mouse.
 
 ## Dialogue box
 
@@ -414,6 +422,9 @@ The browser keeps a **quicksave** and **three slots** per pack list in
   game in progress un-freezes it.
 - A storage failure (full quota, private mode, blocked storage) shows a
   short message and never stops the game.
+- With the panel open, `F` labels its **Save**, **Load**, **Delete**,
+  **Export** and **Title screen** buttons with [key hints](#key-hints);
+  **Import** (a file picker) and the checkbox are not buttons and get none.
 
 The panel's view is the pure function `gameView` in `src/web/saves.ts`;
 storage goes through the small `SaveStore` interface (`localStorage` in
@@ -426,7 +437,7 @@ Every browser key and gesture is one row of **`BINDINGS`**
 that do the same, a label, a section (*Moving*, *Interacting*, *Windows*,
 *Time*, *Game*, *View*, in that order) and, for rows that only apply while
 something is open, a context (the action menu, a conversation, the
-transfer window). The key handler dispatches through the table:
+transfer window, the key hints). The key handler dispatches through the table:
 `bindingFor(code, key)` looks up `KeyboardEvent.key` first (so `<`, `>`
 and `?` follow the keyboard layout) and then `KeyboardEvent.code`, and
 `src/web/main.ts` has one `switch` case per binding id. A test fails when
@@ -441,7 +452,7 @@ order, each row with its keys as `<kbd>` chips and the gesture for the
 current input (`mouse` or `touch`, from the last pointer used, with a
 coarse pointer as the first guess), and the context rows under a small
 heading (*In the action menu*, *In a conversation*, *In the transfer
-window*). A row with neither a key nor a gesture for the input (Shift +
+window*, *While key hints show*). A row with neither a key nor a gesture for the input (Shift +
 click on touch) is left out. The overlay pauses the world while it is open
 (a third shell pause next to the manual and the window pause in `Pace`: it
 never overrides a manual `P`) and closes with `Escape`, `?`, its **×** or a
@@ -455,7 +466,63 @@ keys once it is closed.
 conversation (leave, as the box's own `Escape`); the most recently opened
 window (transfer window, crafting panel, journal, log history or Game
 panel, in the order they were opened, kept by `trackWindows`); and with
-nothing open it toggles the **pause menu**.
+nothing open it toggles the **pause menu**. While [key hints](#key-hints)
+show, `Escape` only cancels them (the capture chain consumes it before
+`escapeTarget` sees it) and the window stays open.
+
+### Key hints
+
+`F` with a window open labels every button in it, in the style of the
+Vimium browser extension, and typing a label presses the button. Any
+number of buttons is reachable with two or three keystrokes, without a
+cursor, and the usual keys keep working the rest of the time (you can walk
+with the transfer window open: hint mode is on only while the labels
+show).
+
+- **Alphabet and labels.** Labels come from `HINT_ALPHABET =
+  'sadfjklewcmpgh'` (the home row first, then nearby letters) and all have
+  the same length: the smallest `L` with `14 ** L >= n` targets, so up to
+  14 buttons get a single letter (`S`, `A`, `D`, …), 15 to 196 get two
+  (`SS`, `SA`, …) and more get three. The first targets get the easiest
+  letters.
+- **What is labelled.** Every `<button>` that is enabled and visible inside
+  the open window roots `#transfer`, `#crafting`, `#game` and `#log` (the
+  log history's `×` only), in that order and then top to bottom: the
+  transfer window's tabs, *Take all*, container stacks, *Put all* and
+  inventory rows with their *Use* / *Drop* read first. The HUD's own
+  buttons (*Crafting [C]*, *Journal [J]*, *Log [M]*, *Game [O]*,
+  *Help [?]*), the context menu, the dialogue box and the pause menu are
+  never labelled; the menu and the dialogue keep their `1`–`9` and
+  arrows, and `F` does nothing while one of them is open. With nothing open
+  `F` is a no-op.
+- **Typing.** Chips show the labels in uppercase at each button's top-left
+  corner. A typed letter hides the chips that no longer match and dims the
+  typed prefix on the rest; a letter that matches nothing is dropped.
+  `Backspace` erases a letter. Completing a label dispatches a click on the
+  button (`shiftKey` set when Shift was held on **that last letter**, so a
+  stack row moves one unit, as Shift + click); the labels then go away.
+  `F` itself is a label letter once hints show. Every other key (digits,
+  arrows, `Enter`, `Tab`, `I`, movement letters) is swallowed while the
+  labels show, so nothing moves or toggles by accident; `?` still opens
+  the controls overlay.
+- **Cancel.** `Escape`, any pointer press, `?`, or the labelled window
+  closing (the shown container left reach) end hint mode. While it is on,
+  the chips follow their buttons: a re-render, scroll or resize moves them,
+  and when the set of buttons changes (a stack moved, a tab switched) the
+  labels are handed out again from scratch and the typed prefix is cleared.
+  Hint mode does not pause the world.
+
+The decisions are the pure functions in `src/web/hints.ts`: `hintLabels(n)`,
+`matchHints(labels, typed)` (`match` / `partial` / `none`) and the key
+reducer `hintKey(labels, typed, code, key, shift)` (`typed`, `activate`,
+`cancel`, `pass` for `?`, `ignore`), all tested headless in
+`test/hints.test.ts`. A key is a hint letter when `KeyboardEvent.key`
+lowercased is a letter of the alphabet, or else when its `code` is
+`Key<X>` with `x` in the alphabet, so a layout without Latin letters works
+by position. `src/web/hints-dom.ts` (`KeyHints`) is the thin DOM layer:
+it collects the buttons, draws the `#hints` chips above the panels and
+below the pause menu and the overlay, watches the roots with a
+`MutationObserver` plus `scroll` and `resize`, and dispatches the click.
 
 **Pause menu.** A small centred panel with **Resume**, **Controls** (the
 overlay opens on top; closing it returns to the menu), **Game…** (closes
@@ -498,6 +565,9 @@ terminal too narrow for the full line it shows only `q: quit  ?: help`.
 | `I` / `Tab` | Transfer window, inventory only (again: back to the container, or close) |
 | `Escape` | Close the [controls overlay](#controls-and-pause-menu), the menu, the conversation or the most recently opened window; with nothing open, the pause menu |
 | Click / Shift + click a stack (window open) | Move the whole stack / one unit |
+| `F` | [Key hints](#key-hints): label the buttons of the open windows, type a label to press one |
+| letters (hints shown) | Type a label to press that button (Shift on the last letter: one unit of a stack) |
+| `Backspace` / `Escape` (hints shown) | Erase a letter, cancel the hints |
 | `C` | Crafting panel |
 | `J` | [Journal](#journal) panel |
 | `M` | [Message log](#message-log) history panel |

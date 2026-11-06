@@ -7,6 +7,11 @@
  * (`KeyboardEvent.code`, layout-independent) and `chars` (`KeyboardEvent.key`,
  * for `<`, `>` and `?`, which follow the layout). Movement stays in
  * `MOVE_KEYS` for the step logic: the table lists it as one row.
+ *
+ * Before the lookup, `Input` offers every key to the capture chain in
+ * `main.ts`: the controls overlay, the pause menu, then (unless the key is
+ * `?`) the context menu, the dialogue box and the key hints (`hints-dom.ts`,
+ * on after `F`); a consumed key never reaches `bindingFor`.
  */
 
 import { CLIMB_KEYS, MOVE_KEYS, PAUSE_KEYS, RUN_KEYS } from './keys.ts';
@@ -16,8 +21,8 @@ export const SECTIONS = ['Moving', 'Interacting', 'Windows', 'Time', 'Game', 'Vi
 
 export type BindingSection = (typeof SECTIONS)[number];
 
-/** Rows that only apply while something is open: the action menu, the dialogue box or the transfer window. */
-export type BindingContext = 'menu' | 'dialogue' | 'window';
+/** Rows that only apply while something is open: the action menu, the dialogue box, the transfer window or the key hints. */
+export type BindingContext = 'menu' | 'dialogue' | 'window' | 'hints';
 
 export interface Binding {
   readonly id: string;
@@ -39,6 +44,7 @@ export const CONTEXT_TITLES: Readonly<Record<BindingContext, string>> = {
   menu: 'In the action menu',
   dialogue: 'In a conversation',
   window: 'In the transfer window',
+  hints: 'While key hints show',
 };
 
 const climb = (dz: 1 | -1) => Object.keys(CLIMB_KEYS).filter((k) => CLIMB_KEYS[k] === dz);
@@ -63,6 +69,9 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'crafting', keys: ['C'], label: 'Crafting panel', section: 'Windows', codes: ['KeyC'] },
   { id: 'journal', keys: ['J'], label: 'Journal panel', section: 'Windows', codes: ['KeyJ'] },
   { id: 'log', keys: ['M'], label: 'Message log history', section: 'Windows', codes: ['KeyM'] },
+  { id: 'hints', keys: ['F'], label: 'Key hints: label the buttons of the open windows, type a label to press one', section: 'Windows', codes: ['KeyF'] },
+  { id: 'hints_choose', keys: ['letters'], label: 'Type a label to press that button (Shift on the last letter: one unit of a stack)', section: 'Windows', context: 'hints' },
+  { id: 'hints_keys', keys: ['Backspace', 'Escape'], label: 'Erase a letter, cancel', section: 'Windows', context: 'hints' },
   { id: 'transfer_move', keys: [], gesture: { mouse: 'Click / Shift + click a stack', touch: 'Tap a stack' }, label: 'Move the whole stack / one unit', section: 'Windows', context: 'window' },
   // ── Time ──
   { id: 'pause', keys: ['P', 'Pause'], label: 'Pause or resume', section: 'Time', codes: [...PAUSE_KEYS] },
